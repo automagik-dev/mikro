@@ -397,7 +397,7 @@ export class PgStorage {
         const { text, source } = batch[j];
         if (text.trim() === "") continue;
 
-        const { timestamp, type, content } = parseLine(text);
+        const { timestamp, type, content } = parseContextLine(text, { source });
         const idx = values.length;
         placeholders.push(
           `($${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5}, $${idx + 6})`
@@ -696,17 +696,32 @@ const TIMESTAMP_FIELDS = [
 /** Common type/category field names in JSONL data */
 const TYPE_FIELDS = ["type", "kind", "level", "severity", "category", "event"];
 
+export interface ParseContextLineOptions {
+  /** Source path for the line, when loaded from a directory context. */
+  source?: string | null;
+}
+
 /**
  * Parse a single line of context data.
- * Tries JSON first (JSONL), falls back to plain text.
+ * JSONL parsing is source-aware so markdown/code examples that happen to
+ * start with "{" remain plain text instead of producing noisy warnings.
  */
-function parseLine(line: string): {
+export function parseContextLine(
+  line: string,
+  options: ParseContextLineOptions = {}
+): {
   timestamp: string | null;
   type: string | null;
   content: string;
 } {
   const trimmed = line.trim();
   if (!trimmed.startsWith("{")) {
+    return { timestamp: null, type: null, content: trimmed };
+  }
+
+  const source = options.source ?? null;
+  const shouldParseJsonl = source === null || source.toLowerCase().endsWith(".jsonl");
+  if (!shouldParseJsonl) {
     return { timestamp: null, type: null, content: trimmed };
   }
 
@@ -736,7 +751,7 @@ function parseLine(line: string): {
 
     return { timestamp, type, content: trimmed };
   } catch {
-    // Malformed JSON — log warning and treat as plain text
+    // Malformed JSONL in an actual JSONL source — log warning and treat as plain text
     process.stderr.write(
       `rlmx: warning: skipping malformed JSONL line: ${trimmed.slice(0, 80)}...\n`
     );
