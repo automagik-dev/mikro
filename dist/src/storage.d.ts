@@ -114,5 +114,19 @@ export declare class PgStorage {
     /** Register process exit handlers for cleanup */
     private registerCleanup;
 }
+export interface ParseContextLineOptions {
+    /** Source path for the line, when loaded from a directory context. */
+    source?: string | null;
+}
+/**
+ * Parse a single line of context data.
+ * JSONL parsing is source-aware so markdown/code examples that happen to
+ * start with "{" remain plain text instead of producing noisy warnings.
+ */
+export declare function parseContextLine(line: string, options?: ParseContextLineOptions): {
+    timestamp: string | null;
+    type: string | null;
+    content: string;
+};
 export {};
 //# sourceMappingURL=storage.d.ts.map
