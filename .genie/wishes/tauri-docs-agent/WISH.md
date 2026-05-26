@@ -95,7 +95,7 @@ Build `rlmx`, an npm CLI that implements the real RLM algorithm (prompt external
 **Deliverables:**
 
 1. **`/home/genie/research/rlmx/`** — Git repo initialized
-   - `package.json` with `@mariozechner/pi-ai` dependency, `bin: { rlmx: "./dist/cli.js" }`
+   - `package.json` with `@earendil-works/pi-ai` dependency, `bin: { rlmx: "./dist/cli.js" }`
    - `tsconfig.json` for TypeScript compilation
    - `.gitignore`
 
@@ -267,7 +267,7 @@ cd /home/genie/agents/tauri/tauri-docs && uv run scripts/sync-docs.py --force 2>
    - Return `RLMResult: { answer, references, usage: {inputTokens, outputTokens, llmCalls}, iterations, model }`
 
 2. **`src/llm.ts`** — pi/ai LLM client wrapper
-   - `llmComplete(prompt, model, config)` → calls `completeSimple()` from `@mariozechner/pi-ai`
+   - `llmComplete(prompt, model, config)` → calls `completeSimple()` from `@earendil-works/pi-ai`
    - `llmCompleteBatched(prompts, model, config)` → concurrent `Promise.all` of `completeSimple()`
    - Handle IPC requests from Python REPL: when REPL sends `llm_query` request, route to this module
    - `rlmQuery(prompt, model, config)` → spawn child `rlmx` process with same cwd, return result

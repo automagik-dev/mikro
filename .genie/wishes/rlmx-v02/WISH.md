@@ -351,7 +351,7 @@ const {loadContext} = require('./dist/context');
 2. **`package.json`** — Publish prep
    - Version bump to 0.2.0
    - Fix repo URL: `namastex888/rlmx`
-   - Pin pi/ai to exact version: `"@mariozechner/pi-ai": "0.62.0"` (not `^0.62.0`, per risk mitigation)
+   - Pin pi/ai to exact version: `"@earendil-works/pi-ai": "0.62.0"` (not `^0.62.0`, per risk mitigation)
    - Add `js-yaml` dependency
    - Verify `files` includes `python/batteries.py`
 

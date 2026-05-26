@@ -58,7 +58,7 @@
  * mandate added in the G2b review cycle; rlmx#78 for the native
  * tool-dispatch loop that unblocks Tier 2 agents.
  */
-import { completeSimple as piCompleteSimple, getModel as piGetModel, } from "@mariozechner/pi-ai";
+import { completeSimple as piCompleteSimple, getModel as piGetModel, } from "@earendil-works/pi-ai";
 import { llmCompleteSimple } from "../llm.js";
 const DEFAULT_RETRY_FORMATTER = (hint) => `# Retry hint from the validator\n\n${hint}\n\n`;
 const DEFAULT_MAX_TOOL_ITERATIONS = 16;
