@@ -58,7 +58,7 @@
  * mandate added in the G2b review cycle; rlmx#78 for the native
  * tool-dispatch loop that unblocks Tier 2 agents.
  */
-import type { AssistantMessage as PiAssistantMessage, Context as PiContext } from "@mariozechner/pi-ai";
+import type { AssistantMessage as PiAssistantMessage, Context as PiContext } from "@earendil-works/pi-ai";
 import type { ModelConfig } from "../config.js";
 import { type LLMResponse } from "../llm.js";
 import type { IterationDriver, IterationRequest } from "./agent.js";

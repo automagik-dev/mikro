@@ -4,7 +4,7 @@
  * Provides completeSimple wrapper, batched calls, IPC request handling
  * from the Python REPL, and rlm_query child process spawning.
  */
-import { completeSimple, getModel } from "@mariozechner/pi-ai";
+import { completeSimple, getModel } from "@earendil-works/pi-ai";
 import { spawn } from "node:child_process";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
 /** Create a fresh usage tracker. */

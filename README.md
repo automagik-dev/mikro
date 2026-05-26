@@ -459,7 +459,7 @@ console.log(result.references);
 
 ## Requirements
 
-- Node.js >= 18
+- Node.js >= 22.19.0
 - Python 3.10+ (for the REPL subprocess)
 - An LLM API key (Anthropic, OpenAI, Google, etc.)
 

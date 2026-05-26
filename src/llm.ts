@@ -5,8 +5,8 @@
  * from the Python REPL, and rlm_query child process spawning.
  */
 
-import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import type { Message, UserMessage, AssistantMessage as PiAssistantMessage, SimpleStreamOptions, KnownProvider, TextContent } from "@mariozechner/pi-ai";
+import { completeSimple, getModel } from "@earendil-works/pi-ai";
+import type { Message, UserMessage, AssistantMessage as PiAssistantMessage, SimpleStreamOptions, KnownProvider, TextContent } from "@earendil-works/pi-ai";
 import { spawn } from "node:child_process";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
 import type { LLMRequest } from "./ipc.js";
