@@ -173,4 +173,10 @@ jobs:
         # On main context: publish package.json's current version as @latest
         # (no bump, matches what dev already tagged).
         # On dev context: publish the version we just bumped to as @next.
-        run: npm publish --access public --tag ${{ steps.context.outputs.npm_tag }}
+        run: |
+          VERSION="${{ steps.pubver.outputs.version }}"
+          TAG="${{ steps.context.outputs.npm_tag }}"
+          if ! npm publish --access public --tag "$TAG" 2>&1; then
+            echo "Publish failed (likely already published) — adding dist-tag $TAG..."
+            npm dist-tag add "@automagik/rlmx@${VERSION}" "$TAG"
+          fi
