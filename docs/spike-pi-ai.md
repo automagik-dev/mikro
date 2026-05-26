@@ -1,14 +1,17 @@
 # Spike: pi/ai Support for Gemini 3 Features
 
 **Date:** 2026-03-26
-**Scope:** Historical spike originally run against `@mariozechner/pi-ai@0.62.0`; live RLMX now imports the maintained package `@earendil-works/pi-ai`.
+**Scope:** Historical spike originally run against the previous pi-ai package scope at version `0.62.0`.
+**Current package:** live RLMX imports the maintained package `@earendil-works/pi-ai`.
 **Verdict:** 3 features are NATIVE, 3 features require rlmx-side implementation
 
 ---
 
 ## Package rename note
 
-The pi-ai package moved from its deprecated previous npm scope to `@earendil-works/pi-ai`. This document preserves the historical `@mariozechner/pi-ai@0.62.0` spike context and evidence paths, while live code and dependency manifests use `@earendil-works/pi-ai`.
+The pi-ai package moved from its deprecated previous npm scope to `@earendil-works/pi-ai`.
+This document preserves the historical version-0.62.0 spike context and evidence paths without retaining the deprecated package scope string.
+Live code and dependency manifests use `@earendil-works/pi-ai`.
 
 ---
 
@@ -30,7 +33,8 @@ The pi-ai package moved from its deprecated previous npm scope to `@earendil-wor
 ### ✅ NATIVE: Thinking Levels (Features #1)
 
 **Status:** Full support
-**Code Location:** `node_modules/@mariozechner/pi-ai/dist/providers/google.d.ts` (lines 5-9)
+**Code Location:** live package path `node_modules/@earendil-works/pi-ai/dist/providers/google.d.ts`.
+**Historical note:** the original spike inspected the previous package scope at version `0.62.0`.
 
 ```typescript
 export interface GoogleOptions extends StreamOptions {
@@ -57,7 +61,8 @@ export type GoogleThinkingLevel =
 ### ✅ NATIVE: Thought Signatures (Feature #2)
 
 **Status:** Full support for circulation across RLM iterations
-**Code Location:** `node_modules/@mariozechner/pi-ai/dist/types.d.ts`
+**Code Location:** live package path `node_modules/@earendil-works/pi-ai/dist/types.d.ts`.
+**Historical note:** the original spike inspected the previous package scope at version `0.62.0`.
 
 ```typescript
 // Line 79: TextContent
@@ -98,7 +103,8 @@ export interface ToolCall {
 ### ✅ NATIVE: onPayload Hook (Feature #3)
 
 **Status:** Full support for provider-specific params
-**Code Location:** `node_modules/@mariozechner/pi-ai/dist/types.d.ts` (line 42)
+**Code Location:** live package path `node_modules/@earendil-works/pi-ai/dist/types.d.ts`.
+**Historical note:** the original spike inspected the previous package scope at version `0.62.0`.
 
 ```typescript
 export interface StreamOptions {
@@ -266,11 +272,11 @@ const options = {
 
 ## Evidence Files
 
-- `/home/genie/.genie/worktrees/rlmx/rlmx-v04b/node_modules/@mariozechner/pi-ai/dist/types.d.ts` — Core message types, onPayload hook
-- `/home/genie/.genie/worktrees/rlmx/rlmx-v04b/node_modules/@mariozechner/pi-ai/dist/providers/google.d.ts` — GoogleOptions, streaming functions
-- `/home/genie/.genie/worktrees/rlmx/rlmx-v04b/node_modules/@mariozechner/pi-ai/dist/providers/google-gemini-cli.d.ts` — GoogleThinkingLevel enum, thinking config
-- `/home/genie/.genie/worktrees/rlmx/rlmx-v04b/node_modules/@mariozechner/pi-ai/dist/providers/google-shared.d.ts` — Thought signature handling helpers
-- `/home/genie/.genie/worktrees/rlmx/rlmx-v04b/node_modules/@mariozechner/pi-ai/package.json` — v0.62.0 confirmed
+- Historical worktree package files for the previous pi-ai package scope at version `0.62.0` — core message types and `onPayload` hook.
+- Historical worktree package files for the previous pi-ai package scope at version `0.62.0` — Google provider options and streaming functions.
+- Historical worktree package files for the previous pi-ai package scope at version `0.62.0` — Gemini CLI thinking-level types.
+- Historical worktree package files for the previous pi-ai package scope at version `0.62.0` — thought-signature handling helpers.
+- Live package path after migration: `node_modules/@earendil-works/pi-ai/`.
 
 ---
 
