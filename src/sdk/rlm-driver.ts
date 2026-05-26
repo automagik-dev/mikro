@@ -62,7 +62,7 @@
 import {
 	completeSimple as piCompleteSimple,
 	getModel as piGetModel,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import type {
 	AssistantMessage as PiAssistantMessage,
 	Context as PiContext,
@@ -73,7 +73,7 @@ import type {
 	ToolCall as PiToolCall,
 	ToolResultMessage as PiToolResultMessage,
 	UserMessage as PiUserMessage,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import type { ModelConfig } from "../config.js";
 import { llmCompleteSimple, type LLMResponse } from "../llm.js";
 import type {

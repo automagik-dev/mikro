@@ -181,7 +181,7 @@ Integrate all 14 Gemini 3 native features into rlmx, making it the most capable 
 
 **Validation:**
 ```bash
-cd /home/genie/research/rlmx && node -e "const {getModel} = require('@mariozechner/pi-ai'); const m = getModel('google','gemini-3.1-flash-lite-preview'); console.log(m ? 'PASS' : 'FAIL')"
+cd /home/genie/research/rlmx && node -e "const {getModel} = require('@earendil-works/pi-ai'); const m = getModel('google','gemini-3.1-flash-lite-preview'); console.log(m ? 'PASS' : 'FAIL')"
 ```
 
 **depends-on:** none

@@ -27,7 +27,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "0.66.1",
+    "@earendil-works/pi-ai": "^0.75.5",
     "js-yaml": "^4.1.1",
     "pg": "^8.20.0",
     "pgserve": "^1.1.10"
@@ -42,7 +42,7 @@
     "typescript": "^5.7.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.19.0"
   },
   "keywords": [
     "rlm",

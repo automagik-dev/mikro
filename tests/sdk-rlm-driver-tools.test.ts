@@ -17,7 +17,7 @@ import type {
 	AssistantMessage as PiAssistantMessage,
 	Context as PiContext,
 	ToolCall as PiToolCall,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import type { ModelConfig } from "../src/config.js";
 import {
 	type AgentEvent,

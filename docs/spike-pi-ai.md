@@ -1,8 +1,14 @@
 # Spike: pi/ai Support for Gemini 3 Features
 
 **Date:** 2026-03-26
-**Scope:** Verify which Gemini 3 native features are supported by `@mariozechner/pi-ai@0.62.0`
+**Scope:** Historical spike originally run against `@mariozechner/pi-ai@0.62.0`; live RLMX now imports the maintained package `@earendil-works/pi-ai`.
 **Verdict:** 3 features are NATIVE, 3 features require rlmx-side implementation
+
+---
+
+## Package rename note
+
+The pi-ai package moved from its deprecated previous npm scope to `@earendil-works/pi-ai`. This document preserves the historical `@mariozechner/pi-ai@0.62.0` spike context and evidence paths, while live code and dependency manifests use `@earendil-works/pi-ai`.
 
 ---
 

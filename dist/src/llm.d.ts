@@ -4,7 +4,7 @@
  * Provides completeSimple wrapper, batched calls, IPC request handling
  * from the Python REPL, and rlm_query child process spawning.
  */
-import type { AssistantMessage as PiAssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage as PiAssistantMessage } from "@earendil-works/pi-ai";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
 import type { LLMRequest } from "./ipc.js";
 import type { Logger } from "./logger.js";
