@@ -21,6 +21,13 @@ export interface UsageStats {
 }
 /** Create a fresh usage tracker. */
 export declare function createUsage(): UsageStats;
+/** Return a - b for usage accounting splits. */
+export declare function usageDelta(a: UsageStats, b: UsageStats): UsageStats;
+export interface UsageBreakdown {
+    root: UsageStats;
+    child: UsageStats;
+    total: UsageStats;
+}
 /** Gemini-specific call counts tracked across an RLM run. */
 export interface GeminiCallCounts {
     webSearch: number;
@@ -89,19 +96,88 @@ export declare function llmCompleteBatched(prompts: string[], modelConfig: Model
     results: string[];
     usage: UsageStats;
 }>;
+/** Parsed child RLM process result. */
+export interface RlmChildResult {
+    answer: string;
+    runId?: string;
+    usage?: UsageStats;
+    raw?: unknown;
+}
+export interface RlmChildInvocationOptions {
+    output?: "json";
+    maxIterations?: number;
+    timeout?: number;
+    maxDepth?: number;
+    maxCost?: number | null;
+    maxTokens?: number | null;
+    logPath?: string | null;
+    stats?: boolean;
+    noSession?: boolean;
+}
+/** Build bounded argv for a recursive child process. */
+export declare function buildRlmChildArgs(prompt: string, options?: RlmChildInvocationOptions): string[];
+/** Build env inheritance for child process with explicit recursive ancestry. */
+export declare function buildChildEnv(env: NodeJS.ProcessEnv, parentRunId: string, correlationId: string): NodeJS.ProcessEnv;
+/** Parse stdout from a child rlmx --output json --stats run. */
+export declare function parseRlmChildOutput(stdout: string): RlmChildResult;
 /**
  * Spawn a child rlmx process for rlm_query() recursive sub-calls.
  * The child inherits the parent's cwd (and thus .md configs).
  */
-export declare function rlmQuery(prompt: string, cwd: string, signal?: AbortSignal): Promise<string>;
+export declare function rlmQuery(prompt: string, cwd: string, signal?: AbortSignal, options?: RlmChildInvocationOptions & {
+    logger?: Logger;
+    parentRunId?: string;
+    onChildStart?: (data: {
+        correlationId: string;
+        prompt: string;
+        depth: number;
+    }) => string | undefined;
+    onChildEnd?: (data: {
+        spanId?: string;
+        result: RlmChildResult;
+        durationMs: number;
+        isError?: boolean;
+        errorMessage?: string;
+    }) => void;
+}): Promise<RlmChildResult>;
 /**
  * Run multiple rlm_query calls concurrently (max 4).
  */
-export declare function rlmQueryBatched(prompts: string[], cwd: string, signal?: AbortSignal): Promise<string[]>;
+export declare function rlmQueryBatched(prompts: string[], cwd: string, signal?: AbortSignal, options?: RlmChildInvocationOptions & {
+    logger?: Logger;
+    parentRunId?: string;
+    onChildStart?: (data: {
+        correlationId: string;
+        prompt: string;
+        depth: number;
+    }) => string | undefined;
+    onChildEnd?: (data: {
+        spanId?: string;
+        result: RlmChildResult;
+        durationMs: number;
+        isError?: boolean;
+        errorMessage?: string;
+    }) => void;
+}): Promise<RlmChildResult[]>;
 /**
  * Handle an LLM IPC request from the Python REPL.
  * Routes to the appropriate handler based on request_type.
  * When geminiCounts is provided, increments Gemini-specific call counters.
  */
-export declare function handleLLMRequest(request: LLMRequest, config: RlmxConfig, usage: UsageStats, signal?: AbortSignal, geminiCounts?: GeminiCallCounts, storage?: PgStorage): Promise<string[]>;
+export declare function handleLLMRequest(request: LLMRequest, config: RlmxConfig, usage: UsageStats, signal?: AbortSignal, geminiCounts?: GeminiCallCounts, storage?: PgStorage, childUsage?: UsageStats, recursiveOptions?: RlmChildInvocationOptions & {
+    logger?: Logger;
+    parentRunId?: string;
+    onChildStart?: (data: {
+        correlationId: string;
+        prompt: string;
+        depth: number;
+    }) => string | undefined;
+    onChildEnd?: (data: {
+        spanId?: string;
+        result: RlmChildResult;
+        durationMs: number;
+        isError?: boolean;
+        errorMessage?: string;
+    }) => void;
+}): Promise<string[]>;
 //# sourceMappingURL=llm.d.ts.map

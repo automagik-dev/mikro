@@ -8,6 +8,7 @@
 import { completeSimple, getModel } from "@earendil-works/pi-ai";
 import type { Message, UserMessage, AssistantMessage as PiAssistantMessage, SimpleStreamOptions, KnownProvider, TextContent } from "@earendil-works/pi-ai";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
 import type { LLMRequest } from "./ipc.js";
 import type { Logger } from "./logger.js";
@@ -27,6 +28,24 @@ export interface UsageStats {
 /** Create a fresh usage tracker. */
 export function createUsage(): UsageStats {
   return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0 };
+}
+
+/** Return a - b for usage accounting splits. */
+export function usageDelta(a: UsageStats, b: UsageStats): UsageStats {
+  return {
+    inputTokens: a.inputTokens - b.inputTokens,
+    outputTokens: a.outputTokens - b.outputTokens,
+    cacheReadTokens: a.cacheReadTokens - b.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens - b.cacheWriteTokens,
+    totalCost: a.totalCost - b.totalCost,
+    llmCalls: a.llmCalls - b.llmCalls,
+  };
+}
+
+export interface UsageBreakdown {
+  root: UsageStats;
+  child: UsageStats;
+  total: UsageStats;
 }
 
 /** Gemini-specific call counts tracked across an RLM run. */
@@ -296,6 +315,78 @@ export async function llmCompleteBatched(
   return { results, usage };
 }
 
+/** Parsed child RLM process result. */
+export interface RlmChildResult {
+  answer: string;
+  runId?: string;
+  usage?: UsageStats;
+  raw?: unknown;
+}
+
+export interface RlmChildInvocationOptions {
+  output?: "json";
+  maxIterations?: number;
+  timeout?: number;
+  maxDepth?: number;
+  maxCost?: number | null;
+  maxTokens?: number | null;
+  logPath?: string | null;
+  stats?: boolean;
+  noSession?: boolean;
+}
+
+/** Build bounded argv for a recursive child process. */
+export function buildRlmChildArgs(prompt: string, options: RlmChildInvocationOptions = {}): string[] {
+  const args = [prompt, "--output", options.output ?? "json"];
+  if (options.stats) args.push("--stats");
+  if (options.maxIterations !== undefined) args.push("--max-iterations", String(options.maxIterations));
+  if (options.timeout !== undefined) args.push("--timeout", String(options.timeout));
+  if (options.maxDepth !== undefined) args.push("--max-depth", String(options.maxDepth));
+  if (options.maxCost !== undefined && options.maxCost !== null) args.push("--max-cost", String(options.maxCost));
+  if (options.maxTokens !== undefined && options.maxTokens !== null) args.push("--max-tokens", String(options.maxTokens));
+  // Do not pass --log to children by default: child_start/child_end live in the parent log.
+  if (options.noSession) args.push("--no-session");
+  return args;
+}
+
+/** Build env inheritance for child process with explicit recursive ancestry. */
+export function buildChildEnv(env: NodeJS.ProcessEnv, parentRunId: string, correlationId: string): NodeJS.ProcessEnv {
+  const depth = Number.parseInt(env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
+  return {
+    ...env,
+    RLMX_PARENT_RUN_ID: parentRunId,
+    RLMX_CHILD_CORRELATION_ID: correlationId,
+    RLMX_RECURSION_DEPTH: String(depth + 1),
+  };
+}
+
+/** Parse stdout from a child rlmx --output json --stats run. */
+export function parseRlmChildOutput(stdout: string): RlmChildResult {
+  try {
+    const result = JSON.parse(stdout) as Record<string, unknown>;
+    const stats = result.stats as Record<string, unknown> | undefined;
+    return {
+      answer: typeof result.answer === "string" ? result.answer : stdout,
+      runId: typeof stats?.run_id === "string" ? stats.run_id : undefined,
+      usage: isUsageStats(result.usage) ? result.usage : undefined,
+      raw: result,
+    };
+  } catch {
+    return { answer: stdout.trim() || "Error: empty response from child rlmx" };
+  }
+}
+
+function isUsageStats(value: unknown): value is UsageStats {
+  const v = value as Partial<UsageStats> | undefined;
+  return !!v &&
+    typeof v.inputTokens === "number" &&
+    typeof v.outputTokens === "number" &&
+    typeof v.cacheReadTokens === "number" &&
+    typeof v.cacheWriteTokens === "number" &&
+    typeof v.totalCost === "number" &&
+    typeof v.llmCalls === "number";
+}
+
 /**
  * Spawn a child rlmx process for rlm_query() recursive sub-calls.
  * The child inherits the parent's cwd (and thus .md configs).
@@ -303,21 +394,75 @@ export async function llmCompleteBatched(
 export async function rlmQuery(
   prompt: string,
   cwd: string,
-  signal?: AbortSignal
-): Promise<string> {
-  return new Promise<string>((resolve) => {
+  signal?: AbortSignal,
+  options: RlmChildInvocationOptions & {
+    logger?: Logger;
+    parentRunId?: string;
+    onChildStart?: (data: { correlationId: string; prompt: string; depth: number }) => string | undefined;
+    onChildEnd?: (data: { spanId?: string; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
+  } = {}
+): Promise<RlmChildResult> {
+  return new Promise<RlmChildResult>((resolve) => {
+    const correlationId = randomUUID();
+    const parentRunId = options.parentRunId ?? process.env.RLMX_PARENT_RUN_ID ?? "root";
+    const depth = (Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0) + 1;
+    const currentDepth = Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
+    if (options.maxDepth !== undefined && currentDepth >= options.maxDepth) {
+      const error = `Error: max recursive rlm_query depth ${options.maxDepth} reached`;
+      const result: RlmChildResult = { answer: error };
+      options.logger?.childStart({
+        child_correlation_id: correlationId,
+        prompt_preview: prompt.slice(0, 200),
+        depth,
+      });
+      options.logger?.childEnd({
+        child_correlation_id: correlationId,
+        child_run_id: null,
+        input_tokens: 0,
+        output_tokens: 0,
+        cost: 0,
+        llm_calls: 0,
+        time_ms: 0,
+        is_error: true,
+        error_message: error,
+      });
+      resolve(result);
+      return;
+    }
+
+    options.logger?.childStart({
+      child_correlation_id: correlationId,
+      prompt_preview: prompt.slice(0, 200),
+      depth,
+    });
+    const spanId = options.onChildStart?.({ correlationId, prompt, depth });
+    const startMs = Date.now();
     const child = spawn(
       process.execPath,
-      [process.argv[1], prompt, "--output", "json"],
+      [process.argv[1], ...buildRlmChildArgs(prompt, { ...options, output: "json", stats: true, noSession: true })],
       {
         cwd,
+        detached: process.platform !== "win32",
         stdio: ["pipe", "pipe", "pipe"],
-        env: process.env,
+        env: buildChildEnv(process.env, parentRunId, correlationId),
       }
     );
 
+    const terminateChildTree = (): void => {
+      if (!child.pid) return;
+      try {
+        if (process.platform !== "win32") {
+          process.kill(-child.pid, "SIGTERM");
+        } else {
+          child.kill("SIGTERM");
+        }
+      } catch {
+        child.kill("SIGTERM");
+      }
+    };
+
     if (signal) {
-      signal.addEventListener("abort", () => child.kill("SIGTERM"), {
+      signal.addEventListener("abort", terminateChildTree, {
         once: true,
       });
     }
@@ -333,20 +478,56 @@ export async function rlmQuery(
     });
 
     child.on("close", (code) => {
+      const durationMs = Date.now() - startMs;
       if (code !== 0) {
-        resolve(`Error: child rlmx exited with code ${code}. ${stderr}`.trim());
+        const errorMessage = `Error: child rlmx exited with code ${code}. ${stderr}`.trim();
+        const result: RlmChildResult = { answer: errorMessage };
+        options.logger?.childEnd({
+          child_correlation_id: correlationId,
+          child_run_id: null,
+          input_tokens: 0,
+          output_tokens: 0,
+          cost: 0,
+          llm_calls: 0,
+          time_ms: durationMs,
+          is_error: true,
+          error_message: errorMessage,
+        });
+        options.onChildEnd?.({ spanId, result, durationMs, isError: true, errorMessage });
+        resolve(result);
         return;
       }
-      try {
-        const result = JSON.parse(stdout);
-        resolve(result.answer ?? stdout);
-      } catch {
-        resolve(stdout.trim() || `Error: empty response from child rlmx`);
-      }
+      const result = parseRlmChildOutput(stdout);
+      options.logger?.childEnd({
+        child_correlation_id: correlationId,
+        child_run_id: result.runId ?? null,
+        input_tokens: result.usage?.inputTokens ?? 0,
+        output_tokens: result.usage?.outputTokens ?? 0,
+        cost: result.usage?.totalCost ?? 0,
+        llm_calls: result.usage?.llmCalls ?? 0,
+        time_ms: durationMs,
+      });
+      options.onChildEnd?.({ spanId, result, durationMs });
+      resolve(result);
     });
 
     child.on("error", (err) => {
-      resolve(`Error: failed to spawn child rlmx: ${err.message}`);
+      const durationMs = Date.now() - startMs;
+      const errorMessage = `Error: failed to spawn child rlmx: ${err.message}`;
+      const result: RlmChildResult = { answer: errorMessage };
+      options.logger?.childEnd({
+        child_correlation_id: correlationId,
+        child_run_id: null,
+        input_tokens: 0,
+        output_tokens: 0,
+        cost: 0,
+        llm_calls: 0,
+        time_ms: durationMs,
+        is_error: true,
+        error_message: errorMessage,
+      });
+      options.onChildEnd?.({ spanId, result, durationMs, isError: true, errorMessage });
+      resolve(result);
     });
   });
 }
@@ -357,15 +538,21 @@ export async function rlmQuery(
 export async function rlmQueryBatched(
   prompts: string[],
   cwd: string,
-  signal?: AbortSignal
-): Promise<string[]> {
+  signal?: AbortSignal,
+  options: RlmChildInvocationOptions & {
+    logger?: Logger;
+    parentRunId?: string;
+    onChildStart?: (data: { correlationId: string; prompt: string; depth: number }) => string | undefined;
+    onChildEnd?: (data: { spanId?: string; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
+  } = {}
+): Promise<RlmChildResult[]> {
   const MAX_CONCURRENT = 4;
-  const results: string[] = new Array(prompts.length);
+  const results: RlmChildResult[] = new Array(prompts.length);
 
   for (let i = 0; i < prompts.length; i += MAX_CONCURRENT) {
     const batch = prompts.slice(i, i + MAX_CONCURRENT);
     const batchResults = await Promise.all(
-      batch.map((p) => rlmQuery(p, cwd, signal))
+      batch.map((p) => rlmQuery(p, cwd, signal, options))
     );
     for (let j = 0; j < batchResults.length; j++) {
       results[i + j] = batchResults[j];
@@ -386,7 +573,14 @@ export async function handleLLMRequest(
   usage: UsageStats,
   signal?: AbortSignal,
   geminiCounts?: GeminiCallCounts,
-  storage?: PgStorage
+  storage?: PgStorage,
+  childUsage?: UsageStats,
+  recursiveOptions: RlmChildInvocationOptions & {
+    logger?: Logger;
+    parentRunId?: string;
+    onChildStart?: (data: { correlationId: string; prompt: string; depth: number }) => string | undefined;
+    onChildEnd?: (data: { spanId?: string; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
+  } = {}
 ): Promise<string[]> {
   const subCallModel: ModelConfig = config.model.subCallModel
     ? { ...config.model, model: config.model.subCallModel }
@@ -416,18 +610,30 @@ export async function handleLLMRequest(
       const result = await rlmQuery(
         request.prompts[0],
         config.configDir,
-        signal
+        signal,
+        recursiveOptions
       );
-      return [result];
+      if (result.usage) {
+        mergeUsage(usage, result.usage);
+        if (childUsage) mergeUsage(childUsage, result.usage);
+      }
+      return [result.answer];
     }
 
     case "rlm_query_batched": {
       const results = await rlmQueryBatched(
         request.prompts,
         config.configDir,
-        signal
+        signal,
+        recursiveOptions
       );
-      return results;
+      for (const result of results) {
+        if (result.usage) {
+          mergeUsage(usage, result.usage);
+          if (childUsage) mergeUsage(childUsage, result.usage);
+        }
+      }
+      return results.map((result) => result.answer);
     }
 
     case "web_search": {

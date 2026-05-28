@@ -4,12 +4,13 @@
  * Supports text, JSON, stream (JSONL), and verbose modes.
  * Stats output: --stats emits JSON to stderr, --output json --stats includes stats in response.
  */
-import type { UsageStats, GeminiCallCounts } from "./llm.js";
+import type { UsageStats, GeminiCallCounts, UsageBreakdown } from "./llm.js";
 /** The full result returned by an RLM run. */
 export interface RLMResult {
     answer: string;
     references: string[];
     usage: UsageStats;
+    usageBreakdown?: UsageBreakdown;
     iterations: number;
     model: string;
     budgetHit?: string | null;
@@ -47,8 +48,20 @@ export interface StatsData {
     budget_hit: string | null;
     model: string;
     run_id: string;
+    usage_split?: {
+        root: UsageSplitStats;
+        child: UsageSplitStats;
+        total: UsageSplitStats;
+    };
     cache?: CacheStats;
     gemini?: GeminiStatsData;
+}
+export interface UsageSplitStats {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    total_cost: number;
+    llm_calls: number;
 }
 /** Stream event emitted during iteration. */
 export interface StreamEvent {

@@ -21,6 +21,8 @@ export type EventType =
   | "cache_init"
   | "llm_call"
   | "llm_subcall"
+  | "child_start"
+  | "child_end"
   | "repl_exec"
   | "run_end";
 
@@ -114,6 +116,30 @@ export class Logger {
     time_ms: number;
   }): void {
     this.log("llm_subcall", data);
+  }
+
+  /** Emit child_start for recursive rlm_query child process spawning. */
+  childStart(data: {
+    child_correlation_id: string;
+    prompt_preview: string;
+    depth: number;
+  }): void {
+    this.log("child_start", data);
+  }
+
+  /** Emit child_end for recursive rlm_query child process completion. */
+  childEnd(data: {
+    child_correlation_id: string;
+    child_run_id?: string | null;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+    llm_calls: number;
+    time_ms: number;
+    is_error?: boolean;
+    error_message?: string | null;
+  }): void {
+    this.log("child_end", data);
   }
 
   /** Emit repl_exec event. */
