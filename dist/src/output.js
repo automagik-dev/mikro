@@ -26,6 +26,15 @@ function estimateCacheSavings(result) {
     // Cache reads cost ~10% of normal input price, so savings ≈ 90% of full price
     return cacheReadTokens * costPerToken * 0.9;
 }
+function toUsageSplitStats(usage) {
+    return {
+        input_tokens: usage.inputTokens,
+        output_tokens: usage.outputTokens,
+        total_tokens: usage.inputTokens + usage.outputTokens,
+        total_cost: usage.totalCost,
+        llm_calls: usage.llmCalls,
+    };
+}
 export function buildStats(result, meta) {
     const stats = {
         iterations: result.iterations,
@@ -38,6 +47,13 @@ export function buildStats(result, meta) {
         model: result.model,
         run_id: meta.run_id ?? "",
     };
+    if (result.usageBreakdown) {
+        stats.usage_split = {
+            root: toUsageSplitStats(result.usageBreakdown.root),
+            child: toUsageSplitStats(result.usageBreakdown.child),
+            total: toUsageSplitStats(result.usageBreakdown.total),
+        };
+    }
     if (meta.cache_enabled) {
         stats.cache = {
             enabled: true,

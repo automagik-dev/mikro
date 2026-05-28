@@ -12,7 +12,7 @@
  *   run_end     — emitted once at the end of a run with totals
  */
 /** Supported log event types. */
-export type EventType = "run_start" | "cache_init" | "llm_call" | "llm_subcall" | "repl_exec" | "run_end";
+export type EventType = "run_start" | "cache_init" | "llm_call" | "llm_subcall" | "child_start" | "child_end" | "repl_exec" | "run_end";
 /** A single structured log event. */
 export interface LogEvent {
     event: EventType;
@@ -64,6 +64,24 @@ export declare class Logger {
         output_tokens: number;
         cost: number;
         time_ms: number;
+    }): void;
+    /** Emit child_start for recursive rlm_query child process spawning. */
+    childStart(data: {
+        child_correlation_id: string;
+        prompt_preview: string;
+        depth: number;
+    }): void;
+    /** Emit child_end for recursive rlm_query child process completion. */
+    childEnd(data: {
+        child_correlation_id: string;
+        child_run_id?: string | null;
+        input_tokens: number;
+        output_tokens: number;
+        cost: number;
+        llm_calls: number;
+        time_ms: number;
+        is_error?: boolean;
+        error_message?: string | null;
     }): void;
     /** Emit repl_exec event. */
     replExec(data: {

@@ -64,6 +64,14 @@ export class Logger {
     llmSubcall(data) {
         this.log("llm_subcall", data);
     }
+    /** Emit child_start for recursive rlm_query child process spawning. */
+    childStart(data) {
+        this.log("child_start", data);
+    }
+    /** Emit child_end for recursive rlm_query child process completion. */
+    childEnd(data) {
+        this.log("child_end", data);
+    }
     /** Emit repl_exec event. */
     replExec(data) {
         this.log("repl_exec", data);

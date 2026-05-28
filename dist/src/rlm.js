@@ -14,6 +14,7 @@ import { REPL } from "./repl.js";
 import { PgStorage } from "./storage.js";
 import { ObservabilityRecorder } from "./observe.js";
 import { llmComplete, handleLLMRequest, createUsage, createGeminiCallCounts, mergeUsage, } from "./llm.js";
+import { LangfuseTraceRecorder } from "./langfuse.js";
 import { extractCodeBlocks, detectFinal, formatIterationResult, } from "./parser.js";
 import { emitStreamEvent, logVerbose } from "./output.js";
 import { BudgetTracker } from "./budget.js";
@@ -127,6 +128,7 @@ function prepareReplContext(context) {
 export async function rlmLoop(query, context, config, options = {}) {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const usage = createUsage();
+    const childUsage = createUsage();
     const geminiCounts = createGeminiCallCounts();
     const budget = new BudgetTracker(config.budget);
     // ── Storage mode setup ──────────────────────────────────
@@ -134,6 +136,13 @@ export async function rlmLoop(query, context, config, options = {}) {
     let recorder;
     let storageRecordCount;
     const runId = randomUUID();
+    const langfuse = new LangfuseTraceRecorder();
+    langfuse.startTrace({
+        runId: opts.logger?.runId ?? runId,
+        query,
+        model: `${config.model.provider}/${config.model.model}`,
+        metadata: { storage_mode: !!opts.storageMode },
+    });
     if (opts.storageMode) {
         storage = new PgStorage();
         await storage.start(config.storage);
@@ -210,7 +219,46 @@ export async function rlmLoop(query, context, config, options = {}) {
         // Set up LLM request handler for REPL IPC — pass storage for pg_* routes
         repl.onLLMRequest(async (request) => {
             const startMs = Date.now();
-            const results = await handleLLMRequest(request, config, usage, abortController.signal, geminiCounts, storage);
+            const childUsageBefore = { ...childUsage };
+            const remainingChildBudget = buildRemainingChildBudget(config, budget);
+            const results = await handleLLMRequest(request, config, usage, abortController.signal, geminiCounts, storage, childUsage, {
+                logger: opts.logger,
+                parentRunId: opts.logger?.runId ?? runId,
+                maxIterations: opts.maxIterations,
+                timeout: opts.timeout,
+                maxDepth: config.budget.maxDepth ?? 3,
+                maxCost: remainingChildBudget.maxCost,
+                maxTokens: remainingChildBudget.maxTokens,
+                onChildStart: ({ correlationId, prompt, depth }) => langfuse.childStart({
+                    parentRunId: opts.logger?.runId ?? runId,
+                    correlationId,
+                    prompt,
+                    depth,
+                }),
+                onChildEnd: ({ spanId, result, durationMs, isError, errorMessage }) => {
+                    if (spanId) {
+                        langfuse.childEnd(spanId, {
+                            childRunId: result.runId,
+                            answerPreview: result.answer.slice(0, 1000),
+                            durationMs,
+                            usage: result.usage,
+                            isError,
+                            errorMessage,
+                        });
+                    }
+                },
+            });
+            const childUsageDelta = {
+                inputTokens: childUsage.inputTokens - childUsageBefore.inputTokens,
+                outputTokens: childUsage.outputTokens - childUsageBefore.outputTokens,
+                cacheReadTokens: childUsage.cacheReadTokens - childUsageBefore.cacheReadTokens,
+                cacheWriteTokens: childUsage.cacheWriteTokens - childUsageBefore.cacheWriteTokens,
+                totalCost: childUsage.totalCost - childUsageBefore.totalCost,
+                llmCalls: childUsage.llmCalls - childUsageBefore.llmCalls,
+            };
+            if (childUsageDelta.llmCalls > 0) {
+                budget.record(childUsageDelta.inputTokens, childUsageDelta.outputTokens, childUsageDelta.totalCost);
+            }
             // Record sub-calls to observability
             if (recorder && request.request_type !== "llm_query" && request.request_type !== "llm_query_batched") {
                 recorder.recordSubCall(0, // iteration not available here; will be approximate
@@ -231,9 +279,13 @@ export async function rlmLoop(query, context, config, options = {}) {
                 });
             }
             await repl.stop();
+            await langfuse.flush().catch((err) => {
+                if (opts.verbose)
+                    process.stderr.write(`rlmx: Langfuse flush failed: ${err instanceof Error ? err.message : String(err)}\n`);
+            });
             if (storage)
                 await storage.stop();
-            return buildResult(answer, usage, iterations, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed());
+            return buildResult(answer, usage, iterations, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
         };
         // Build initial message history
         const messages = [
@@ -445,7 +497,7 @@ export async function rlmLoop(query, context, config, options = {}) {
             await repl.stop();
             if (storage)
                 await storage.stop();
-            return buildResult("Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.", usage, actualIterations, config, "empty_responses", geminiCounts, repl.getGeminiBatteriesUsed());
+            return buildResult("Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.", usage, actualIterations, config, "empty_responses", geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
         }
         // Force a final answer for normal loop exit
         if (opts.verbose) {
@@ -463,7 +515,7 @@ export async function rlmLoop(query, context, config, options = {}) {
         if (storage)
             await storage.stop().catch(() => { });
         if ((err instanceof Error && err.name === "AbortError") || abortController.signal.aborted) {
-            return buildResult("Error: RLM query timed out", usage, 0, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed());
+            return buildResult("Error: RLM query timed out", usage, 0, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
         }
         throw err;
     }
@@ -503,10 +555,36 @@ async function getVariableFromRepl(repl, varName) {
         return null;
     }
 }
+function buildUsageBreakdown(total, child) {
+    return {
+        root: {
+            inputTokens: total.inputTokens - child.inputTokens,
+            outputTokens: total.outputTokens - child.outputTokens,
+            cacheReadTokens: total.cacheReadTokens - child.cacheReadTokens,
+            cacheWriteTokens: total.cacheWriteTokens - child.cacheWriteTokens,
+            totalCost: total.totalCost - child.totalCost,
+            llmCalls: total.llmCalls - child.llmCalls,
+        },
+        child: { ...child },
+        total: { ...total },
+    };
+}
+/** Return remaining global budget to hand down to recursive child processes. */
+function buildRemainingChildBudget(config, budget) {
+    const state = budget.getState();
+    return {
+        maxCost: config.budget.maxCost === null
+            ? null
+            : Math.max(0, config.budget.maxCost - state.totalCost),
+        maxTokens: config.budget.maxTokens === null
+            ? null
+            : Math.max(0, config.budget.maxTokens - state.totalInputTokens - state.totalOutputTokens),
+    };
+}
 /**
  * Build the final RLMResult.
  */
-function buildResult(answer, usage, iterations, config, budgetHit, geminiCounts, geminiBatteriesUsed) {
+function buildResult(answer, usage, iterations, config, budgetHit, geminiCounts, geminiBatteriesUsed, usageBreakdown) {
     // Extract file references from the answer (paths like docs/foo/bar.md)
     const refRegex = /(?:^|[\s(["'])([a-zA-Z0-9_./-]+\.(?:md|txt|py|ts|js|json))/gm;
     const refSet = new Set();
@@ -526,6 +604,9 @@ function buildResult(answer, usage, iterations, config, budgetHit, geminiCounts,
     };
     if (geminiCounts) {
         result.geminiCounts = geminiCounts;
+    }
+    if (usageBreakdown) {
+        result.usageBreakdown = usageBreakdown;
     }
     if (geminiBatteriesUsed && geminiBatteriesUsed.length > 0) {
         result.geminiBatteriesUsed = geminiBatteriesUsed;
