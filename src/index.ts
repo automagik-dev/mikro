@@ -30,6 +30,7 @@ export { PgStorage } from "./storage.js";
 export type { StorageConfig } from "./config.js";
 export { DEFAULT_STORAGE_CONFIG } from "./config.js";
 export { ObservabilityRecorder } from "./observe.js";
+export { LangfuseTraceRecorder } from "./langfuse.js";
 export type { LLMCallUsage, TotalUsage } from "./observe.js";
 
 export { rlmLoop } from "./rlm.js";
@@ -47,7 +48,7 @@ export {
   mergeUsage,
   createGeminiCallCounts,
 } from "./llm.js";
-export type { ChatMessage, LLMResponse, UsageStats, CacheLLMConfig, GeminiCallCounts } from "./llm.js";
+export type { ChatMessage, LLMResponse, UsageStats, UsageBreakdown, CacheLLMConfig, GeminiCallCounts } from "./llm.js";
 
 export {
   extractCodeBlocks,

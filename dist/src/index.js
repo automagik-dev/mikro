@@ -9,6 +9,7 @@ export { BudgetTracker } from "./budget.js";
 export { PgStorage } from "./storage.js";
 export { DEFAULT_STORAGE_CONFIG } from "./config.js";
 export { ObservabilityRecorder } from "./observe.js";
+export { LangfuseTraceRecorder } from "./langfuse.js";
 export { rlmLoop } from "./rlm.js";
 export { runBatch } from "./batch.js";
 export { llmComplete, llmCompleteSimple, llmCompleteBatched, handleLLMRequest, createUsage, mergeUsage, createGeminiCallCounts, } from "./llm.js";
