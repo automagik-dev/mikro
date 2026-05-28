@@ -11,10 +11,11 @@ name: Version
 # On dev triggers we DERIVE a fresh version (today + build-count),
 # commit + tag + push back to dev, then publish as @next.
 #
-# On main triggers (merge from dev) we DO NOT bump — the version that
+# On main triggers we DO NOT bump — the version that
 # dev already tagged is in package.json. We just publish that exact
 # version as @latest, so npm and GitHub Release agree. Bumping on main
-# caused historical drift between release tag and npm latest.
+# caused historical drift between release tag and npm latest. Any green
+# main push is eligible; protected main is the release boundary.
 #
 # Auth: npm OIDC Trusted Publishing. The package's only Trusted
 # Publisher entry on npmjs.com is THIS file (version.yml). All other
@@ -48,11 +49,9 @@ jobs:
        !contains(github.event.workflow_run.head_commit.message, '[auto-version]') &&
        !contains(github.event.workflow_run.head_commit.message, '[skip ci]') &&
        (
-         (github.event.workflow_run.head_branch == 'main' &&
-          startsWith(github.event.workflow_run.head_commit.message, 'Merge pull request') &&
-          contains(github.event.workflow_run.head_commit.message, '/dev'))
+         github.event.workflow_run.head_branch == 'main'
          ||
-         (github.event.workflow_run.head_branch == 'dev')
+         github.event.workflow_run.head_branch == 'dev'
        ))
 
     steps:
