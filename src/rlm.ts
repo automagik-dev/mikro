@@ -426,6 +426,12 @@ export async function rlmLoop(
 
       // Call LLM
       const llmStartMs = Date.now();
+      const generationId = langfuse.rootGenerationStart({
+        name: `Model call — root iteration ${iteration + 1}`,
+        input: messages,
+        model: `${config.model.provider}/${config.model.model}`,
+        iteration,
+      });
       const response = await llmComplete(messages, config.model, {
         signal: abortController.signal,
         cacheConfig,
@@ -434,6 +440,11 @@ export async function rlmLoop(
         geminiConfig: config.gemini,
       });
       const llmDurationMs = Date.now() - llmStartMs;
+      langfuse.rootGenerationEnd(generationId, {
+        output: response.text,
+        durationMs: llmDurationMs,
+        usage: response.usage,
+      });
       mergeUsage(usage, response.usage);
       budget.record(response.usage.inputTokens, response.usage.outputTokens, response.usage.totalCost);
 
@@ -664,7 +675,7 @@ export async function rlmLoop(
       logVerbose(actualIterations, `${reason}, forcing final answer`);
     }
 
-    const forcedResult = await forceFinalAnswer(messages, config, usage, abortController.signal, cacheConfig);
+    const forcedResult = await forceFinalAnswer(messages, config, usage, abortController.signal, cacheConfig, langfuse, actualIterations);
     return finalize(forcedResult, actualIterations);
   } catch (err: unknown) {
     clearTimeout(timeoutHandle);
@@ -697,7 +708,9 @@ async function forceFinalAnswer(
   config: RlmxConfig,
   usage: UsageStats,
   signal?: AbortSignal,
-  cacheConfig?: CacheLLMConfig
+  cacheConfig?: CacheLLMConfig,
+  langfuse?: LangfuseTraceRecorder,
+  iteration = 0
 ): Promise<string> {
   const forceMessages: ChatMessage[] = [
     ...messages,
@@ -708,6 +721,13 @@ async function forceFinalAnswer(
     },
   ];
 
+  const generationId = langfuse?.rootGenerationStart({
+    name: "Model call — forced final answer",
+    input: forceMessages,
+    model: `${config.model.provider}/${config.model.model}`,
+    iteration,
+  });
+  const llmStartMs = Date.now();
   const response = await llmComplete(forceMessages, config.model, {
     signal,
     cacheConfig,
@@ -715,6 +735,13 @@ async function forceFinalAnswer(
     outputSchema: config.output.schema,
     geminiConfig: config.gemini,
   });
+  if (generationId) {
+    langfuse?.rootGenerationEnd(generationId, {
+      output: response.text,
+      durationMs: Date.now() - llmStartMs,
+      usage: response.usage,
+    });
+  }
   mergeUsage(usage, response.usage);
   return response.text;
 }

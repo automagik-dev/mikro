@@ -318,6 +318,12 @@ export async function rlmLoop(query, context, config, options = {}) {
             }
             // Call LLM
             const llmStartMs = Date.now();
+            const generationId = langfuse.rootGenerationStart({
+                name: `Model call — root iteration ${iteration + 1}`,
+                input: messages,
+                model: `${config.model.provider}/${config.model.model}`,
+                iteration,
+            });
             const response = await llmComplete(messages, config.model, {
                 signal: abortController.signal,
                 cacheConfig,
@@ -326,6 +332,11 @@ export async function rlmLoop(query, context, config, options = {}) {
                 geminiConfig: config.gemini,
             });
             const llmDurationMs = Date.now() - llmStartMs;
+            langfuse.rootGenerationEnd(generationId, {
+                output: response.text,
+                durationMs: llmDurationMs,
+                usage: response.usage,
+            });
             mergeUsage(usage, response.usage);
             budget.record(response.usage.inputTokens, response.usage.outputTokens, response.usage.totalCost);
             // Record LLM call to observability
@@ -504,7 +515,7 @@ export async function rlmLoop(query, context, config, options = {}) {
             const reason = budget.isExceeded() ? "budget exceeded" : abortController.signal.aborted ? "timeout" : "max iterations reached";
             logVerbose(actualIterations, `${reason}, forcing final answer`);
         }
-        const forcedResult = await forceFinalAnswer(messages, config, usage, abortController.signal, cacheConfig);
+        const forcedResult = await forceFinalAnswer(messages, config, usage, abortController.signal, cacheConfig, langfuse, actualIterations);
         return finalize(forcedResult, actualIterations);
     }
     catch (err) {
@@ -523,7 +534,7 @@ export async function rlmLoop(query, context, config, options = {}) {
 /**
  * Force the LLM to produce a final answer when max iterations are reached.
  */
-async function forceFinalAnswer(messages, config, usage, signal, cacheConfig) {
+async function forceFinalAnswer(messages, config, usage, signal, cacheConfig, langfuse, iteration = 0) {
     const forceMessages = [
         ...messages,
         {
@@ -531,6 +542,13 @@ async function forceFinalAnswer(messages, config, usage, signal, cacheConfig) {
             content: "You have reached the maximum number of iterations. Please provide your best final answer NOW based on what you've learned so far. Respond with just the answer, no FINAL() wrapper needed.",
         },
     ];
+    const generationId = langfuse?.rootGenerationStart({
+        name: "Model call — forced final answer",
+        input: forceMessages,
+        model: `${config.model.provider}/${config.model.model}`,
+        iteration,
+    });
+    const llmStartMs = Date.now();
     const response = await llmComplete(forceMessages, config.model, {
         signal,
         cacheConfig,
@@ -538,6 +556,13 @@ async function forceFinalAnswer(messages, config, usage, signal, cacheConfig) {
         outputSchema: config.output.schema,
         geminiConfig: config.gemini,
     });
+    if (generationId) {
+        langfuse?.rootGenerationEnd(generationId, {
+            output: response.text,
+            durationMs: Date.now() - llmStartMs,
+            usage: response.usage,
+        });
+    }
     mergeUsage(usage, response.usage);
     return response.text;
 }

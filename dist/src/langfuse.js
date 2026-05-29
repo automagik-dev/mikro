@@ -41,6 +41,64 @@ export class LangfuseTraceRecorder {
             tags: ["rlmx", "recursive-tree"],
         });
     }
+    rootGenerationStart(data) {
+        const generationId = randomUUID();
+        if (!this.enabled)
+            return generationId;
+        this.enqueue("generation-create", {
+            id: generationId,
+            traceId: this.traceId,
+            name: data.name,
+            model: data.model,
+            input: data.input,
+            startTime: new Date().toISOString(),
+            metadata: {
+                event: "root_generation_start",
+                iteration: data.iteration,
+            },
+        });
+        return generationId;
+    }
+    rootGenerationEnd(generationId, data) {
+        if (!this.enabled)
+            return;
+        const input = data.usage?.inputTokens ?? 0;
+        const output = data.usage?.outputTokens ?? 0;
+        const cacheRead = data.usage?.cacheReadTokens ?? 0;
+        const cacheWrite = data.usage?.cacheWriteTokens ?? 0;
+        this.enqueue("generation-update", {
+            id: generationId,
+            output: data.output,
+            endTime: new Date().toISOString(),
+            level: data.isError ? "ERROR" : "DEFAULT",
+            statusMessage: data.errorMessage,
+            usage: {
+                input,
+                output,
+                total: input + output + cacheRead + cacheWrite,
+            },
+            usageDetails: {
+                input,
+                output,
+                cache_read: cacheRead,
+                cache_write: cacheWrite,
+                total: input + output + cacheRead + cacheWrite,
+            },
+            costDetails: {
+                total: data.usage?.totalCost ?? 0,
+            },
+            metadata: {
+                event: "root_generation_end",
+                duration_ms: data.durationMs,
+                input_tokens: input,
+                output_tokens: output,
+                cache_read_tokens: cacheRead,
+                cache_write_tokens: cacheWrite,
+                total_cost: data.usage?.totalCost ?? 0,
+                llm_calls: data.usage?.llmCalls ?? 0,
+            },
+        });
+    }
     childStart(data) {
         const spanId = randomUUID();
         if (!this.enabled)

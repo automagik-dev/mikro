@@ -12,6 +12,19 @@ export interface LangfuseConfig {
     fetchImpl?: typeof fetch;
     flushTimeoutMs?: number;
 }
+export interface RootGenerationStartData {
+    name: string;
+    input: unknown;
+    model: string;
+    iteration: number;
+}
+export interface RootGenerationEndData {
+    output: unknown;
+    durationMs: number;
+    usage?: UsageStats;
+    isError?: boolean;
+    errorMessage?: string;
+}
 export declare class LangfuseTraceRecorder {
     private host;
     private publicKey;
@@ -29,6 +42,8 @@ export declare class LangfuseTraceRecorder {
         userId?: string;
         metadata?: Record<string, unknown>;
     }): void;
+    rootGenerationStart(data: RootGenerationStartData): string;
+    rootGenerationEnd(generationId: string, data: RootGenerationEndData): void;
     childStart(data: {
         parentRunId: string;
         childRunId?: string;
