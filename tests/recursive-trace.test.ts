@@ -109,4 +109,51 @@ describe("recursive RLM tracing helpers", () => {
     assert.equal(batch.filter((e) => (e as { type: string }).type === "span-update").length, 1);
     assert.equal((batch.find((e) => (e as { type: string }).type === "span-update") as { body: { metadata: { child_run_id: string } } }).body.metadata.child_run_id, "child-run");
   });
+
+  it("builds root Langfuse generation create/update events with model, IO, usage, and latency", async () => {
+    const payloads: unknown[] = [];
+    const recorder = new LangfuseTraceRecorder({
+      host: "https://langfuse.example",
+      publicKey: "pk",
+      secretKey: "sk",
+      fetchImpl: async (_url: string | URL | Request, init?: RequestInit) => {
+        payloads.push(JSON.parse(String(init?.body)));
+        return new Response("{}", { status: 200 });
+      },
+    });
+
+    recorder.startTrace({ runId: "root-run", query: "root query", model: "anthropic/claude-opus-4-8" });
+    const generationId = recorder.rootGenerationStart({
+      name: "Model call — root iteration 1",
+      input: [{ role: "user", content: "hello" }],
+      model: "anthropic/claude-opus-4-8",
+      iteration: 0,
+    });
+    recorder.rootGenerationEnd(generationId, {
+      output: "world",
+      durationMs: 123,
+      usage: { inputTokens: 5, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 2, totalCost: 0.42, llmCalls: 1 },
+    });
+    await recorder.flush();
+
+    const batch = payloads.flatMap((p) => (p as { batch: unknown[] }).batch) as Array<{ type: string; body: Record<string, any> }>;
+    const generationCreate = batch.find((e) => e.type === "generation-create");
+    const generationUpdate = batch.find((e) => e.type === "generation-update");
+    assert.ok(generationCreate, "generation-create event missing");
+    assert.ok(generationUpdate, "generation-update event missing");
+    assert.equal(generationCreate.body.traceId, "root-run");
+    assert.equal(generationCreate.body.model, "anthropic/claude-opus-4-8");
+    assert.deepEqual(generationCreate.body.input, [{ role: "user", content: "hello" }]);
+    assert.equal(generationUpdate.body.output, "world");
+    assert.equal(generationUpdate.body.usage.input, 5);
+    assert.equal(generationUpdate.body.usage.output, 7);
+    assert.equal(generationUpdate.body.usage.total, 14);
+    assert.equal(generationUpdate.body.usageDetails.input, 5);
+    assert.equal(generationUpdate.body.usageDetails.output, 7);
+    assert.equal(generationUpdate.body.usageDetails.cache_read, 0);
+    assert.equal(generationUpdate.body.usageDetails.cache_write, 2);
+    assert.equal(generationUpdate.body.costDetails.total, 0.42);
+    assert.equal(generationUpdate.body.metadata.duration_ms, 123);
+    assert.equal(generationUpdate.body.metadata.total_cost, 0.42);
+  });
 });
