@@ -27,6 +27,7 @@ import {
   type CacheLLMConfig,
   type GeminiCallCounts,
   type UsageBreakdown,
+  formatModelRef,
 } from "./llm.js";
 import { LangfuseTraceRecorder } from "./langfuse.js";
 import {
@@ -207,7 +208,7 @@ export async function rlmLoop(
   langfuse.startTrace({
     runId: opts.logger?.runId ?? runId,
     query,
-    model: `${config.model.provider}/${config.model.model}`,
+    model: formatModelRef(config.model.provider, config.model.model),
     metadata: { storage_mode: !!opts.storageMode },
   });
 
@@ -429,7 +430,7 @@ export async function rlmLoop(
       const generationId = langfuse.rootGenerationStart({
         name: `Model call — root iteration ${iteration + 1}`,
         input: messages,
-        model: `${config.model.provider}/${config.model.model}`,
+        model: formatModelRef(config.model.provider, config.model.model),
         iteration,
       });
       const response = await llmComplete(messages, config.model, {
@@ -724,7 +725,7 @@ async function forceFinalAnswer(
   const generationId = langfuse?.rootGenerationStart({
     name: "Model call — forced final answer",
     input: forceMessages,
-    model: `${config.model.provider}/${config.model.model}`,
+    model: formatModelRef(config.model.provider, config.model.model),
     iteration,
   });
   const llmStartMs = Date.now();
@@ -821,7 +822,7 @@ function buildResult(
     references,
     usage,
     iterations,
-    model: `${config.model.provider}/${config.model.model}`,
+    model: formatModelRef(config.model.provider, config.model.model),
     budgetHit: budgetHit ?? null,
   };
 

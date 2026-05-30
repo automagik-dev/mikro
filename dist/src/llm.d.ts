@@ -70,6 +70,12 @@ export interface LLMResponse {
     /** Code execution results from Gemini (GROUP 5). */
     codeExecutionResults?: CodeExecutionResult[];
 }
+export declare function normalizeOpenRouterDeveloperRole(payload: unknown): unknown;
+/**
+ * Resolve a pi/ai model, trying the exact ID first, then stripping the date suffix.
+ */
+export declare function normalizeProviderModelId(provider: string, modelId: string): string;
+export declare function formatModelRef(provider: string, modelId: string): string;
 /**
  * Call pi/ai completeSimple with messages.
  * Tracks cost and time_ms per call. Optionally emits to a Logger.
