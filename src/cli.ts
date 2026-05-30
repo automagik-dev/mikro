@@ -15,6 +15,8 @@ import { detectRtk } from "./rtk-detect.js";
 import { estimateTokens, validateContextSize } from "./cache.js";
 import { runBatch } from "./batch.js";
 import { loadSettings, saveSettings, injectApiKeysToEnv, formatValue, parseSettingValue, getSettingsPath, type GlobalSettings } from "./settings.js";
+import { printRlmxCliSchema } from "./schema.js";
+import { formatModelRef } from "./llm.js";
 import type { RlmxConfig } from "./config.js";
 
 /**
@@ -70,6 +72,7 @@ Options:
   --dir <path>            Directory for init command (default: cwd)
   --help, -h              Show this help message
   --version, -v           Show version
+  --schema                Output machine-readable CLI schema JSON
 
   --stats                 Emit JSON stats to stderr (or include in --output json)
   --log <path>            Write structured JSONL log to file
@@ -114,7 +117,7 @@ Examples:
 
 interface CliOptions {
   query: string | null;
-  command: "query" | "init" | "help" | "version" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor";
+  command: "query" | "init" | "help" | "version" | "schema" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor";
   context: string | null;
   output: "text" | "json" | "stream";
   verbose: boolean;
@@ -150,6 +153,7 @@ function parseCliArgs(args: string[]): CliOptions {
       dir: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
+      schema: { type: "boolean", default: false },
       stats: { type: "boolean", default: false },
       log: { type: "string" },
       tools: { type: "string" },
@@ -168,6 +172,16 @@ function parseCliArgs(args: string[]): CliOptions {
     allowPositionals: true,
     strict: false,
   });
+
+  if (values.schema) {
+    return {
+      query: null, command: "schema", context: null, output: "text",
+      verbose: false, maxIterations: 30, timeout: 300000, dir: process.cwd(),
+      stats: false, log: null, tools: null, maxCost: null, maxTokens: null,
+      maxDepth: null, ext: null, thinking: null, cache: false, estimate: false,
+      batchFile: null, parallel: 1, batchApi: false, noSession: false, template: "default",
+    };
+  }
 
   if (values.help) {
     return {
@@ -334,7 +348,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
   const logger = createLogger(opts.log ?? undefined);
   logger.runStart({
     query: opts.query ?? "(stdin)",
-    model: `${config.model.provider}/${config.model.model}`,
+    model: formatModelRef(config.model.provider, config.model.model),
     tools_level: config.toolsLevel,
     context_type: opts.context ? "path" : "none",
   });
@@ -455,7 +469,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
         runId: logger.runId,
         query: opts.query ?? "(stdin)",
         contextPath: opts.context,
-        model: `${config.model.provider}/${config.model.model}`,
+        model: formatModelRef(config.model.provider, config.model.model),
         answer: result.answer,
         usage: {
           inputTokens: result.usage.inputTokens,
@@ -464,7 +478,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
           totalCost: result.usage.totalCost,
           iterations: result.iterations,
           timeMs: timeMs,
-          model: `${config.model.provider}/${config.model.model}`,
+          model: formatModelRef(config.model.provider, config.model.model),
         },
         config: config as unknown as Record<string, unknown>,
         logPath: opts.log,
@@ -908,6 +922,10 @@ async function main(): Promise<void> {
       console.log(`rlmx v${pkg.version}`);
       break;
     }
+
+    case "schema":
+      printRlmxCliSchema();
+      break;
 
     case "init":
       await runInit(opts.dir, opts.template);

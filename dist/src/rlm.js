@@ -13,7 +13,7 @@ import { buildCachedSystemPrompt, computeContentHash, buildSessionId, estimateTo
 import { REPL } from "./repl.js";
 import { PgStorage } from "./storage.js";
 import { ObservabilityRecorder } from "./observe.js";
-import { llmComplete, handleLLMRequest, createUsage, createGeminiCallCounts, mergeUsage, } from "./llm.js";
+import { llmComplete, handleLLMRequest, createUsage, createGeminiCallCounts, mergeUsage, formatModelRef, } from "./llm.js";
 import { LangfuseTraceRecorder } from "./langfuse.js";
 import { extractCodeBlocks, detectFinal, formatIterationResult, } from "./parser.js";
 import { emitStreamEvent, logVerbose } from "./output.js";
@@ -140,7 +140,7 @@ export async function rlmLoop(query, context, config, options = {}) {
     langfuse.startTrace({
         runId: opts.logger?.runId ?? runId,
         query,
-        model: `${config.model.provider}/${config.model.model}`,
+        model: formatModelRef(config.model.provider, config.model.model),
         metadata: { storage_mode: !!opts.storageMode },
     });
     if (opts.storageMode) {
@@ -321,7 +321,7 @@ export async function rlmLoop(query, context, config, options = {}) {
             const generationId = langfuse.rootGenerationStart({
                 name: `Model call — root iteration ${iteration + 1}`,
                 input: messages,
-                model: `${config.model.provider}/${config.model.model}`,
+                model: formatModelRef(config.model.provider, config.model.model),
                 iteration,
             });
             const response = await llmComplete(messages, config.model, {
@@ -545,7 +545,7 @@ async function forceFinalAnswer(messages, config, usage, signal, cacheConfig, la
     const generationId = langfuse?.rootGenerationStart({
         name: "Model call — forced final answer",
         input: forceMessages,
-        model: `${config.model.provider}/${config.model.model}`,
+        model: formatModelRef(config.model.provider, config.model.model),
         iteration,
     });
     const llmStartMs = Date.now();
@@ -624,7 +624,7 @@ function buildResult(answer, usage, iterations, config, budgetHit, geminiCounts,
         references,
         usage,
         iterations,
-        model: `${config.model.provider}/${config.model.model}`,
+        model: formatModelRef(config.model.provider, config.model.model),
         budgetHit: budgetHit ?? null,
     };
     if (geminiCounts) {

@@ -27,7 +27,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.75.5",
+    "@earendil-works/pi-ai": "0.77.0",
     "js-yaml": "^4.1.1",
     "pg": "^8.20.0",
     "pgserve": "^1.1.10"

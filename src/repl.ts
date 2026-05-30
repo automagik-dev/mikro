@@ -78,6 +78,14 @@ export type LLMRequestHandler = (
   request: LLMRequest
 ) => Promise<string[]>;
 
+function defaultReplTimeoutMs(): number {
+  const raw = process.env.RLMX_REPL_TIMEOUT_MS;
+  if (!raw) return 30_000;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 30_000;
+  return parsed;
+}
+
 export class REPL {
   private process: ChildProcess | null = null;
   private readline: Interface | null = null;
@@ -184,7 +192,7 @@ export class REPL {
   }
 
   /** Execute Python code in the REPL and return the result. */
-  async execute(code: string, timeoutMs = 30_000): Promise<ExecuteResult> {
+  async execute(code: string, timeoutMs = defaultReplTimeoutMs()): Promise<ExecuteResult> {
     // Distinguish "never started" from "started but crashed"
     if (!this.process) {
       throw new Error("REPL not started. Call start() first.");

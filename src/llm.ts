@@ -106,16 +106,64 @@ export interface LLMResponse {
   codeExecutionResults?: CodeExecutionResult[];
 }
 
+export function normalizeOpenRouterDeveloperRole(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return payload;
+  const maybePayload = payload as { messages?: Array<{ role?: string }> };
+  if (!Array.isArray(maybePayload.messages)) return payload;
+  return {
+    ...(payload as Record<string, unknown>),
+    messages: maybePayload.messages.map((message) => {
+      if (message && message.role === "developer") {
+        return { ...message, role: "system" };
+      }
+      return message;
+    }),
+  };
+}
+
 /**
  * Resolve a pi/ai model, trying the exact ID first, then stripping the date suffix.
  */
+export function normalizeProviderModelId(provider: string, modelId: string): string {
+  // OpenRouter model ids intentionally include the upstream provider prefix
+  // (for example `deepseek/deepseek-v4-pro`), so never strip for OpenRouter.
+  if (provider === "openrouter") return modelId;
+
+  const prefix = `${provider}/`;
+  if (modelId.startsWith(prefix)) {
+    return modelId.slice(prefix.length);
+  }
+  return modelId;
+}
+
+export function formatModelRef(provider: string, modelId: string): string {
+  return `${provider}/${normalizeProviderModelId(provider, modelId)}`;
+}
+
 function resolveModel(provider: string, modelId: string) {
-  let model = getModel(provider as KnownProvider, modelId as never);
+  const normalizedModelId = normalizeProviderModelId(provider, modelId);
+  let model = getModel(provider as KnownProvider, normalizedModelId as never);
   if (!model) {
     // Try stripping date suffix (e.g., "claude-sonnet-4-5-20250514" -> "claude-sonnet-4-5")
-    const stripped = modelId.replace(/-\d{8}$/, "");
-    if (stripped !== modelId) {
+    const stripped = normalizedModelId.replace(/-\d{8}$/, "");
+    if (stripped !== normalizedModelId) {
       model = getModel(provider as KnownProvider, stripped as never);
+    }
+  }
+  if (!model && provider === "kimi-coding" && modelId.startsWith("kimi-k2.6")) {
+    // pi-ai 0.77.0's generated registry exposes Kimi's coding endpoint but has
+    // not caught up with K2.6 under the `kimi-coding` provider. The endpoint
+    // accepts K2.6 model IDs with the same Anthropic-compatible transport and
+    // KIMI_API_KEY auth as `kimi-k2-thinking`, so clone that route rather than
+    // falling back to Moonshot API credentials we do not have.
+    const template = getModel("kimi-coding" as KnownProvider, "kimi-k2-thinking" as never);
+    if (template) {
+      model = {
+        ...template,
+        id: modelId,
+        name: "Kimi K2.6",
+        input: ["text", "image"],
+      } as typeof template;
     }
   }
   if (!model) {
@@ -198,16 +246,40 @@ export async function llmComplete(
     piOptions.reasoning = options.thinkingLevel;
   }
 
+  const payloadHooks: Array<(payload: unknown, model: unknown) => unknown | Promise<unknown>> = [];
+
+  // OpenRouter's OpenAI-compatible Chat Completions endpoint still rejects the
+  // newer `developer` role for several non-OpenAI routes (including DeepSeek
+  // V4 Flash). pi-ai may emit `developer` for reasoning models, so normalize
+  // it back to `system` at the RLMX boundary instead of letting the provider
+  // fail with an empty/zero-token response.
+  if (modelConfig.provider === "openrouter") {
+    payloadHooks.push(normalizeOpenRouterDeveloperRole);
+  }
+
   // Build onPayload hook for Gemini-specific features (media resolution, structured outputs, tools, etc.)
   if (isGoogleProvider(modelConfig.provider) && options?.geminiConfig) {
-    const onPayload = buildGeminiOnPayload(
+    const geminiOnPayload = buildGeminiOnPayload(
       options.geminiConfig,
       modelConfig.provider,
       options?.outputSchema
     );
-    if (onPayload) {
-      piOptions.onPayload = onPayload;
+    if (geminiOnPayload) {
+      payloadHooks.push(geminiOnPayload as (payload: unknown, model: unknown) => unknown | Promise<unknown>);
     }
+  }
+
+  if (payloadHooks.length > 0) {
+    piOptions.onPayload = async (payload: unknown, payloadModel: unknown) => {
+      let next = payload;
+      for (const hook of payloadHooks) {
+        const result = await hook(next, payloadModel);
+        if (result !== undefined) {
+          next = result;
+        }
+      }
+      return next;
+    };
   }
 
   const response = await completeSimple(

@@ -10,6 +10,7 @@ import {
   parseSettingValue,
   loadSettings,
   saveSettings,
+  injectApiKeysToEnv,
 } from "../src/settings.js";
 
 describe("maskValue", () => {
@@ -90,6 +91,42 @@ describe("loadSettings", () => {
     const settings = await loadSettings();
     // May or may not exist — if it does, it's valid JSON
     assert.equal(typeof settings, "object");
+  });
+});
+
+describe("settings API key env injection", () => {
+  const keys = ["DEEPSEEK_API_KEY", "KIMI_API_KEY", "MINIMAX_API_KEY", "ZAI_API_KEY", "GOOGLE_API_KEY"];
+  const originals = new Map<string, string | undefined>();
+
+  before(() => {
+    for (const key of keys) {
+      originals.set(key, process.env[key]);
+      delete process.env[key];
+    }
+  });
+
+  after(() => {
+    for (const key of keys) {
+      const original = originals.get(key);
+      if (original === undefined) delete process.env[key];
+      else process.env[key] = original;
+    }
+  });
+
+  it("injects cheap/diverse provider keys from settings", () => {
+    injectApiKeysToEnv({
+      DEEPSEEK_API_KEY: "deepseek-test-key",
+      KIMI_API_KEY: "kimi-test-key",
+      MINIMAX_API_KEY: "minimax-test-key",
+      ZAI_API_KEY: "zai-test-key",
+      GOOGLE_API_KEY: "google-test-key",
+    });
+
+    assert.equal(process.env.DEEPSEEK_API_KEY, "deepseek-test-key");
+    assert.equal(process.env.KIMI_API_KEY, "kimi-test-key");
+    assert.equal(process.env.MINIMAX_API_KEY, "minimax-test-key");
+    assert.equal(process.env.ZAI_API_KEY, "zai-test-key");
+    assert.equal(process.env.GOOGLE_API_KEY, "google-test-key");
   });
 });
 

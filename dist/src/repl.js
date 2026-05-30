@@ -38,6 +38,15 @@ const GEMINI_BATTERY_FUNCTION_NAMES = [
     "fetch_url",
     "generate_image",
 ];
+function defaultReplTimeoutMs() {
+    const raw = process.env.RLMX_REPL_TIMEOUT_MS;
+    if (!raw)
+        return 30_000;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0)
+        return 30_000;
+    return parsed;
+}
 export class REPL {
     process = null;
     readline = null;
@@ -127,7 +136,7 @@ export class REPL {
         }
     }
     /** Execute Python code in the REPL and return the result. */
-    async execute(code, timeoutMs = 30_000) {
+    async execute(code, timeoutMs = defaultReplTimeoutMs()) {
         // Distinguish "never started" from "started but crashed"
         if (!this.process) {
             throw new Error("REPL not started. Call start() first.");
