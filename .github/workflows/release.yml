@@ -1,5 +1,11 @@
 name: Release
 
+# GitHub Releases are cut from package.json's version only.
+# Do not derive ad-hoc hotfix release tags in this workflow: npm publishing
+# uses the same package version in version.yml, and rlmx --version reads
+# src/version.ts generated from that package version. If the exact release
+# already exists, skip; a new release requires an explicit version bump.
+
 on:
   push:
     branches: [main]
@@ -19,37 +25,42 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve version
+      - name: Resolve package release version
         id: ver
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          BASE=$(jq -r '.version' package.json)
-          TAG="v${BASE}"
+          VERSION=$(jq -r '.version' package.json)
+          TAG="v${VERSION}"
 
-          if gh release view "${TAG}" > /dev/null 2>&1; then
-            echo "Release ${TAG} already exists — deriving hotfix version."
-            TODAY=$(date -u +%y%m%d)
-            EXISTING=$(gh release list --limit 100 --json tagName \
-              -q "[.[].tagName | select(startswith(\"v0.${TODAY}.\"))] | length")
-            BUILD=$((EXISTING + 1))
-            VERSION="0.${TODAY}.${BUILD}"
-            echo "hotfix=true" >> "$GITHUB_OUTPUT"
-          else
-            VERSION="${BASE}"
-            echo "hotfix=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "::error::package.json version is empty"
+            exit 1
           fi
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Release tag resolved from package.json: ${TAG}"
 
-      - name: Find previous release tag
-        id: prev
+      - name: Check release does not already exist
+        id: existing
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.ver.outputs.tag }}"
-          PREV=$(gh release list --limit 50 --json tagName -q '.[].tagName' | grep -v "^${TAG}$" | head -1)
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${TAG} already exists — skipping. Bump package.json/src/version.ts first to cut a new release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find previous release tag
+        id: prev
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          PREV=$(gh release list --limit 50 --json tagName -q '.[].tagName' | grep -v "^${TAG}$" | head -1 || true)
           if [ -n "$PREV" ] && git merge-base --is-ancestor "$PREV" HEAD 2>/dev/null; then
             echo "tag=${PREV}" >> "$GITHUB_OUTPUT"
           else
@@ -59,7 +70,7 @@ jobs:
       - name: Generate changelog
         uses: orhun/git-cliff-action@v4
         id: cliff
-        if: steps.prev.outputs.tag != ''
+        if: steps.existing.outputs.exists == 'false' && steps.prev.outputs.tag != ''
         with:
           config: cliff.toml
           args: ${{ format('{0}..HEAD', steps.prev.outputs.tag) }}
@@ -67,6 +78,7 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
 
       - name: Create release
+        if: steps.existing.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: ${{ steps.cliff.outputs.content }}
@@ -76,11 +88,7 @@ jobs:
             RELEASE_NOTES="Initial release of rlmx."
           fi
           printf '%s' "$RELEASE_NOTES" > /tmp/release-notes.md
-          if gh release view "${TAG}" > /dev/null 2>&1; then
-            echo "Release ${TAG} already exists — skipping creation"
-          else
-            gh release create "${TAG}" \
-              --target "${{ github.sha }}" \
-              --title "${TAG}" \
-              --notes-file /tmp/release-notes.md
-          fi
+          gh release create "${TAG}" \
+            --target "${{ github.sha }}" \
+            --title "${TAG}" \
+            --notes-file /tmp/release-notes.md
