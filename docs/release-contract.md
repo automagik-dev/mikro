@@ -31,7 +31,9 @@ The npm package is SDK-only:
 
 ## Main release boundary
 
-`main` is the canonical release branch.
+`main` is the canonical release branch and the expected branch for long-lived production checkouts such as `/home/genie/prod/rlmx`.
+
+Use short-lived `drogo/<topic>` branches for focused source changes, then return the production checkout to `main` after merge/dogfood. Do not keep a long-lived `drogo/prod-rlmx` branch as the install/update authority.
 
 A release happens when a PR merges from `dev` to `main`:
 
