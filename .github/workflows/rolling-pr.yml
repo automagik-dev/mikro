@@ -20,12 +20,24 @@ jobs:
     steps:
       - name: Check/Create Rolling PR
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # Use the built-in workflow token. A stale custom token should not make
+          # the release-boundary helper fail with 401 on scheduled runs.
+          GH_TOKEN: ${{ github.token }}
         run: |
-          PR=$(gh pr list --repo ${{ github.repository }} --base main --head dev --state open --json number --jq '.[0].number')
+          set -euo pipefail
 
-          if [ -z "$PR" ]; then
-            gh pr create --repo ${{ github.repository }} \
+          PR=$(gh pr list --repo ${{ github.repository }} --base main --head dev --state open --json number --jq '.[0].number // ""')
+          if [ -n "$PR" ]; then
+            echo "Rolling PR #$PR exists and is up to date"
+            exit 0
+          fi
+
+          if [ "$(gh api repos/${{ github.repository }}/compare/main...dev --jq '.ahead_by')" = "0" ]; then
+            echo "dev has no commits ahead of main; no rolling PR needed"
+            exit 0
+          fi
+
+          gh pr create --repo ${{ github.repository }} \
               --base main --head dev \
               --title "chore: rolling promotion dev -> main" \
               --body "$(cat <<'BODY'
@@ -49,7 +61,4 @@ jobs:
           > Human approval required for merge to production.
           BODY
           )"
-            echo "Created new rolling PR"
-          else
-            echo "Rolling PR #$PR exists and is up to date"
-          fi
+          echo "Created new rolling PR"
