@@ -196,6 +196,14 @@ export const RLMX_CLI_SCHEMA: RlmxCliSchema = {
       description: "Template used by the init command.",
       appliesTo: ["init"],
     },
+    {
+      name: "--force",
+      aliases: ["-f"],
+      type: "boolean",
+      default: false,
+      description: "Allow rlmx update to reset a dirty managed checkout to origin/main.",
+      appliesTo: ["update"],
+    },
   ],
   output: {
     $schema: "https://json-schema.org/draft/2020-12/schema",

@@ -1,10 +1,13 @@
-name: Release
+name: Release Metadata
 
-# GitHub Releases are cut from package.json's version only.
+# GitHub Releases are optional metadata cut from package.json's version only.
+# They are not the CLI/application release authority. The app release boundary
+# is the reviewed dev -> main merge consumed by scripts/install.sh and
+# `rlmx update`.
 # Do not derive ad-hoc hotfix release tags in this workflow: npm publishing
-# uses the same package version in version.yml, and rlmx --version reads
+# uses the same SDK package version in version.yml, and rlmx --version reads
 # src/version.ts generated from that package version. If the exact release
-# already exists, skip; a new release requires an explicit version bump.
+# already exists, skip; a new metadata release requires an explicit version bump.
 
 on:
   push:
@@ -85,7 +88,7 @@ jobs:
         run: |
           TAG="${{ steps.ver.outputs.tag }}"
           if [ -z "$RELEASE_NOTES" ]; then
-            RELEASE_NOTES="Initial release of rlmx."
+            RELEASE_NOTES="RLMX release metadata for the main branch application boundary and SDK package version."
           fi
           printf '%s' "$RELEASE_NOTES" > /tmp/release-notes.md
           gh release create "${TAG}" \

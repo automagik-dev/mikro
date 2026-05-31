@@ -1,21 +1,26 @@
-name: Version
+name: SDK Package
 
-# Single source of npm publishing for @automagik/rlmx.
+# Single source of SDK-only npm publishing for @automagik/rlmx.
+#
+# npm is NOT the canonical CLI/application release channel. End-user CLI
+# installs and updates are git-managed through scripts/install.sh and
+# `rlmx update`, with public `main` as the release boundary after a reviewed
+# dev -> main merge.
 #
 #   Trigger                              Context  npm tag   Bump?
 #   -----------------------------------  -------  --------  ------
-#   workflow_run (CI success on dev)     dev      @next     yes
-#   workflow_run (merge PR to main)      main     @latest   no
-#   workflow_dispatch (manual)           dev      @next     yes
+#   workflow_run (CI success on dev)     SDK dev  @next     yes
+#   workflow_run (merge PR to main)      SDK main @latest   no
+#   workflow_dispatch (manual)           SDK dev  @next     yes
 #
 # On dev triggers we DERIVE a fresh version (today + build-count),
 # commit + tag + push back to dev, then publish as @next.
 #
-# On main triggers we DO NOT bump — the version that
-# dev already tagged is in package.json. We just publish that exact
-# version as @latest, so npm and GitHub Release agree. Bumping on main
-# caused historical drift between release tag and npm latest. Any green
-# main push is eligible; protected main is the release boundary.
+# On main triggers we DO NOT bump — the version that dev already tagged is in
+# package.json. We just publish that exact SDK artifact as @latest, so npm and
+# GitHub Release metadata agree. The CLI/application release already happened
+# when the protected dev -> main merge made the commit reachable to
+# scripts/install.sh and `rlmx update`.
 #
 # Auth: npm OIDC Trusted Publishing. The package's only Trusted
 # Publisher entry on npmjs.com is THIS file (version.yml). All other
@@ -133,9 +138,9 @@ jobs:
           git tag "v${VERSION}"
           git push --atomic origin "HEAD:refs/heads/${BRANCH}" "refs/tags/v${VERSION}"
 
-      # On main context we publish whatever package.json currently holds —
-      # that's the version dev tagged on the same chain, which is exactly
-      # what @latest should point at.
+      # On main context we publish whatever package.json currently holds as
+      # SDK metadata/artifacts only. This must not be treated as the CLI app
+      # release authority.
       - name: Resolve publish version
         id: pubver
         run: |
@@ -169,9 +174,9 @@ jobs:
           # but disable it explicitly to keep the contract identical to genie
           # and avoid surprise failures. OIDC token exchange still happens.
           NPM_CONFIG_PROVENANCE: "false"
-        # On main context: publish package.json's current version as @latest
-        # (no bump, matches what dev already tagged).
-        # On dev context: publish the version we just bumped to as @next.
+        # On main context: publish package.json's current SDK version as
+        # @latest (no bump, matches what dev already tagged).
+        # On dev context: publish the SDK version we just bumped to as @next.
         run: |
           VERSION="${{ steps.pubver.outputs.version }}"
           TAG="${{ steps.context.outputs.npm_tag }}"

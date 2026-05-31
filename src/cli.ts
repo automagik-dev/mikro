@@ -3,6 +3,7 @@
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
+import { execFileSync } from "node:child_process";
 import { loadConfig, type ToolsLevel } from "./config.js";
 import { isValidThinkingLevel, checkFutureFlags, type ThinkingLevel } from "./gemini.js";
 import { scaffold, needsScaffold } from "./scaffold.js";
@@ -62,6 +63,7 @@ Usage:
   rlmx benchmark <mode> [options]  Run benchmarks (cost or oolong)
   rlmx stats [options]           Query run history and cost breakdowns
   rlmx doctor                    Health check: providers, RTK, config
+  rlmx update [--force]          Fetch latest main commit for a git install
 
 Options:
   --context <path>        Path to context (directory or file)
@@ -117,7 +119,7 @@ Examples:
 
 interface CliOptions {
   query: string | null;
-  command: "query" | "init" | "help" | "version" | "schema" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor";
+  command: "query" | "init" | "help" | "version" | "schema" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor" | "update";
   context: string | null;
   output: "text" | "json" | "stream";
   verbose: boolean;
@@ -210,6 +212,7 @@ function parseCliArgs(args: string[]): CliOptions {
     : positionals[0] === "benchmark" ? "benchmark"
     : positionals[0] === "stats" ? "stats"
     : positionals[0] === "doctor" ? "doctor"
+    : positionals[0] === "update" ? "update"
     : "query";
   const query = command === "query" ? positionals[0] ?? null : null;
   const batchFile = command === "batch" ? positionals[1] ?? null : null;
@@ -901,6 +904,55 @@ async function runDoctor(): Promise<void> {
   // Exit 0 — nominal
 }
 
+function runGit(root: string, args: string[]): string {
+  return execFileSync("git", ["-C", root, ...args], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
+function runCommand(root: string, command: string, args: string[]): void {
+  execFileSync(command, args, { cwd: root, stdio: "inherit" });
+}
+
+async function runUpdate(args: string[]): Promise<void> {
+  const force = args.includes("--force") || args.includes("-f");
+  const { dirname, resolve: resolvePath } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = resolvePath(dirname(fileURLToPath(import.meta.url)), "../..");
+
+  try {
+    runGit(root, ["rev-parse", "--is-inside-work-tree"]);
+  } catch {
+    throw new Error("rlmx update requires a git-installed checkout. Reinstall with scripts/install.sh.");
+  }
+
+  const before = runGit(root, ["rev-parse", "HEAD"]);
+  const dirty = runGit(root, ["status", "--porcelain"]);
+  if (dirty && !force) {
+    throw new Error("Refusing to update with local changes. Commit/stash them or rerun with --force for managed installs.");
+  }
+
+  console.log(`rlmx update: ${root}`);
+  console.log(`before: ${before}`);
+  runGit(root, ["fetch", "origin", "main", "--tags"]);
+  const target = runGit(root, ["rev-parse", "origin/main"]);
+  console.log(`target: ${target}`);
+
+  if (before === target && !dirty) {
+    console.log("Already up to date.");
+    return;
+  }
+
+  runGit(root, ["reset", "--hard", "origin/main"]);
+  runCommand(root, "npm", ["ci"]);
+  runCommand(root, "npm", ["run", "build"]);
+
+  const after = runGit(root, ["rev-parse", "HEAD"]);
+  const { createRequire } = await import("node:module");
+  const require = createRequire(import.meta.url);
+  const pkg = require("../../package.json") as { version: string };
+  console.log(`after:  ${after}`);
+  console.log(`rlmx v${pkg.version}`);
+}
+
 async function main(): Promise<void> {
   const opts = parseCliArgs(process.argv.slice(2));
 
@@ -955,6 +1007,10 @@ async function main(): Promise<void> {
 
     case "doctor":
       await runDoctor();
+      break;
+
+    case "update":
+      await runUpdate(process.argv.slice(3));
       break;
 
     case "query":

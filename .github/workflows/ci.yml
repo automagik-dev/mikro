@@ -35,3 +35,6 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Install/update contract smoke
+        run: bash scripts/smoke-install-update.sh

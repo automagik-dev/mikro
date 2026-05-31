@@ -33,6 +33,10 @@ jobs:
 
           Auto-maintained rolling promotion PR from \`dev\` to \`main\`.
 
+          Merging this PR is the canonical RLMX application release boundary.
+          Git-installed CLIs receive this commit through \`scripts/install.sh\`
+          or \`rlmx update\`. npm remains SDK-only.
+
           **Process:**
           - This PR is automatically created and kept open
           - Human reviews and merges when ready

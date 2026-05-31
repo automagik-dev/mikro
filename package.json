@@ -1,13 +1,10 @@
 {
   "name": "@automagik/rlmx",
   "version": "0.260528.2",
-  "description": "RLM algorithm CLI for coding agents — prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
+  "description": "RLM algorithm SDK for coding agents \u2014 prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
   "type": "module",
   "publishConfig": {
     "access": "public"
-  },
-  "bin": {
-    "rlmx": "dist/src/cli.js"
   },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -24,7 +21,8 @@
     "test": "node --test dist/tests/*.test.js",
     "prepare": "node scripts/prepare.mjs",
     "bump-version": "node scripts/version.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "install:local": "bash scripts/install.sh"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.77.0",
@@ -49,7 +47,6 @@
     "llm",
     "repl",
     "research",
-    "cli",
     "agent"
   ],
   "license": "MIT",
