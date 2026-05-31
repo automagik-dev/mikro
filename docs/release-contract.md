@@ -62,11 +62,12 @@ A release happens when a PR merges from `dev` to `main`:
 
 This mirrors the practical Hermes model: the installer owns the app checkout; the app update command refreshes that checkout.
 
-## Future work
+## Workflow implementation
 
-The release system should be simplified around this contract:
+The release system follows this contract:
 
-- Keep `install.sh` and `rlmx update` as first-class CLI delivery.
-- Demote npm workflow to SDK publishing only.
-- Ensure any GitHub Release workflow is metadata-only and package-version-coherent.
-- Add CI coverage for `install.sh` and `rlmx update` dry-run behavior.
+- `CI` builds, typechecks, tests, and runs an install/update smoke against a temporary git `main` remote.
+- `SDK Package` publishes npm artifacts for programmatic consumers only.
+- The npm manifest does not expose a `bin`, so npm does not act as the canonical CLI installer.
+- `Release Metadata` may create GitHub Releases from the package version, but only as coherent metadata.
+- The rolling `dev` → `main` PR states that merging it is the application release boundary.
