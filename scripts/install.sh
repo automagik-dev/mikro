@@ -16,9 +16,11 @@ mkdir -p "$RLMX_BIN_DIR" "$(dirname "$RLMX_INSTALL_DIR")"
 
 if [ -d "$RLMX_INSTALL_DIR/.git" ]; then
   echo "==> Existing checkout found; refreshing"
+  git -C "$RLMX_INSTALL_DIR" remote set-url origin "$RLMX_REPO_URL"
   git -C "$RLMX_INSTALL_DIR" fetch origin "$RLMX_BRANCH" --tags
-  git -C "$RLMX_INSTALL_DIR" checkout "$RLMX_BRANCH"
+  git -C "$RLMX_INSTALL_DIR" checkout -f "$RLMX_BRANCH"
   git -C "$RLMX_INSTALL_DIR" reset --hard "origin/$RLMX_BRANCH"
+  git -C "$RLMX_INSTALL_DIR" clean -fd
 else
   if [ -e "$RLMX_INSTALL_DIR" ]; then
     echo "error: $RLMX_INSTALL_DIR exists but is not a git checkout" >&2
@@ -31,7 +33,7 @@ fi
 cd "$RLMX_INSTALL_DIR"
 
 echo "==> Installing dependencies"
-npm ci
+npm ci --include=dev
 
 echo "==> Building"
 npm run build

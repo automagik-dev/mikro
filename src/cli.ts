@@ -942,7 +942,8 @@ async function runUpdate(args: string[]): Promise<void> {
   }
 
   runGit(root, ["reset", "--hard", "origin/main"]);
-  runCommand(root, "npm", ["ci"]);
+  runGit(root, ["clean", "-fd"]);
+  runCommand(root, "npm", ["ci", "--include=dev"]);
   runCommand(root, "npm", ["run", "build"]);
 
   const after = runGit(root, ["rev-parse", "HEAD"]);

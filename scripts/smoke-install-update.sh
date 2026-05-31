@@ -50,7 +50,7 @@ fi
   exit 1
 }
 
-npm pack --json --dry-run | node -e 'let s=""; process.stdin.on("data",d=>s+=d); process.stdin.on("end",()=>{ const p=JSON.parse(s)[0]; if (p.bin) { console.error("npm package exposes bin unexpectedly", p.bin); process.exit(1); } });' || {
+(cd "$ROOT" && npm pack --json --dry-run) | node -e 'let s=""; process.stdin.on("data",d=>s+=d); process.stdin.on("end",()=>{ const p=JSON.parse(s)[0]; if (p.bin) { console.error("npm package exposes bin unexpectedly", p.bin); process.exit(1); } });' || {
   echo "::error::npm package must remain SDK-only and expose no bin" >&2
   exit 1
 }
@@ -58,6 +58,7 @@ echo "==> npm package is SDK-only: no bin exposed"
 
 echo "==> Smoke update dirty-check refusal"
 printf '\n# dirty smoke\n' >> "$INSTALL_DIR/docs/release-contract.md"
+printf 'untracked smoke\n' > "$INSTALL_DIR/untracked-smoke.txt"
 if "$BIN_DIR/rlmx" update >"$TMP/dirty.out" 2>"$TMP/dirty.err"; then
   echo "::error::rlmx update succeeded despite dirty checkout" >&2
   cat "$TMP/dirty.out" >&2
@@ -70,18 +71,19 @@ if ! grep -q 'Refusing to update with local changes' "$TMP/dirty.err"; then
   exit 1
 fi
 
-git -C "$INSTALL_DIR" reset --hard HEAD >/dev/null
-git -C "$INSTALL_DIR" clean -fd >/dev/null
-
-echo "==> Smoke update happy path from advanced main"
+echo "==> Smoke update --force happy path from advanced main"
 printf '\nupdate-smoke=%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" >> "$SOURCE/.rlmx-update-smoke"
 commit_source "test: advance main for update smoke"
 TARGET_HEAD="$(git -C "$SOURCE" rev-parse HEAD)"
 
-"$BIN_DIR/rlmx" update
+"$BIN_DIR/rlmx" update --force
 UPDATED_HEAD="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
 if [ "$UPDATED_HEAD" != "$TARGET_HEAD" ]; then
   echo "::error::update head mismatch: installed=$UPDATED_HEAD source=$TARGET_HEAD" >&2
+  exit 1
+fi
+if [ -e "$INSTALL_DIR/untracked-smoke.txt" ]; then
+  echo "::error::rlmx update --force did not clean untracked files" >&2
   exit 1
 fi
 
