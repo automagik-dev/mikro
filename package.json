@@ -24,7 +24,8 @@
     "test": "node --test dist/tests/*.test.js",
     "prepare": "node scripts/prepare.mjs",
     "bump-version": "node scripts/version.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "install:local": "bash scripts/install.sh"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.77.0",
