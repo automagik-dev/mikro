@@ -102,6 +102,10 @@ export class Logger {
     time_ms: number;
     cache_read_tokens?: number;
     cache_write_tokens?: number;
+    /** Reasoning/thinking tokens reported by the provider (subset of output_tokens). */
+    reasoning_tokens?: number;
+    /** Provider-reported model that served the response (AssistantMessage.responseModel). */
+    response_model?: string;
   }): void {
     this.log("llm_call", data);
   }

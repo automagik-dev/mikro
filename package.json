@@ -1,7 +1,7 @@
 {
   "name": "@automagik/rlmx",
   "version": "0.260528.2",
-  "description": "RLM algorithm SDK for coding agents \u2014 prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
+  "description": "RLM algorithm SDK for coding agents — prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -25,7 +25,7 @@
     "install:local": "bash scripts/install.sh"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.77.0",
+    "@earendil-works/pi-ai": "0.80.10",
     "js-yaml": "^4.1.1",
     "pg": "^8.20.0",
     "pgserve": "^1.1.10"

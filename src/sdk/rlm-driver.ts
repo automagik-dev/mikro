@@ -59,10 +59,7 @@
  * tool-dispatch loop that unblocks Tier 2 agents.
  */
 
-import {
-	completeSimple as piCompleteSimple,
-	getModel as piGetModel,
-} from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
 	AssistantMessage as PiAssistantMessage,
 	Context as PiContext,
@@ -195,16 +192,23 @@ export function formatRlmPrompt(
 }
 
 /**
+ * Shared pi-ai Models runtime for the tool-dispatch path. `builtinModels()`
+ * registers every built-in provider; provider auth resolution (env API keys)
+ * replaces the old compat env-key injection the root `completeSimple` gave.
+ */
+const piModels = builtinModels();
+
+/**
  * Resolve a pi-ai Model using the same fallback strategy as llm.ts
  * (try exact id, then strip date suffix). Kept in-sync with `llm.ts`
  * `resolveModel` — when that helper goes public we'll import it.
  */
 function resolvePiModel(provider: string, modelId: string) {
-	let model = piGetModel(provider as KnownProvider, modelId as never);
+	let model = piModels.getModel(provider, modelId);
 	if (!model) {
 		const stripped = modelId.replace(/-\d{8}$/, "");
 		if (stripped !== modelId) {
-			model = piGetModel(provider as KnownProvider, stripped as never);
+			model = piModels.getModel(provider, stripped);
 		}
 	}
 	if (!model) {
@@ -341,7 +345,7 @@ function buildToolDispatchDriver(
 		(async (ctx, modelCfg, signal) => {
 			const model = resolvePiModel(modelCfg.provider, modelCfg.model);
 			const opts: PiSimpleStreamOptions = { signal };
-			return await piCompleteSimple(model, ctx, opts);
+			return await piModels.completeSimple(model, ctx, opts);
 		});
 
 	return async function* (

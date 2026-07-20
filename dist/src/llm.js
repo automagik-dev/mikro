@@ -4,13 +4,20 @@
  * Provides completeSimple wrapper, batched calls, IPC request handling
  * from the Python REPL, and rlm_query child process spawning.
  */
-import { completeSimple, getModel } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
+/**
+ * Shared pi-ai Models runtime. `builtinModels()` registers every built-in
+ * provider once per process; provider auth resolution (env API keys such as
+ * ANTHROPIC_API_KEY / GEMINI_API_KEY) replaces the old compat env-key
+ * injection that the root `completeSimple`/`getModel` helpers provided.
+ */
+const models = builtinModels();
 /** Create a fresh usage tracker. */
 export function createUsage() {
-    return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0 };
+    return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0, reasoningTokens: 0 };
 }
 /** Return a - b for usage accounting splits. */
 export function usageDelta(a, b) {
@@ -21,6 +28,7 @@ export function usageDelta(a, b) {
         cacheWriteTokens: a.cacheWriteTokens - b.cacheWriteTokens,
         totalCost: a.totalCost - b.totalCost,
         llmCalls: a.llmCalls - b.llmCalls,
+        reasoningTokens: (a.reasoningTokens ?? 0) - (b.reasoningTokens ?? 0),
     };
 }
 /** Create a fresh Gemini call counter. */
@@ -35,6 +43,7 @@ export function mergeUsage(parent, child) {
     parent.cacheWriteTokens += child.cacheWriteTokens;
     parent.totalCost += child.totalCost;
     parent.llmCalls += child.llmCalls;
+    parent.reasoningTokens = (parent.reasoningTokens ?? 0) + (child.reasoningTokens ?? 0);
 }
 export function normalizeOpenRouterDeveloperRole(payload) {
     if (!payload || typeof payload !== "object")
@@ -71,12 +80,12 @@ export function formatModelRef(provider, modelId) {
 }
 function resolveModel(provider, modelId) {
     const normalizedModelId = normalizeProviderModelId(provider, modelId);
-    let model = getModel(provider, normalizedModelId);
+    let model = models.getModel(provider, normalizedModelId);
     if (!model) {
         // Try stripping date suffix (e.g., "claude-sonnet-4-5-20250514" -> "claude-sonnet-4-5")
         const stripped = normalizedModelId.replace(/-\d{8}$/, "");
         if (stripped !== normalizedModelId) {
-            model = getModel(provider, stripped);
+            model = models.getModel(provider, stripped);
         }
     }
     if (!model && provider === "kimi-coding" && modelId.startsWith("kimi-k2.6")) {
@@ -85,7 +94,7 @@ function resolveModel(provider, modelId) {
         // accepts K2.6 model IDs with the same Anthropic-compatible transport and
         // KIMI_API_KEY auth as `kimi-k2-thinking`, so clone that route rather than
         // falling back to Moonshot API credentials we do not have.
-        const template = getModel("kimi-coding", "kimi-k2-thinking");
+        const template = models.getModel("kimi-coding", "kimi-k2-thinking");
         if (template) {
             model = {
                 ...template,
@@ -182,7 +191,7 @@ export async function llmComplete(messages, modelConfig, options) {
             return next;
         };
     }
-    const response = await completeSimple(model, {
+    const response = await models.completeSimple(model, {
         systemPrompt,
         messages: piMessages,
     }, piOptions);
@@ -191,6 +200,8 @@ export async function llmComplete(messages, modelConfig, options) {
     const outputTokens = response.usage?.output ?? 0;
     const cacheReadTokens = response.usage?.cacheRead ?? 0;
     const cacheWriteTokens = response.usage?.cacheWrite ?? 0;
+    const reasoningTokens = response.usage?.reasoning ?? 0;
+    const responseModel = response.responseModel;
     const usageRecord = response.usage;
     const cost = usageRecord?.cost != null
         ? usageRecord.cost?.total ?? 0
@@ -224,6 +235,8 @@ export async function llmComplete(messages, modelConfig, options) {
             output_tokens: outputTokens,
             cost,
             time_ms: timeMs,
+            reasoning_tokens: reasoningTokens,
+            response_model: responseModel,
         });
     }
     return {
@@ -235,8 +248,10 @@ export async function llmComplete(messages, modelConfig, options) {
             cacheWriteTokens,
             totalCost: cost,
             llmCalls: 1,
+            reasoningTokens,
         },
         piMessage: response,
+        responseModel,
         thoughtSignatureCount,
         codeExecutionResults: codeExecutionResults.length > 0 ? codeExecutionResults : undefined,
     };

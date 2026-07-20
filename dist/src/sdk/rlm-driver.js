@@ -58,7 +58,7 @@
  * mandate added in the G2b review cycle; rlmx#78 for the native
  * tool-dispatch loop that unblocks Tier 2 agents.
  */
-import { completeSimple as piCompleteSimple, getModel as piGetModel, } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { llmCompleteSimple } from "../llm.js";
 const DEFAULT_RETRY_FORMATTER = (hint) => `# Retry hint from the validator\n\n${hint}\n\n`;
 const DEFAULT_MAX_TOOL_ITERATIONS = 16;
@@ -93,16 +93,22 @@ export function formatRlmPrompt(config, req) {
     return parts.join("\n\n");
 }
 /**
+ * Shared pi-ai Models runtime for the tool-dispatch path. `builtinModels()`
+ * registers every built-in provider; provider auth resolution (env API keys)
+ * replaces the old compat env-key injection the root `completeSimple` gave.
+ */
+const piModels = builtinModels();
+/**
  * Resolve a pi-ai Model using the same fallback strategy as llm.ts
  * (try exact id, then strip date suffix). Kept in-sync with `llm.ts`
  * `resolveModel` — when that helper goes public we'll import it.
  */
 function resolvePiModel(provider, modelId) {
-    let model = piGetModel(provider, modelId);
+    let model = piModels.getModel(provider, modelId);
     if (!model) {
         const stripped = modelId.replace(/-\d{8}$/, "");
         if (stripped !== modelId) {
-            model = piGetModel(provider, stripped);
+            model = piModels.getModel(provider, stripped);
         }
     }
     if (!model) {
@@ -227,7 +233,7 @@ function buildToolDispatchDriver(config, toolsCfg) {
         (async (ctx, modelCfg, signal) => {
             const model = resolvePiModel(modelCfg.provider, modelCfg.model);
             const opts = { signal };
-            return await piCompleteSimple(model, ctx, opts);
+            return await piModels.completeSimple(model, ctx, opts);
         });
     return async function* (req, signal) {
         // Seed the conversation history from runAgent's `req.history`

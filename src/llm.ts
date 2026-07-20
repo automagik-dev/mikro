@@ -5,7 +5,7 @@
  * from the Python REPL, and rlm_query child process spawning.
  */
 
-import { completeSimple, getModel } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Message, UserMessage, AssistantMessage as PiAssistantMessage, SimpleStreamOptions, KnownProvider, TextContent } from "@earendil-works/pi-ai";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -15,6 +15,14 @@ import type { Logger } from "./logger.js";
 import type { PgStorage } from "./storage.js";
 import { buildGeminiOnPayload, isGoogleProvider, type ThinkingLevel } from "./gemini.js";
 
+/**
+ * Shared pi-ai Models runtime. `builtinModels()` registers every built-in
+ * provider once per process; provider auth resolution (env API keys such as
+ * ANTHROPIC_API_KEY / GEMINI_API_KEY) replaces the old compat env-key
+ * injection that the root `completeSimple`/`getModel` helpers provided.
+ */
+const models = builtinModels();
+
 /** Token usage tracking. */
 export interface UsageStats {
   inputTokens: number;
@@ -23,11 +31,13 @@ export interface UsageStats {
   cacheWriteTokens: number;
   totalCost: number;
   llmCalls: number;
+  /** Reasoning/thinking tokens (a subset of outputTokens), when the provider reports them. */
+  reasoningTokens?: number;
 }
 
 /** Create a fresh usage tracker. */
 export function createUsage(): UsageStats {
-  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0 };
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0, reasoningTokens: 0 };
 }
 
 /** Return a - b for usage accounting splits. */
@@ -39,6 +49,7 @@ export function usageDelta(a: UsageStats, b: UsageStats): UsageStats {
     cacheWriteTokens: a.cacheWriteTokens - b.cacheWriteTokens,
     totalCost: a.totalCost - b.totalCost,
     llmCalls: a.llmCalls - b.llmCalls,
+    reasoningTokens: (a.reasoningTokens ?? 0) - (b.reasoningTokens ?? 0),
   };
 }
 
@@ -70,6 +81,7 @@ export function mergeUsage(parent: UsageStats, child: UsageStats): void {
   parent.cacheWriteTokens += child.cacheWriteTokens;
   parent.totalCost += child.totalCost;
   parent.llmCalls += child.llmCalls;
+  parent.reasoningTokens = (parent.reasoningTokens ?? 0) + (child.reasoningTokens ?? 0);
 }
 
 /** Message format for the RLM loop. */
@@ -100,6 +112,8 @@ export interface LLMResponse {
   usage: UsageStats;
   /** Original pi/ai AssistantMessage for multi-turn conversation fidelity. */
   piMessage?: PiAssistantMessage;
+  /** Provider-reported model that actually served the response (AssistantMessage.responseModel). */
+  responseModel?: string;
   /** Count of thought signatures in response (GROUP 2: multi-turn quality tracking). */
   thoughtSignatureCount?: number;
   /** Code execution results from Gemini (GROUP 5). */
@@ -142,12 +156,12 @@ export function formatModelRef(provider: string, modelId: string): string {
 
 function resolveModel(provider: string, modelId: string) {
   const normalizedModelId = normalizeProviderModelId(provider, modelId);
-  let model = getModel(provider as KnownProvider, normalizedModelId as never);
+  let model = models.getModel(provider, normalizedModelId);
   if (!model) {
     // Try stripping date suffix (e.g., "claude-sonnet-4-5-20250514" -> "claude-sonnet-4-5")
     const stripped = normalizedModelId.replace(/-\d{8}$/, "");
     if (stripped !== normalizedModelId) {
-      model = getModel(provider as KnownProvider, stripped as never);
+      model = models.getModel(provider, stripped);
     }
   }
   if (!model && provider === "kimi-coding" && modelId.startsWith("kimi-k2.6")) {
@@ -156,7 +170,7 @@ function resolveModel(provider: string, modelId: string) {
     // accepts K2.6 model IDs with the same Anthropic-compatible transport and
     // KIMI_API_KEY auth as `kimi-k2-thinking`, so clone that route rather than
     // falling back to Moonshot API credentials we do not have.
-    const template = getModel("kimi-coding" as KnownProvider, "kimi-k2-thinking" as never);
+    const template = models.getModel("kimi-coding", "kimi-k2-thinking");
     if (template) {
       model = {
         ...template,
@@ -282,7 +296,7 @@ export async function llmComplete(
     };
   }
 
-  const response = await completeSimple(
+  const response = await models.completeSimple(
     model,
     {
       systemPrompt,
@@ -296,6 +310,8 @@ export async function llmComplete(
   const outputTokens = response.usage?.output ?? 0;
   const cacheReadTokens = response.usage?.cacheRead ?? 0;
   const cacheWriteTokens = response.usage?.cacheWrite ?? 0;
+  const reasoningTokens = response.usage?.reasoning ?? 0;
+  const responseModel = response.responseModel;
   const usageRecord = response.usage as unknown as Record<string, unknown>;
   const cost = usageRecord?.cost != null
     ? (usageRecord.cost as Record<string, number>)?.total ?? 0
@@ -331,6 +347,8 @@ export async function llmComplete(
       output_tokens: outputTokens,
       cost,
       time_ms: timeMs,
+      reasoning_tokens: reasoningTokens,
+      response_model: responseModel,
     });
   }
 
@@ -343,8 +361,10 @@ export async function llmComplete(
       cacheWriteTokens,
       totalCost: cost,
       llmCalls: 1,
+      reasoningTokens,
     },
     piMessage: response,
+    responseModel,
     thoughtSignatureCount,
     codeExecutionResults: codeExecutionResults.length > 0 ? codeExecutionResults : undefined,
   };
