@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | APPROVED (amended + re-reviewed 2026-07-20) |
+| **Status** | IN_PROGRESS (execution started 2026-07-20; approved amended + re-reviewed 2026-07-20) |
 | **Slug** | `rlmx-live-tui` |
 | **Date** | 2026-07-20 |
 | **Author** | felipehowit@gmail.com |
@@ -195,6 +195,82 @@ _What must be verified on dev after merge._
   headless subscriber consume the same API. Implementation-detail narrowing within the approved scope; no re-review needed.
 
 _Execution and PR review evidence appended below as they occur._
+
+### Execution review — Group 1 (pi-ai bump → Models runtime) — 2026-07-20 — **SHIP**
+
+- **Engineer:** engineer-standard (Opus 4.8/high) — commit `4ffd7d0` on `wish/rlmx-live-tui`. Bumped
+  `@earendil-works/pi-ai` 0.77.0→**0.80.10** (exact pin); migrated `src/llm.ts` + `src/sdk/rlm-driver.ts`
+  off root `completeSimple`/`getModel` to `builtinModels()` (`.getModel()`/`.completeSimple()`); surfaced
+  `Usage.reasoning` → optional `UsageStats.reasoningTokens` (threaded through createUsage/usageDelta/mergeUsage)
+  and `AssistantMessage.responseModel` → `LLMResponse` + `llm_call` JSONL metric.
+- **Acceptance review:** independent reviewer (Opus 4.8/high) — **SHIP**, first pass, no fix loops. All
+  deliverables verified on disk + by live command runs; root imports confirmed gone (no `/compat` refs);
+  `createProvider` confirmed still exported from pi-ai root (extract-200-percent dependency satisfied).
+- **Quality review:** independent reviewer (Opus 4.8/high) — **SHIP**. Migration improves type safety;
+  no secrets, no any-casts, no dead code, no hot-path perf regressions.
+- **Orchestrator validation gate:** `npm ci && npm run check && npm run build && npm test` → **PASS**
+  (377/377 tests incl. `tests/sdk-events.test.ts`).
+- **Deviations/residuals:**
+  1. `contentText()` **does not exist** in pi-ai 0.80.10 (verified against shipped `.d.ts` + package
+     source by engineer and independently by reviewer) — the "adopt contentText()" deliverable item is
+     void; the manual `textParts.join("")` in `llm.ts` is retained. Wish assumption disproven, not a defect.
+  2. Live recursive-run regression exercised **to the LLM boundary only** — no provider credentials in
+     env (`rlmx doctor`: all keys unset). Deferred to post-merge QA: run one live recursive query with
+     real credentials.
+
+### Execution review — Group 2 (recursion instrumentation) — 2026-07-20 — **SHIP**
+
+- **Engineer:** engineer-complex (Opus 4.8/high) — commit `e29c094`. First `RecurseEvent` producer via new
+  `src/sdk/recursion-bridge.ts` fed by the existing `onChildStart`/`onChildEnd` hooks at the `rlmQuery`
+  spawn site (composed alongside the Langfuse recorder, not replacing it); contractual seam
+  `rlmLoop(query, context, config, { emitter })` with internal-emitter default; child-completion bridged
+  onto `IterationOutputEvent.metrics` (+`Error(phase:"recurse")` on failure) with `correlationId`/
+  `RLMX_PARENT_RUN_ID` ancestry; dependency-free RFC 9562 `uuidv7()` in `src/uuid.ts`; headless
+  subscriber `scripts/watch-headless.mjs` (STUB + `RLMX_HEADLESS_REAL=1` modes); README event-schema docs.
+  No schema fork — additive optional `BaseEvent.correlationId`/`parentRunId`, `responseModel`/`reasoning`.
+- **Acceptance review:** independent reviewer (Opus 4.8/high) — **SHIP** first pass. Minors recorded (below).
+- **Quality review:** independent reviewer (Opus 4.8/high) — **FIX-FIRST** with 2 major gaps → fixer
+  (Opus 4.8/high) resolved both in commit `1b1923e` → re-review **SHIP**:
+  1. Emitter lifecycle: a throw in rlmLoop's setup region escaped without `SessionClose`/`close()`,
+     hanging a pre-subscribed consumer's `for-await` forever. Fixed with a setup try/catch that emits
+     `Error` + `closeEmitter('error')` then rethrows; regression test `tests/rlm-setup-failure.test.ts`.
+  2. Unbounded pre-subscribe backlog in `createEmitter()` — capped at `PRE_SUBSCRIBE_BUFFER_LIMIT=256`;
+     regression test added; emit-then-close-then-iterate contract preserved.
+- **Orchestrator validation gate:** `npm run build && npm test` → **PASS (384/384)**;
+  `node scripts/watch-headless.mjs -- '<prompt>' | grep -c '"type":"Recurse"'` → **4** (one per spawn),
+  tree reconstruction correct across sibling branches at two levels (root→A,B; A→A1,A2), per-node
+  cost/tokens/latency populated.
+- **Residual minors (accepted, tracked for QA/follow-up):**
+  1. Deterministic proof drives `createRecursionBridge` directly; the `rlmLoop → onChildStart → bridge`
+     wiring in `rlm.ts` is verified by static inspection, not an executed test.
+  2. `llm.ts` spawn-**error** path (`child.on('error')`, i.e. spawn itself fails) calls `onChildEnd`
+     without `correlationId`/`depth`, mis-attributing that completion to the parent node — edge case;
+     the normal nonzero-exit path is correct.
+  3. Live real recursive run still deferred to QA-with-credentials (no keys, no local endpoint;
+     `RLMX_HEADLESS_REAL=1 node scripts/watch-headless.mjs -- "<prompt>"` is the QA command).
+
+### Final gate — 2026-07-20 — **SHIP** (Fable 5, adversarial aggregate review)
+
+- **Cross-wish Contract A (extract-200-percent):** `createProvider` verified as a live root export of the
+  installed pi-ai 0.80.10 — SATISFIED.
+- **Cross-wish Contract B (rlmx-acp-adapter):** external-consumer proof against `dist/` — imported
+  `rlmLoop` + `sdk.createEmitter`, subscribed **before** run, forced a setup failure:
+  pre-first-iteration events delivered live, stream terminated (`AgentStart, SessionOpen, Error,
+  SessionClose`), emitter closed, error rethrown. The 256 pre-subscribe cap does not touch subscribed
+  consumers; emit-then-close-then-iterate holds. All `rlmLoop` return paths close the emitter — SATISFIED.
+- **Composition:** no-emitter callers behavior-identical; `process._getActiveHandles()` empty after a
+  run (no leaked timers/handles); gates re-run green (384/384).
+- **New findings (both minor, no observable consumer today; fix before rlmx-acp Level-2 work):**
+  1. `src/llm.ts:621` — `child.on("error")` spawn-failure path omits `correlationId`/`depth` (both in
+     scope), so the bridge mis-attributes that completion to the parent node. One-line fix.
+  2. `src/rlm.ts:435` — mid-tree ancestry env mismatch: children are spawned with
+     `parentRunId: logger.runId` instead of `selfCorrelationId`, so at depth ≥ 1 a grandchild's
+     self-tagged `parentRunId` points at an id no other stream knows. Recurse *edges* stay correct.
+     Fix: pass `parentRunId: selfCorrelationId`.
+- **QA notes:** in REAL mode the root stream carries Recurse edges for *direct* children only (Level-2
+  aggregation is out of scope) — expected, not a regression. The rlmx-acp adapter should own a
+  truncation/redaction policy at the web boundary (`ToolCallBefore.args` / `ToolCallAfter.result` are
+  untruncated; Error events carry stack traces; no secrets in event payloads).
 
 ---
 
