@@ -195,53 +195,90 @@ export async function rlmLoop(query, context, config, options = {}) {
         ...selfTag,
         resumed: false,
     }));
-    if (opts.storageMode) {
-        storage = new PgStorage();
-        await storage.start(config.storage);
-        // Ingest context into Postgres
-        if (context) {
-            storageRecordCount = await storage.ingest(context);
-            if (opts.verbose) {
-                process.stderr.write(`rlmx: ingested ${storageRecordCount} records into pgserve storage\n`);
+    // Setup region (storage start/ingest, prompt build, cache hashing, REPL
+    // construction) runs BEFORE the main `try` below. A throw here — most
+    // plausibly `storage.start()` when Postgres is unreachable, or context
+    // ingestion — must NOT escape without closing the emitter: a caller that
+    // supplied its own emitter (the headless + rlmx-acp seam) is already
+    // subscribed and its `for await` would hang forever with no SessionClose.
+    // So we guard the setup: on failure emit an Error, close the emitter, then
+    // propagate as before. These vars are assigned inside the guard and used by
+    // the main loop below (definite-assignment via the always-throwing catch).
+    let systemPrompt;
+    let contextMetadata;
+    let cacheConfig;
+    let abortController;
+    let timeoutHandle;
+    let repl;
+    try {
+        if (opts.storageMode) {
+            storage = new PgStorage();
+            await storage.start(config.storage);
+            // Ingest context into Postgres
+            if (context) {
+                storageRecordCount = await storage.ingest(context);
+                if (opts.verbose) {
+                    process.stderr.write(`rlmx: ingested ${storageRecordCount} records into pgserve storage\n`);
+                }
+            }
+            // Set up observability recorder
+            recorder = new ObservabilityRecorder(storage);
+            recorder.startSession(runId, query, `${config.model.provider}/${config.model.model}`, config.model.provider, undefined, config);
+        }
+        // Build system prompt — cache mode embeds full context, storage mode adds pg_* tools, normal mode uses metadata only
+        systemPrompt = opts.cache
+            ? buildCachedSystemPrompt(config, context)
+            : buildSystemPrompt(config, context, storageRecordCount);
+        // In storage mode, override context metadata to describe storage
+        contextMetadata = opts.storageMode && storageRecordCount !== undefined
+            ? `Context is stored in PostgreSQL (~${storageRecordCount.toLocaleString()} records). Use pg_search(), pg_slice(), pg_time(), pg_count(), pg_query() to query it.`
+            : buildContextMetadata(context);
+        // Build cache config for LLM calls (passed through to pi/ai completeSimple)
+        if (opts.cache && context) {
+            const contentHash = computeContentHash(context);
+            const sessionId = buildSessionId(config.cache.sessionPrefix, contentHash);
+            cacheConfig = {
+                enabled: true,
+                retention: config.cache.retention,
+                sessionId,
+            };
+            // Emit cache_init log event
+            if (opts.logger) {
+                opts.logger.cacheInit({
+                    contentHash,
+                    sessionId,
+                    estimatedTokens: estimateTokens(context),
+                });
             }
         }
-        // Set up observability recorder
-        recorder = new ObservabilityRecorder(storage);
-        recorder.startSession(runId, query, `${config.model.provider}/${config.model.model}`, config.model.provider, undefined, config);
+        // REPL first, then the timeout — so a throw during REPL construction
+        // cannot leak a dangling timer (nothing after setTimeout can throw).
+        repl = new REPL();
+        abortController = new AbortController();
+        timeoutHandle = setTimeout(() => {
+            abortController.abort();
+        }, opts.timeout);
     }
-    // Build system prompt — cache mode embeds full context, storage mode adds pg_* tools, normal mode uses metadata only
-    const systemPrompt = opts.cache
-        ? buildCachedSystemPrompt(config, context)
-        : buildSystemPrompt(config, context, storageRecordCount);
-    // In storage mode, override context metadata to describe storage
-    const contextMetadata = opts.storageMode && storageRecordCount !== undefined
-        ? `Context is stored in PostgreSQL (~${storageRecordCount.toLocaleString()} records). Use pg_search(), pg_slice(), pg_time(), pg_count(), pg_query() to query it.`
-        : buildContextMetadata(context);
-    // Build cache config for LLM calls (passed through to pi/ai completeSimple)
-    let cacheConfig;
-    if (opts.cache && context) {
-        const contentHash = computeContentHash(context);
-        const sessionId = buildSessionId(config.cache.sessionPrefix, contentHash);
-        cacheConfig = {
-            enabled: true,
-            retention: config.cache.retention,
-            sessionId,
-        };
-        // Emit cache_init log event
-        if (opts.logger) {
-            opts.logger.cacheInit({
-                contentHash,
-                sessionId,
-                estimatedTokens: estimateTokens(context),
-            });
-        }
+    catch (err) {
+        if (timeoutHandle)
+            clearTimeout(timeoutHandle);
+        if (recorder)
+            recorder.recordError(err instanceof Error ? err.message : String(err));
+        if (storage)
+            await storage.stop().catch(() => { });
+        emitter.emit(makeEvent("Error", {
+            sessionId: selfCorrelationId,
+            ...selfTag,
+            phase: "error",
+            error: {
+                name: err instanceof Error ? err.name : "Error",
+                message: err instanceof Error ? err.message : String(err),
+                ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+            },
+        }));
+        closeEmitter("error");
+        throw err;
     }
-    // Prepare abort controller for timeout
-    const abortController = new AbortController();
-    const timeoutHandle = setTimeout(() => {
-        abortController.abort();
-    }, opts.timeout);
-    const repl = new REPL();
     try {
         // Start REPL — in storage mode, skip raw context injection and load pg_batteries
         const replContext = opts.storageMode ? undefined : prepareReplContext(context);

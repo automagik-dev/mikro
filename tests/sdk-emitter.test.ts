@@ -118,6 +118,26 @@ describe("SDK emitter — async-iterator contract (Wish B Group 1)", () => {
 		assert.equal(collected.length, 2);
 	});
 
+	it("caps the pre-subscribe backlog so a no-subscriber run stays bounded", async () => {
+		// Gap 2 regression: on the default (internal-emitter) path nobody
+		// subscribes, so without a cap every event — incl. untruncated REPL
+		// code/stdout — would accumulate for the whole run. The backlog is
+		// bounded; a late subscriber still replays the retained opening events.
+		const em = createEmitter();
+		const TOTAL = 5000;
+		for (let i = 0; i < TOTAL; i++) em.emit(iterStart("s1", i));
+		const sub = em.subscribe();
+		em.close();
+		const got = await collect(sub, TOTAL);
+		assert.ok(
+			got.length < TOTAL,
+			`backlog must be capped, got ${got.length} of ${TOTAL}`,
+		);
+		assert.ok(got.length > 0, "opening events are still retained");
+		// The retained events are the run's OPENING events, in order.
+		assert.equal((got[0] as { iteration: number }).iteration, 0);
+	});
+
 	it("iterator.return() cleanly exits the subscriber", async () => {
 		const em = createEmitter();
 		const sub = em.subscribe();

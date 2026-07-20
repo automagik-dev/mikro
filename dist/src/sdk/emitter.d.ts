@@ -37,12 +37,9 @@ export type EmitterAndStream = EventEmitter & EventStream;
 /**
  * Create an emitter with an async-iterator backplane. Broadcasts to
  * every subscriber; each subscriber sees events in emit order. Buffers
- * events that arrive before any subscriber is attached so no early
- * emissions are lost.
- *
- * The buffer is unbounded by default — for Group 1 the expected
- * volume is ~10³ events per run. If back-pressure becomes an issue we
- * revisit (Group 3 per-depth metrics may push volume higher).
+ * up to {@link PRE_SUBSCRIBE_BUFFER_LIMIT} events that arrive before any
+ * subscriber is attached so a late subscriber still replays the run's
+ * opening events.
  */
 export declare function createEmitter(): EmitterAndStream;
 //# sourceMappingURL=emitter.d.ts.map
