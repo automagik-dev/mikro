@@ -144,6 +144,8 @@ export declare function rlmQuery(prompt: string, cwd: string, signal?: AbortSign
     }) => string | undefined;
     onChildEnd?: (data: {
         spanId?: string;
+        correlationId?: string;
+        depth?: number;
         result: RlmChildResult;
         durationMs: number;
         isError?: boolean;
@@ -163,6 +165,8 @@ export declare function rlmQueryBatched(prompts: string[], cwd: string, signal?:
     }) => string | undefined;
     onChildEnd?: (data: {
         spanId?: string;
+        correlationId?: string;
+        depth?: number;
         result: RlmChildResult;
         durationMs: number;
         isError?: boolean;
@@ -184,6 +188,8 @@ export declare function handleLLMRequest(request: LLMRequest, config: RlmxConfig
     }) => string | undefined;
     onChildEnd?: (data: {
         spanId?: string;
+        correlationId?: string;
+        depth?: number;
         result: RlmChildResult;
         durationMs: number;
         isError?: boolean;

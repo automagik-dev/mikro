@@ -25,6 +25,7 @@ export function createMetricsRecorder() {
     let inputTokens;
     let outputTokens;
     let cachedTokens;
+    let reasoningTokens;
     let cacheHitRatio;
     return {
         start(d, p) {
@@ -36,6 +37,7 @@ export function createMetricsRecorder() {
             inputTokens = undefined;
             outputTokens = undefined;
             cachedTokens = undefined;
+            reasoningTokens = undefined;
             cacheHitRatio = undefined;
         },
         incrToolCalls() {
@@ -46,11 +48,14 @@ export function createMetricsRecorder() {
                 return;
             costUsd = (costUsd ?? 0) + usd;
         },
-        addTokens(input, output, cached) {
+        addTokens(input, output, cached, reasoning) {
             inputTokens = (inputTokens ?? 0) + (Number.isFinite(input) ? input : 0);
             outputTokens = (outputTokens ?? 0) + (Number.isFinite(output) ? output : 0);
             if (cached !== undefined && Number.isFinite(cached)) {
                 cachedTokens = (cachedTokens ?? 0) + cached;
+            }
+            if (reasoning !== undefined && Number.isFinite(reasoning)) {
+                reasoningTokens = (reasoningTokens ?? 0) + reasoning;
             }
         },
         setCacheHitRatio(ratio) {
@@ -65,6 +70,9 @@ export function createMetricsRecorder() {
                     output: outputTokens ?? 0,
                     ...(cachedTokens !== undefined
                         ? { cached: cachedTokens }
+                        : {}),
+                    ...(reasoningTokens !== undefined
+                        ? { reasoning: reasoningTokens }
                         : {}),
                 }
                 : undefined;

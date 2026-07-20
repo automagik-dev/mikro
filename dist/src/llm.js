@@ -6,7 +6,7 @@
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { uuidv7 } from "./uuid.js";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
 /**
  * Shared pi-ai Models runtime. `builtinModels()` registers every built-in
@@ -337,7 +337,7 @@ function isUsageStats(value) {
  */
 export async function rlmQuery(prompt, cwd, signal, options = {}) {
     return new Promise((resolve) => {
-        const correlationId = randomUUID();
+        const correlationId = uuidv7();
         const parentRunId = options.parentRunId ?? process.env.RLMX_PARENT_RUN_ID ?? "root";
         const depth = (Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0) + 1;
         const currentDepth = Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
@@ -420,7 +420,7 @@ export async function rlmQuery(prompt, cwd, signal, options = {}) {
                     is_error: true,
                     error_message: errorMessage,
                 });
-                options.onChildEnd?.({ spanId, result, durationMs, isError: true, errorMessage });
+                options.onChildEnd?.({ spanId, correlationId, depth, result, durationMs, isError: true, errorMessage });
                 resolve(result);
                 return;
             }
@@ -434,7 +434,7 @@ export async function rlmQuery(prompt, cwd, signal, options = {}) {
                 llm_calls: result.usage?.llmCalls ?? 0,
                 time_ms: durationMs,
             });
-            options.onChildEnd?.({ spanId, result, durationMs });
+            options.onChildEnd?.({ spanId, correlationId, depth, result, durationMs });
             resolve(result);
         });
         child.on("error", (err) => {

@@ -10,6 +10,8 @@
 export { ALL_AGENT_EVENT_TYPES, WISH_SPEC_EVENT_TYPES, isAgentEvent, iso, makeEvent, } from "./events.js";
 // ─── Emitter ─────────────────────────────────────────────────────
 export { createEmitter } from "./emitter.js";
+// ─── Recursion bridge (live-tui G2 — the RecurseEvent producer) ───
+export { createRecursionBridge } from "./recursion-bridge.js";
 // ─── Session ─────────────────────────────────────────────────────
 export { createFileSessionStore, isSessionState, pauseAgent, resumeAgent, } from "./session.js";
 // ─── Permissions ─────────────────────────────────────────────────

@@ -28,11 +28,13 @@ export interface IterationMetrics {
 	readonly toolCalls: number;
 	/** Optional — cost in USD accumulated this iteration. */
 	readonly costUsd?: number;
-	/** Optional — token tally (input / output / cached). */
+	/** Optional — token tally (input / output / cached / reasoning). */
 	readonly tokens?: {
 		readonly input: number;
 		readonly output: number;
 		readonly cached?: number;
+		/** Reasoning/thinking tokens (subset of output), when reported. */
+		readonly reasoning?: number;
 	};
 	/** Optional — cache hit ratio in [0, 1]. Consumer-supplied. */
 	readonly cacheHitRatio?: number;
@@ -43,7 +45,7 @@ export interface MetricsRecorder {
 	start(depth: number, parentDepth: number): void;
 	incrToolCalls(): void;
 	addCost(usd: number): void;
-	addTokens(input: number, output: number, cached?: number): void;
+	addTokens(input: number, output: number, cached?: number, reasoning?: number): void;
 	setCacheHitRatio(ratio: number): void;
 	/** Freeze the recorder's current state as a plain object. Safe to
 	 *  emit on events; returns a fresh snapshot each call. */
@@ -59,6 +61,7 @@ export function createMetricsRecorder(): MetricsRecorder {
 	let inputTokens: number | undefined;
 	let outputTokens: number | undefined;
 	let cachedTokens: number | undefined;
+	let reasoningTokens: number | undefined;
 	let cacheHitRatio: number | undefined;
 
 	return {
@@ -71,6 +74,7 @@ export function createMetricsRecorder(): MetricsRecorder {
 			inputTokens = undefined;
 			outputTokens = undefined;
 			cachedTokens = undefined;
+			reasoningTokens = undefined;
 			cacheHitRatio = undefined;
 		},
 		incrToolCalls() {
@@ -80,11 +84,14 @@ export function createMetricsRecorder(): MetricsRecorder {
 			if (!Number.isFinite(usd)) return;
 			costUsd = (costUsd ?? 0) + usd;
 		},
-		addTokens(input, output, cached) {
+		addTokens(input, output, cached, reasoning) {
 			inputTokens = (inputTokens ?? 0) + (Number.isFinite(input) ? input : 0);
 			outputTokens = (outputTokens ?? 0) + (Number.isFinite(output) ? output : 0);
 			if (cached !== undefined && Number.isFinite(cached)) {
 				cachedTokens = (cachedTokens ?? 0) + cached;
+			}
+			if (reasoning !== undefined && Number.isFinite(reasoning)) {
+				reasoningTokens = (reasoningTokens ?? 0) + reasoning;
 			}
 		},
 		setCacheHitRatio(ratio) {
@@ -99,6 +106,9 @@ export function createMetricsRecorder(): MetricsRecorder {
 							output: outputTokens ?? 0,
 							...(cachedTokens !== undefined
 								? { cached: cachedTokens }
+								: {}),
+							...(reasoningTokens !== undefined
+								? { reasoning: reasoningTokens }
 								: {}),
 						}
 					: undefined;

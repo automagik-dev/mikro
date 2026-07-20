@@ -41,6 +41,21 @@ import { BudgetTracker } from "./budget.js";
 import { isGoogleProvider } from "./gemini.js";
 import { detectRtk } from "./rtk-detect.js";
 import type { Logger } from "./logger.js";
+import { createEmitter, type EmitterAndStream } from "./sdk/emitter.js";
+import { createRecursionBridge } from "./sdk/recursion-bridge.js";
+import { createMetricsRecorder } from "./sdk/metrics.js";
+import { makeEvent } from "./sdk/events.js";
+import type {
+  AgentStartEvent,
+  EmitDoneEvent,
+  ErrorEvent,
+  IterationOutputEvent,
+  IterationStartEvent,
+  SessionCloseEvent,
+  SessionOpenEvent,
+  ToolCallAfterEvent,
+  ToolCallBeforeEvent,
+} from "./sdk/events.js";
 
 /** Options for the RLM loop. */
 export interface RLMOptions {
@@ -52,6 +67,16 @@ export interface RLMOptions {
   /** When true, route context through pgserve storage instead of REPL variable. */
   storageMode?: boolean;
   logger?: Logger;
+  /**
+   * Live SDK event bus (Wish B live-tui G2). Optional — pass a
+   * `createEmitter()` the caller has ALREADY subscribed to so the run's
+   * events (AgentStart / Iteration* / ToolCall* / Recurse / child-completion
+   * / Session*) stream live from the first emission. When omitted, rlmLoop
+   * creates its own internal emitter. This is the contractual seam the
+   * headless subscriber and the rlmx-acp adapter both consume — the run
+   * closes the emitter when it finishes.
+   */
+  emitter?: EmitterAndStream;
 }
 
 const DEFAULT_OPTIONS: RLMOptions = {
@@ -212,6 +237,55 @@ export async function rlmLoop(
     metadata: { storage_mode: !!opts.storageMode },
   });
 
+  // ── Live SDK event bus (Wish B live-tui G2) ─────────────
+  // Reuse a caller-supplied emitter when present (so a subscriber can be
+  // attached BEFORE the run starts); otherwise spin up an internal one.
+  // Emits are additive + synchronous — they never touch control flow.
+  const emitter = opts.emitter ?? createEmitter();
+  // This run's ancestry identity. When this process was itself spawned as
+  // a recursive child, `buildChildEnv` stamped its correlation id + parent
+  // run id into the environment; at the true root neither is set.
+  const selfCorrelationId = process.env.RLMX_CHILD_CORRELATION_ID ?? (opts.logger?.runId ?? runId);
+  const selfParentRunId = process.env.RLMX_PARENT_RUN_ID;
+  const selfDepth = Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
+  const metrics = createMetricsRecorder();
+  let currentIteration = 0;
+  const recursionBridge = createRecursionBridge({
+    emitter,
+    sessionId: selfCorrelationId,
+    currentIteration: () => currentIteration,
+  });
+  /** Ancestry stamp shared by every event this run emits about itself. */
+  const selfTag = { correlationId: selfCorrelationId, parentRunId: selfParentRunId };
+  let emitterClosed = false;
+  const closeEmitter = (reason: SessionCloseEvent["reason"]): void => {
+    if (emitterClosed) return;
+    emitterClosed = true;
+    emitter.emit(makeEvent<SessionCloseEvent>("SessionClose", {
+      sessionId: selfCorrelationId,
+      ...selfTag,
+      reason,
+    }));
+    emitter.close();
+  };
+
+  emitter.emit(makeEvent<AgentStartEvent>("AgentStart", {
+    agentId: formatModelRef(config.model.provider, config.model.model),
+    sessionId: selfCorrelationId,
+    ...selfTag,
+    config: {
+      model: formatModelRef(config.model.provider, config.model.model),
+      maxIterations: opts.maxIterations,
+      storageMode: !!opts.storageMode,
+      depth: selfDepth,
+    },
+  }));
+  emitter.emit(makeEvent<SessionOpenEvent>("SessionOpen", {
+    sessionId: selfCorrelationId,
+    ...selfTag,
+    resumed: false,
+  }));
+
   if (opts.storageMode) {
     storage = new PgStorage();
     await storage.start(config.storage);
@@ -331,13 +405,20 @@ export async function rlmLoop(
           maxDepth: config.budget.maxDepth ?? 3,
           maxCost: remainingChildBudget.maxCost,
           maxTokens: remainingChildBudget.maxTokens,
-          onChildStart: ({ correlationId, prompt, depth }) => langfuse.childStart({
-            parentRunId: opts.logger?.runId ?? runId,
-            correlationId,
-            prompt,
-            depth,
-          }),
-          onChildEnd: ({ spanId, result, durationMs, isError, errorMessage }) => {
+          onChildStart: ({ correlationId, prompt, depth }) => {
+            // Live event: emit the RecurseEvent for this spawn (G2 producer).
+            recursionBridge.onChildStart({ correlationId, prompt, depth });
+            return langfuse.childStart({
+              parentRunId: opts.logger?.runId ?? runId,
+              correlationId,
+              prompt,
+              depth,
+            });
+          },
+          onChildEnd: ({ spanId, correlationId, depth, result, durationMs, isError, errorMessage }) => {
+            // Live event: bridge the child result (usage / isError / durationMs)
+            // into a child-completion node keyed by correlationId.
+            recursionBridge.onChildEnd({ spanId, correlationId, depth, result, durationMs, isError, errorMessage });
             if (spanId) {
               langfuse.childEnd(spanId, {
                 childRunId: result.runId,
@@ -391,6 +472,12 @@ export async function rlmLoop(
         if (opts.verbose) process.stderr.write(`rlmx: Langfuse flush failed: ${err instanceof Error ? err.message : String(err)}\n`);
       });
       if (storage) await storage.stop();
+      emitter.emit(makeEvent<EmitDoneEvent>("EmitDone", {
+        sessionId: selfCorrelationId,
+        ...selfTag,
+        payload: { answer, iterations },
+      }));
+      closeEmitter("complete");
       return buildResult(answer, usage, iterations, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
     };
 
@@ -421,6 +508,16 @@ export async function rlmLoop(
       }
       actualIterations = iteration + 1;
 
+      // Live event: mark the iteration + reset the per-iteration metrics
+      // baseline (latency / tool-call count / token deltas).
+      currentIteration = iteration;
+      metrics.start(selfDepth, selfDepth - 1);
+      emitter.emit(makeEvent<IterationStartEvent>("IterationStart", {
+        sessionId: selfCorrelationId,
+        ...selfTag,
+        iteration,
+      }));
+
       if (opts.verbose) {
         logVerbose(iteration, "calling LLM...");
       }
@@ -448,6 +545,16 @@ export async function rlmLoop(
       });
       mergeUsage(usage, response.usage);
       budget.record(response.usage.inputTokens, response.usage.outputTokens, response.usage.totalCost);
+
+      // Live metrics: accumulate this iteration's tokens + cost so the
+      // IterationOutput snapshot carries per-node cost/tokens/latency.
+      metrics.addTokens(
+        response.usage.inputTokens,
+        response.usage.outputTokens,
+        response.usage.cacheReadTokens,
+        response.usage.reasoningTokens,
+      );
+      metrics.addCost(response.usage.totalCost);
 
       // Record LLM call to observability
       if (recorder) {
@@ -529,9 +636,27 @@ export async function rlmLoop(
           logVerbose(iteration, `executing code (${block.code.length} chars)`);
         }
 
+        // Live event: the REPL execution is the parent loop's tool call.
+        emitter.emit(makeEvent<ToolCallBeforeEvent>("ToolCallBefore", {
+          sessionId: selfCorrelationId,
+          ...selfTag,
+          iteration,
+          tool: "repl",
+          args: block.code,
+        }));
         const execStartMs = Date.now();
         const execResult = await repl.execute(block.code);
         const execDurationMs = Date.now() - execStartMs;
+        metrics.incrToolCalls();
+        emitter.emit(makeEvent<ToolCallAfterEvent>("ToolCallAfter", {
+          sessionId: selfCorrelationId,
+          ...selfTag,
+          iteration,
+          tool: "repl",
+          result: execResult.stdout,
+          durationMs: execDurationMs,
+          ok: !execResult.error,
+        }));
 
         executions.push({
           code: block.code,
@@ -645,6 +770,18 @@ export async function rlmLoop(
         });
       }
 
+      // Live event: per-iteration output + node metrics. The terminal
+      // iteration returns via finalize() (carried by EmitDone), so this
+      // fires only for iterations that continue the loop.
+      emitter.emit(makeEvent<IterationOutputEvent>("IterationOutput", {
+        sessionId: selfCorrelationId,
+        ...selfTag,
+        iteration,
+        output: responseText.slice(0, 2000),
+        responseModel: response.responseModel,
+        metrics: metrics.snapshot(),
+      }));
+
     }
 
     // Loop exited — check reason and handle accordingly
@@ -657,6 +794,14 @@ export async function rlmLoop(
       if (recorder) recorder.recordError("empty_responses");
       await repl.stop();
       if (storage) await storage.stop();
+
+      emitter.emit(makeEvent<ErrorEvent>("Error", {
+        sessionId: selfCorrelationId,
+        ...selfTag,
+        phase: "iteration",
+        error: { name: "EmptyResponses", message: "aborted after 3 consecutive empty LLM responses" },
+      }));
+      closeEmitter("abort");
 
       return buildResult(
         "Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.",
@@ -684,7 +829,20 @@ export async function rlmLoop(
     await repl.stop().catch(() => {});
     if (storage) await storage.stop().catch(() => {});
 
-    if ((err instanceof Error && err.name === "AbortError") || abortController.signal.aborted) {
+    const aborted = (err instanceof Error && err.name === "AbortError") || abortController.signal.aborted;
+    emitter.emit(makeEvent<ErrorEvent>("Error", {
+      sessionId: selfCorrelationId,
+      ...selfTag,
+      phase: aborted ? "timeout" : "error",
+      error: {
+        name: err instanceof Error ? err.name : "Error",
+        message: err instanceof Error ? err.message : String(err),
+        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+      },
+    }));
+    closeEmitter(aborted ? "abort" : "error");
+
+    if (aborted) {
       return buildResult(
         "Error: RLM query timed out",
         usage,

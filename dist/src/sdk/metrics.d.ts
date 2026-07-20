@@ -27,11 +27,13 @@ export interface IterationMetrics {
     readonly toolCalls: number;
     /** Optional — cost in USD accumulated this iteration. */
     readonly costUsd?: number;
-    /** Optional — token tally (input / output / cached). */
+    /** Optional — token tally (input / output / cached / reasoning). */
     readonly tokens?: {
         readonly input: number;
         readonly output: number;
         readonly cached?: number;
+        /** Reasoning/thinking tokens (subset of output), when reported. */
+        readonly reasoning?: number;
     };
     /** Optional — cache hit ratio in [0, 1]. Consumer-supplied. */
     readonly cacheHitRatio?: number;
@@ -41,7 +43,7 @@ export interface MetricsRecorder {
     start(depth: number, parentDepth: number): void;
     incrToolCalls(): void;
     addCost(usd: number): void;
-    addTokens(input: number, output: number, cached?: number): void;
+    addTokens(input: number, output: number, cached?: number, reasoning?: number): void;
     setCacheHitRatio(ratio: number): void;
     /** Freeze the recorder's current state as a plain object. Safe to
      *  emit on events; returns a fresh snapshot each call. */

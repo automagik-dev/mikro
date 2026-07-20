@@ -8,7 +8,7 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Message, UserMessage, AssistantMessage as PiAssistantMessage, SimpleStreamOptions, KnownProvider, TextContent } from "@earendil-works/pi-ai";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { uuidv7 } from "./uuid.js";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
 import type { LLMRequest } from "./ipc.js";
 import type { Logger } from "./logger.js";
@@ -491,11 +491,11 @@ export async function rlmQuery(
     logger?: Logger;
     parentRunId?: string;
     onChildStart?: (data: { correlationId: string; prompt: string; depth: number }) => string | undefined;
-    onChildEnd?: (data: { spanId?: string; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
+    onChildEnd?: (data: { spanId?: string; correlationId?: string; depth?: number; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
   } = {}
 ): Promise<RlmChildResult> {
   return new Promise<RlmChildResult>((resolve) => {
-    const correlationId = randomUUID();
+    const correlationId = uuidv7();
     const parentRunId = options.parentRunId ?? process.env.RLMX_PARENT_RUN_ID ?? "root";
     const depth = (Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0) + 1;
     const currentDepth = Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
@@ -585,7 +585,7 @@ export async function rlmQuery(
           is_error: true,
           error_message: errorMessage,
         });
-        options.onChildEnd?.({ spanId, result, durationMs, isError: true, errorMessage });
+        options.onChildEnd?.({ spanId, correlationId, depth, result, durationMs, isError: true, errorMessage });
         resolve(result);
         return;
       }
@@ -599,7 +599,7 @@ export async function rlmQuery(
         llm_calls: result.usage?.llmCalls ?? 0,
         time_ms: durationMs,
       });
-      options.onChildEnd?.({ spanId, result, durationMs });
+      options.onChildEnd?.({ spanId, correlationId, depth, result, durationMs });
       resolve(result);
     });
 
@@ -635,7 +635,7 @@ export async function rlmQueryBatched(
     logger?: Logger;
     parentRunId?: string;
     onChildStart?: (data: { correlationId: string; prompt: string; depth: number }) => string | undefined;
-    onChildEnd?: (data: { spanId?: string; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
+    onChildEnd?: (data: { spanId?: string; correlationId?: string; depth?: number; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
   } = {}
 ): Promise<RlmChildResult[]> {
   const MAX_CONCURRENT = 4;
@@ -671,7 +671,7 @@ export async function handleLLMRequest(
     logger?: Logger;
     parentRunId?: string;
     onChildStart?: (data: { correlationId: string; prompt: string; depth: number }) => string | undefined;
-    onChildEnd?: (data: { spanId?: string; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
+    onChildEnd?: (data: { spanId?: string; correlationId?: string; depth?: number; result: RlmChildResult; durationMs: number; isError?: boolean; errorMessage?: string }) => void;
   } = {}
 ): Promise<string[]> {
   const subCallModel: ModelConfig = config.model.subCallModel
