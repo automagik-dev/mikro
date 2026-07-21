@@ -14,8 +14,16 @@
  *     JSON-RPC error (documented choice — not queued).
  *   • Group 2: full AgentEvent → session/update translation (tool calls,
  *     thoughts, plans). The event drain loop below is the seam it hooks.
- *   • Group 3: durable session/load + persistence (Tidewave). This file
- *     advertises `loadSession: false` honestly until then.
+ *   • Group 3 (DONE): durable session/load + persistence. `initialize` now
+ *     advertises `loadSession: true` + MCP-server support; sessions are backed
+ *     by a durable per-session file (see `session-store.ts`) with RESTORE-ON-
+ *     EMPTY, so a `session/load` + follow-up `session/prompt` survive an
+ *     agent-process restart instead of throwing "Invalid params". Prompt turns
+ *     thread prior-turn context so a session is genuinely multi-turn. Host MCP
+ *     config is materialized + advertised (store-only; rlmx has no MCP client —
+ *     execution is a documented follow-on). Mid-run disconnect (stdin EOF /
+ *     SIGTERM) reuses the cooperative cancel path to abort the active turn and
+ *     close the emitter before exit (no orphaned children, emitter closed).
  *
  * SDK: @agentclientprotocol/sdk ^0.26.0 (same family pi-acp pins). Method
  * names map to the SDK's `Agent` interface members: initialize,
@@ -29,6 +37,22 @@
  * stream-mode stdout path is never taken.
  */
 import { AgentSideConnection, type Agent, type AuthenticateRequest, type AuthenticateResponse, type CancelNotification, type InitializeRequest, type InitializeResponse, type LoadSessionRequest, type LoadSessionResponse, type NewSessionRequest, type NewSessionResponse, type PromptRequest, type PromptResponse } from "@agentclientprotocol/sdk";
+import { type EmitterAndStream } from "../sdk/emitter.js";
+/** Cancellation handle for the single in-flight prompt turn. */
+interface ActivePrompt {
+    readonly sessionId: string;
+    readonly abort: AbortController;
+    /** The run's live emitter, so disconnect can close it (drain unblocks). */
+    readonly emitter: EmitterAndStream;
+}
+/**
+ * Cooperative-cancel primitive shared by `session/cancel` and disconnect
+ * shutdown. Aborts the in-flight turn (the drain loop stops forwarding
+ * session/update and the turn resolves `cancelled`) and closes its emitter so
+ * the `await drain` in `prompt()` unblocks immediately rather than dangling.
+ * Idempotent and null-safe. Returns true if there was an active prompt to abort.
+ */
+export declare function abortActivePrompt(active: ActivePrompt | null): boolean;
 /**
  * The rlmx ACP agent. One instance per stdio connection.
  *
@@ -40,6 +64,7 @@ import { AgentSideConnection, type Agent, type AuthenticateRequest, type Authent
 export declare class RlmxAcpAgent implements Agent {
     private readonly conn;
     private readonly sessions;
+    private readonly store;
     private readonly version;
     /** True while a `session/prompt` turn is executing. Serializes prompt turns. */
     private promptInFlight;
@@ -49,10 +74,33 @@ export declare class RlmxAcpAgent implements Agent {
     initialize(_params: InitializeRequest): Promise<InitializeResponse>;
     authenticate(_params: AuthenticateRequest): Promise<AuthenticateResponse>;
     newSession(params: NewSessionRequest): Promise<NewSessionResponse>;
-    loadSession(_params: LoadSessionRequest): Promise<LoadSessionResponse>;
+    loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse>;
     prompt(params: PromptRequest): Promise<PromptResponse>;
     cancel(params: CancelNotification): Promise<void>;
+    /**
+     * Disconnect hardening (stdin EOF / SIGTERM mid-run). Reuses the cooperative
+     * cancel path: aborts the active prompt turn and closes its emitter so the
+     * drain loop and its `await drain` unblock cleanly before the process exits —
+     * no dangling async iterator, emitter closed. Returns true if a turn was
+     * aborted (used by the shutdown handler to decide whether to grace-wait).
+     */
+    shutdown(): boolean;
+    /** Best-effort model snapshot from a cwd's config for the stored record. */
+    private configSnapshot;
 }
+/**
+ * Fold prior turns into a follow-up prompt so a durable session is genuinely
+ * multi-turn. The first turn of a session (no history) passes the query through
+ * unchanged — the fast/default path is untouched. On a follow-up, the most-
+ * recent PREAMBLE_TURNS turns are prepended as a bounded, clearly-delimited
+ * transcript so the model can reference earlier context (the exact capability a
+ * restart must preserve). Each field is char-capped so the preamble cannot grow
+ * without bound.
+ */
+export declare function buildConversationalQuery(turns: ReadonlyArray<{
+    query: string;
+    answer: string;
+}>, currentQuery: string): string;
 /**
  * Bootstrap the stdio ACP connection and run until stdin closes.
  *
@@ -60,4 +108,5 @@ export declare class RlmxAcpAgent implements Agent {
  * to stdout are never interleaved with stray logging.
  */
 export declare function runAcp(): Promise<void>;
+export {};
 //# sourceMappingURL=agent.d.ts.map

@@ -180,6 +180,163 @@ root subscriber sees its direct spawns, and a collector aggregating the
 process tree reconstructs deeper levels by `correlationId`. Streaming
 child-internal events into the parent stream is the documented next step.
 
+## ACP agent (`rlmx acp`) — wire rlmx into an ACP host
+
+`rlmx acp` is a stdio [Agent Client Protocol](https://agentclientprotocol.com)
+agent: it speaks newline-delimited JSON-RPC over **stdin/stdout**, so any ACP
+host (Tidewave, Zed, Newio, …) can drive a real `rlmLoop` and render its live
+event stream. No network port, no daemon — the host spawns the process and owns
+its lifetime.
+
+### One-time: find your absolute launch command
+
+Every host entry needs the **absolute** path to the built CLI. Compute it once:
+
+```bash
+# From a clone of this repo:
+npm ci && npm run build
+node -e "console.log(require('path').resolve('dist/src/cli.js'))"
+# → /ABS/PATH/TO/rlmx/dist/src/cli.js   ← use THIS everywhere below
+```
+
+The launch command is always: **`node /ABS/PATH/TO/rlmx/dist/src/cli.js acp`**
+run **with `cwd` set to the project you want rlmx to operate in** (rlmx loads
+`.rlmx/rlmx.yaml` from `cwd`, exactly like the CLI). Substitute your real
+absolute path for `/ABS/PATH/TO/rlmx` in every snippet — nothing else changes.
+
+> Sessions are durable. rlmx persists each ACP session (conversation history +
+> cwd + config snapshot + any host MCP config) to `~/.rlmx/acp-sessions/<id>.json`,
+> so `session/load` and a follow-up prompt keep working **after the host
+> restarts the agent** — no "Invalid params". Override the store location with
+> `RLMX_ACP_SESSIONS_DIR`.
+
+### Tidewave — External Agent (exec entry)
+
+Add an external agent whose transport is **stdio / exec**:
+
+| Field | Value |
+| --- | --- |
+| Name | `rlmx` |
+| Command | `node` |
+| Args | `["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"]` |
+| Working directory (`cwd`) | `/ABS/PATH/TO/your-project` |
+| Env | `RLMX_ACP_RUN_TIMEOUT_MS=660000` (optional; lift the 300s run cap for recursive turns) |
+
+### Zed — `agent_servers` (settings.json)
+
+```jsonc
+// Zed settings.json
+{
+  "agent_servers": {
+    "rlmx": {
+      "command": "node",
+      "args": ["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"],
+      "cwd": "/ABS/PATH/TO/your-project",
+      "env": {
+        "RLMX_ACP_RUN_TIMEOUT_MS": "660000"
+      }
+    }
+  }
+}
+```
+
+### Newio — custom agent type
+
+```jsonc
+// Newio agent config — a custom stdio ACP agent
+{
+  "type": "acp",
+  "transport": "stdio",
+  "command": "node",
+  "args": ["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"],
+  "cwd": "/ABS/PATH/TO/your-project",
+  "env": { "RLMX_ACP_RUN_TIMEOUT_MS": "660000" }
+}
+```
+
+### acp-inspector — dev loop
+
+Drive the agent by hand with the reference inspector while iterating:
+
+```bash
+# From /ABS/PATH/TO/your-project (this becomes the session cwd):
+npx @agentclientprotocol/inspector -- \
+  node /ABS/PATH/TO/rlmx/dist/src/cli.js acp
+
+# Or the repo's own scripted end-to-end smoke (spawns + drives the agent):
+node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs              # fast handshake + prompt
+node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs --multiturn  # survives an agent restart
+node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs --recursive  # live translated recursion stream
+```
+
+### Remote (stdio over SSH) — first-class
+
+Because the transport is pure stdio, a host on your laptop can drive rlmx on a
+remote box with **no port, no tunnel, no `-t`** — SSH pipes stdin/stdout for
+you. Point the host's `command` at `ssh` and pass the remote launch as args:
+
+```jsonc
+{
+  "command": "ssh",
+  "args": [
+    "REMOTE_HOST",
+    "node", "/ABS/PATH/ON/REMOTE/rlmx/dist/src/cli.js", "acp"
+  ],
+  "cwd": "/ABS/PATH/TO/local-placeholder"
+}
+```
+
+- Do **not** pass `ssh -t` — a PTY injects terminal control bytes that corrupt
+  the JSON-RPC frame stream. Plain `ssh <host> node … acp` is correct.
+- The session `cwd` that matters is the **remote** one; set it via the remote
+  project dir where you launch, or by prefixing `cd /remote/project &&`.
+- To pass env to the remote agent, set it in the remote command (SSH does not
+  forward local env by default), e.g.
+  `ssh REMOTE_HOST "RLMX_REPL_TIMEOUT_MS=600000 node /abs/…/cli.js acp"`.
+
+### Env legend
+
+| Env var | Effect |
+| --- | --- |
+| `RLMX_ACP_RUN_TIMEOUT_MS` | Override `rlmLoop`'s internal wall-clock cap for an ACP-hosted turn (default 300000). Raise it for recursive turns whose child spawns run long. |
+| `RLMX_REPL_TIMEOUT_MS` | Max time a single REPL cell may run before it is killed. Raise it when a recursive `rlm_query` cell must outlast a slow child. |
+| `RLMX_ACP_SESSIONS_DIR` | Override the durable session-store directory (default `~/.rlmx/acp-sessions`). Point it at scratch for hermetic tests. |
+| `STATION_BASE_URL` / `LEMONADE_BASE_URL` | Local station/Lemonade gateway base URL (default `http://localhost:13305/api/v1`). |
+
+Any provider API keys the chosen `.rlmx/rlmx.yaml` model needs are read from the
+environment / `~/.rlmx/settings.json` exactly as for the CLI.
+
+### MCP servers (store + advertise only)
+
+`initialize` advertises `mcpCapabilities` (`http` + `sse`), and rlmx accepts and
+**persists** the `mcpServers` a host passes on `session/new` / `session/load`.
+rlmx does **not** yet execute tools against those servers — there is no MCP
+client wired in — so the config is stored/advertised for continuity, and MCP
+tool execution is a documented follow-on. A host is not misled: the advertised
+capability carries `_meta["rlmx/mcp"] = "store-and-advertise-only; no MCP client
+execution yet"`.
+
+### Node-field legend — `rlm:` tool-call nodes
+
+Each recursive `rlm_query` spawn surfaces as a flat ACP tool-call node with
+`toolCallId = "rlm:<childCorrelationId>"`. Its completion `tool_call_update`
+carries machine-readable per-node data under `_meta["rlmx/node"]`:
+
+| `_meta["rlmx/node"]` field | meaning |
+| --- | --- |
+| `correlationId` | The child node's stable id (sortable `uuidv7()` minted at the spawn site). Join key for the recursion tree. |
+| `parentRunId` | The spawning run's `correlationId` — the ancestry edge (absent for the root). |
+| `depth` | Recursion depth of this child (`[d{depth}]` also appears in the node title). |
+| `latencyMs` | Child wall-clock latency in ms. |
+| `costUsd` | Child cost in USD (may be absent on keyless/local providers). |
+| `tokens` | `{ input, output }` token counts for the child. |
+| `error` | `{ name, message }` when the child failed (node status `failed`). |
+
+A `tool_call_update` for an ordinary REPL execution instead carries
+`_meta["rlmx/durationMs"]`. Client-facing payloads (args / output / titles) are
+width-bounded and secret-redacted at the translator boundary before they cross
+the web boundary.
+
 ## RTK Integration (token savings)
 
 rlmx auto-detects [RTK](https://github.com/rtk-ai/rtk) and routes CLI subprocess calls through it when available, for 60-90% token savings on tool outputs.

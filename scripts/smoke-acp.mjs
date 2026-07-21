@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
- * Automated ACP smoke test — wish rlmx-acp-adapter, Groups 1 + 2.
+ * Automated ACP smoke test — wish rlmx-acp-adapter, Groups 1 + 2 + 3.
  *
  * Spawns `node dist/src/cli.js acp` as a stdio JSON-RPC agent and drives a
  * full lifecycle against it as a minimal ACP client:
  *
  *   initialize → session/new → session/prompt (REAL rlmLoop round-trip)
  *
- * Two modes:
+ * Three modes:
  *
  *   DEFAULT (no flag) — Group 1 gate. Fast + deterministic. A tiny token
  *   budget bounds the single non-recursive prompt to ~1-2 real iterations, and
  *   the single-session invariant (concurrent prompt rejected -32600) is
- *   asserted. Unchanged from Group 1.
+ *   asserted.
  *   Assertions:
  *     1. Every stdout line parses as a JSON-RPC 2.0 message (stdout discipline).
  *     2. initialize returns a numeric protocolVersion + agentCapabilities.
@@ -24,12 +24,19 @@
  *   --recursive — Group 2 integration proof. Drives a REAL recursive prompt
  *   that instructs the model to call rlm_query in the REPL, spawning a child
  *   rlmx run. Asserts the LIVE session/update stream contains the full
- *   translated shape: agent_message_chunk + >=1 tool_call + >=1
- *   tool_call_update AND >=1 Recurse-derived node (toolCallId `rlm:<childId>`)
- *   carrying per-node metrics. The 2B model can flake, so the prompt is
- *   retried once before failing. This mode is SLOW (children take ~20-40s each)
- *   and uses a generous budget + a long REPL timeout; it is NOT part of the
- *   fast default gate.
+ *   translated shape (agent_message_chunk + tool_call + tool_call_update +
+ *   Recurse-derived node with per-node metrics). SLOW; not part of the fast gate.
+ *
+ *   --multiturn — Group 3 integration proof. The multi-turn-across-restart bug
+ *   fix, end to end:
+ *     initialize (assert loadSession:true + MCP capability shape) → session/new
+ *     → session/prompt (turn 1: establish a codeword) → KILL the agent process
+ *     → RESPAWN a fresh agent sharing the same durable store → session/load
+ *     (same id; must NOT throw) → session/prompt (turn 2: recall the codeword)
+ *     → assert no "Invalid params" and a coherent answer that references turn 1.
+ *   The two agent processes share a scratch RLMX_ACP_SESSIONS_DIR so the store
+ *   survives the restart without touching the real ~/.rlmx. Budget-capped like
+ *   the default gate to stay fast + deterministic on the local station 2B model.
  *
  * Exits 0 on success; non-zero with a printed reason on any failure.
  * Runs entirely against the local station/Lemonade provider — no cloud keys.
@@ -46,6 +53,8 @@ const repoRoot = resolve(__dirname, "..");
 const cliPath = join(repoRoot, "dist", "src", "cli.js");
 
 const RECURSIVE = process.argv.includes("--recursive");
+const MULTITURN = process.argv.includes("--multiturn");
+const MODE = MULTITURN ? "multiturn" : RECURSIVE ? "recursive" : "default";
 
 // ── mode-specific tuning ──────────────────────────────────────────────────
 // DEFAULT: a tiny token budget bounds the LLM leg deterministically — rlmLoop
@@ -56,34 +65,32 @@ const RECURSIVE = process.argv.includes("--recursive");
 // tight cap is replaced with a generous token budget; the child leg alone
 // takes ~20-40s, so the overall timeout is ~10 min and the spawned agent's env
 // carries a long RLMX_REPL_TIMEOUT_MS (inherited by the child process).
-const OVERALL_TIMEOUT_MS = RECURSIVE ? 780_000 : 180_000;
-const PROMPT_TEXT = RECURSIVE
-  ? [
-      "Use the REPL to delegate a sub-question to a recursive sub-agent, then report its result. /no_think",
-      "",
-      "Write exactly this repl block:",
-      "```repl",
-      'n = rlm_query("What is 17 times 23? Reply with only the number. /no_think")',
-      "print(n)",
-      "```",
-      "After the REPL prints the result, finish with FINAL(n).",
-    ].join("\n")
-  : "What is 2+2? Answer in one short sentence.";
-// DEFAULT keeps the fast station 2B + a tight cap that forces a deterministic
-// one-iteration answer. RECURSIVE needs a model that reliably emits a ```repl
-// block calling rlm_query (the 2B writes ```python and stalls at ~12 tok/s);
-// the 35B-A3B MTP model (3B active → fast decode, strong tool/reasoning) does
-// so consistently. Budget is generous so the loop + child spawn run to a real
-// FINAL rather than being cut early.
-// The child rlm_query inherits the PARENT's REMAINING token budget (rlm.ts
-// buildRemainingChildBudget), so the parent budget is also the child's bound.
-// Too large (e.g. 200k) lets the 35B child overthink 17*23 past the REPL cap;
-// ~20k gives the parent room for its handful of delegate→FINAL iterations while
-// bounding the child to ~1 iteration (~200s observed). Documented tradeoff.
+//
+// MULTITURN: two short station 2B turns bracketing an agent-process restart. A
+// modest budget (bigger than DEFAULT's forced-1-iteration cap) lets the model
+// emit a real short answer that echoes the codeword carried over from turn 1;
+// still fast.
+const OVERALL_TIMEOUT_MS = RECURSIVE ? 780_000 : MULTITURN ? 360_000 : 180_000;
+const RECURSIVE_PROMPT = [
+  "Use the REPL to delegate a sub-question to a recursive sub-agent, then report its result. /no_think",
+  "",
+  "Write exactly this repl block:",
+  "```repl",
+  'n = rlm_query("What is 17 times 23? Reply with only the number. /no_think")',
+  "print(n)",
+  "```",
+  "After the REPL prints the result, finish with FINAL(n).",
+].join("\n");
+const PROMPT_TEXT = RECURSIVE ? RECURSIVE_PROMPT : "What is 2+2? Answer in one short sentence.";
 const MODEL_ID = RECURSIVE ? "Qwen3.6-35B-A3B-MTP-GGUF" : "qwen3.5-2b-FLM";
 const BUDGET_YAML = RECURSIVE
   ? "budget:\n  max-tokens: 13000\n"
-  : "budget:\n  max-tokens: 100\n";
+  : MULTITURN
+    ? "budget:\n  max-tokens: 800\n"
+    : "budget:\n  max-tokens: 100\n";
+
+// The codeword turn 1 plants and turn 2 (after a restart) must recall.
+const CODEWORD = "BANANA47";
 
 function fail(reason, extra) {
   process.stderr.write(`\nSMOKE FAIL: ${reason}\n`);
@@ -92,7 +99,7 @@ function fail(reason, extra) {
 }
 
 function log(msg) {
-  process.stderr.write(`# smoke-acp${RECURSIVE ? " [recursive]" : ""}: ${msg}\n`);
+  process.stderr.write(`# smoke-acp [${MODE}]: ${msg}\n`);
 }
 
 // ── scratch project with a station-provider config ───────────────────────
@@ -104,91 +111,104 @@ writeFileSync(
 );
 log(`scratch project: ${projectDir}`);
 
-// ── spawn the agent ──────────────────────────────────────────────────────
-// RECURSIVE: give the agent (and thus every child it spawns, via buildChildEnv
-// which spreads process.env) a long REPL timeout so a ~20-40s child is not cut.
-const childEnv = { ...process.env };
-if (RECURSIVE) {
-  // The REPL cell that runs rlm_query must outlast the child's reasoning; the
-  // child's token budget (above) bounds it, this cap is only a safety net.
-  childEnv.RLMX_REPL_TIMEOUT_MS = "600000";
-  // Lift the rlmLoop 300s wall-clock cap for this turn: a compliant delegation
-  // (parent iterations + a child that itself reasons for tens-to-hundreds of
-  // seconds) can exceed 300s. The ACP agent honors this override and passes it
-  // through to the spawned child's --timeout too.
-  childEnv.RLMX_ACP_RUN_TIMEOUT_MS = "660000";
+// A durable ACP session store shared by every agent spawn in this run. For
+// MULTITURN this is what survives the agent restart; kept out of the real
+// ~/.rlmx so the smoke is hermetic.
+const storeDir = join(projectDir, "acp-sessions");
+mkdirSync(storeDir, { recursive: true });
+
+// ── base env for spawned agents ──────────────────────────────────────────
+function baseEnv() {
+  const env = { ...process.env, RLMX_ACP_SESSIONS_DIR: storeDir };
+  if (RECURSIVE) {
+    env.RLMX_REPL_TIMEOUT_MS = "600000";
+    env.RLMX_ACP_RUN_TIMEOUT_MS = "660000";
+  }
+  return env;
 }
-const child = spawn(process.execPath, [cliPath, "acp"], {
-  cwd: projectDir,
-  stdio: ["pipe", "pipe", "inherit"], // stderr passes through for visibility
-  env: childEnv,
-});
 
 const overallTimer = setTimeout(() => {
   fail(`overall timeout after ${OVERALL_TIMEOUT_MS}ms`);
 }, OVERALL_TIMEOUT_MS);
 overallTimer.unref?.();
 
-child.on("error", (err) => fail(`failed to spawn agent: ${err.message}`));
-child.on("exit", (code, signal) => {
-  if (!finished) fail(`agent exited early (code=${code}, signal=${signal})`);
-});
-
-// ── JSON-RPC ndjson client plumbing ──────────────────────────────────────
-let nextId = 1;
-const pending = new Map(); // id -> { resolve, reject }
-const notifications = []; // collected session/update etc.
-let stdoutBuf = "";
-let finished = false;
-
-/** Every non-empty stdout line MUST be a JSON-RPC 2.0 message. */
-function onStdoutLine(line) {
-  const trimmed = line.trim();
-  if (trimmed.length === 0) return;
-  let msg;
-  try {
-    msg = JSON.parse(trimmed);
-  } catch {
-    fail("stdout line is not valid JSON (stdout-discipline violation)", trimmed);
-    return;
-  }
-  if (msg.jsonrpc !== "2.0") {
-    fail("stdout line is not a JSON-RPC 2.0 message (stdout-discipline violation)", msg);
-    return;
-  }
-  if (msg.id !== undefined && msg.id !== null && (("result" in msg) || ("error" in msg))) {
-    const p = pending.get(msg.id);
-    if (p) {
-      pending.delete(msg.id);
-      p.resolve(msg);
-    }
-    return;
-  }
-  if (typeof msg.method === "string") {
-    // Request or notification FROM the agent. We only expect notifications
-    // (session/update). Record them.
-    notifications.push(msg);
-  }
-}
-
-child.stdout.setEncoding("utf8");
-child.stdout.on("data", (chunk) => {
-  stdoutBuf += chunk;
-  let idx;
-  while ((idx = stdoutBuf.indexOf("\n")) !== -1) {
-    const line = stdoutBuf.slice(0, idx);
-    stdoutBuf = stdoutBuf.slice(idx + 1);
-    onStdoutLine(line);
-  }
-});
-
-function send(method, params) {
-  const id = nextId++;
-  const payload = { jsonrpc: "2.0", id, method, params };
-  child.stdin.write(`${JSON.stringify(payload)}\n`);
-  return new Promise((resolveP, rejectP) => {
-    pending.set(id, { resolve: resolveP, reject: rejectP });
+// ── reusable stdio JSON-RPC client over one spawned agent ─────────────────
+// Returns a handle the mode code drives. MULTITURN creates two of these in
+// sequence (across a real process kill) to prove restore-on-empty.
+function startAgent() {
+  const child = spawn(process.execPath, [cliPath, "acp"], {
+    cwd: projectDir,
+    stdio: ["pipe", "pipe", "inherit"], // stderr passes through for visibility
+    env: baseEnv(),
   });
+
+  const handle = {
+    child,
+    finished: false, // set by the caller when a clean exit is expected
+    nextId: 1,
+    pending: new Map(),
+    notifications: [],
+    stdoutBuf: "",
+    exited: new Promise((res) => child.on("exit", (code, signal) => res({ code, signal }))),
+  };
+
+  child.on("error", (err) => fail(`failed to spawn agent: ${err.message}`));
+  child.on("exit", (code, signal) => {
+    if (!handle.finished) fail(`agent exited early (code=${code}, signal=${signal})`);
+  });
+
+  const onStdoutLine = (line) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) return;
+    let msg;
+    try {
+      msg = JSON.parse(trimmed);
+    } catch {
+      fail("stdout line is not valid JSON (stdout-discipline violation)", trimmed);
+      return;
+    }
+    if (msg.jsonrpc !== "2.0") {
+      fail("stdout line is not a JSON-RPC 2.0 message (stdout-discipline violation)", msg);
+      return;
+    }
+    if (msg.id !== undefined && msg.id !== null && (("result" in msg) || ("error" in msg))) {
+      const p = handle.pending.get(msg.id);
+      if (p) {
+        handle.pending.delete(msg.id);
+        p.resolve(msg);
+      }
+      return;
+    }
+    if (typeof msg.method === "string") handle.notifications.push(msg);
+  };
+
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    handle.stdoutBuf += chunk;
+    let idx;
+    while ((idx = handle.stdoutBuf.indexOf("\n")) !== -1) {
+      const line = handle.stdoutBuf.slice(0, idx);
+      handle.stdoutBuf = handle.stdoutBuf.slice(idx + 1);
+      onStdoutLine(line);
+    }
+  });
+
+  handle.send = (method, params) => {
+    const id = handle.nextId++;
+    const payload = { jsonrpc: "2.0", id, method, params };
+    child.stdin.write(`${JSON.stringify(payload)}\n`);
+    return new Promise((resolveP, rejectP) => {
+      handle.pending.set(id, { resolve: resolveP, reject: rejectP });
+    });
+  };
+
+  handle.updatesSince = (fromIdx) =>
+    handle.notifications
+      .slice(fromIdx)
+      .filter((n) => n.method === "session/update" && n.params?.update)
+      .map((n) => n.params.update);
+
+  return handle;
 }
 
 function expectResult(msg, what) {
@@ -197,23 +217,27 @@ function expectResult(msg, what) {
   return msg.result;
 }
 
-/** Collect the translated update objects recorded since `fromIdx`. */
-function updatesSince(fromIdx) {
-  return notifications
-    .slice(fromIdx)
-    .filter((n) => n.method === "session/update" && n.params?.update)
-    .map((n) => n.params.update);
+async function initialize(agent) {
+  log("→ initialize");
+  const initMsg = await agent.send("initialize", {
+    protocolVersion: 1,
+    clientCapabilities: {},
+    clientInfo: { name: "smoke-acp", version: "0.0.0" },
+  });
+  const init = expectResult(initMsg, "initialize");
+  if (typeof init.protocolVersion !== "number") fail("initialize: protocolVersion missing/not a number", init);
+  if (!init.agentCapabilities || typeof init.agentCapabilities !== "object") fail("initialize: agentCapabilities missing", init);
+  log(`✓ initialize protocolVersion=${init.protocolVersion} caps=${JSON.stringify(init.agentCapabilities)}`);
+  return init;
 }
 
 // ── DEFAULT MODE: concurrent-invariant + single answer chunk ──────────────
-async function runDefault(sessionId) {
-  // Fire BOTH prompts back-to-back without awaiting the first, so the second
-  // arrives while the first is in flight. The agent must serialize.
+async function runDefault(agent, sessionId) {
   log("→ session/prompt (#1, real) + concurrent session/prompt (#2)");
   const promptParams = { sessionId, prompt: [{ type: "text", text: PROMPT_TEXT }] };
-  const firstPromise = send("session/prompt", promptParams);
+  const firstPromise = agent.send("session/prompt", promptParams);
   await new Promise((r) => setTimeout(r, 250));
-  const secondPromise = send("session/prompt", promptParams);
+  const secondPromise = agent.send("session/prompt", promptParams);
 
   const [firstMsg, secondMsg] = await Promise.all([firstPromise, secondPromise]);
   const outcomes = [firstMsg, secondMsg].map((m) => ("error" in m ? "error" : "result"));
@@ -232,18 +256,18 @@ async function runDefault(sessionId) {
   if (rejection.code !== -32600) fail(`concurrent session/prompt: expected code -32600 (invalidRequest), got ${rejection.code}`, rejection);
   log(`✓ concurrent session/prompt rejected cleanly: code=${rejection.code}`);
 
-  const chunks = updatesSince(0).filter((u) => u.sessionUpdate === "agent_message_chunk");
-  if (chunks.length === 0) fail("no agent_message_chunk session/update received", notifications);
+  const chunks = agent.updatesSince(0).filter((u) => u.sessionUpdate === "agent_message_chunk");
+  if (chunks.length === 0) fail("no agent_message_chunk session/update received", agent.notifications);
   const answerText = chunks.map((c) => c.content?.text ?? "").join("");
   if (answerText.trim().length === 0) fail("agent_message_chunk had empty text", chunks);
   log(`✓ real answer chunk received (${answerText.length} chars): ${JSON.stringify(answerText.slice(0, 120))}`);
 }
 
 // ── RECURSIVE MODE: full translated stream incl. Recurse node + metrics ───
-async function runRecursiveAttempt(sessionId) {
-  const startIdx = notifications.length;
+async function runRecursiveAttempt(agent, sessionId) {
+  const startIdx = agent.notifications.length;
   log("→ session/prompt (recursive; child spawn expected, may take minutes)");
-  const promptMsg = await send("session/prompt", {
+  const promptMsg = await agent.send("session/prompt", {
     sessionId,
     prompt: [{ type: "text", text: PROMPT_TEXT }],
   });
@@ -251,7 +275,7 @@ async function runRecursiveAttempt(sessionId) {
   const okResult = promptMsg.result;
   if (typeof okResult.stopReason !== "string") return { ok: false, reason: "missing stopReason" };
 
-  const updates = updatesSince(startIdx);
+  const updates = agent.updatesSince(startIdx);
   const byType = (t) => updates.filter((u) => u.sessionUpdate === t);
   const messageChunks = byType("agent_message_chunk").filter((u) => (u.content?.text ?? "").trim().length > 0);
   const toolCalls = byType("tool_call");
@@ -276,7 +300,6 @@ async function runRecursiveAttempt(sessionId) {
   if (recurseNodes.length === 0) return { ok: false, reason: "no Recurse-derived tool_call node (model did not delegate)", summary };
   if (recurseCompletions.length === 0) return { ok: false, reason: "no Recurse node carried per-node metrics", summary };
 
-  // Validate the metric fields are actually populated on at least one node.
   const node = recurseCompletions[0];
   const nodeMeta = node._meta["rlmx/node"];
   if (nodeMeta.correlationId === undefined) return { ok: false, reason: "recurse node metrics missing correlationId", summary };
@@ -296,12 +319,12 @@ async function runRecursiveAttempt(sessionId) {
   };
 }
 
-async function runRecursive() {
+async function runRecursive(agent) {
   for (let attempt = 1; attempt <= 2; attempt++) {
     log(`recursive attempt ${attempt}/2`);
-    const newMsg = await send("session/new", { cwd: projectDir, mcpServers: [] });
+    const newMsg = await agent.send("session/new", { cwd: projectDir, mcpServers: [] });
     const created = expectResult(newMsg, "session/new");
-    const res = await runRecursiveAttempt(created.sessionId);
+    const res = await runRecursiveAttempt(agent, created.sessionId);
     if (res.ok) {
       process.stderr.write("\n=== RECURSIVE SMOKE EVIDENCE ===\n");
       process.stderr.write(`update sequence: ${JSON.stringify(res.evidence.updateSequence)}\n`);
@@ -316,41 +339,146 @@ async function runRecursive() {
   }
 }
 
-// ── drive the lifecycle ──────────────────────────────────────────────────
-try {
-  // 1. initialize
-  log("→ initialize");
-  const initMsg = await send("initialize", {
-    protocolVersion: 1,
-    clientCapabilities: {},
-    clientInfo: { name: "smoke-acp", version: "0.0.0" },
-  });
-  const init = expectResult(initMsg, "initialize");
-  if (typeof init.protocolVersion !== "number") fail("initialize: protocolVersion missing/not a number", init);
-  if (!init.agentCapabilities || typeof init.agentCapabilities !== "object") fail("initialize: agentCapabilities missing", init);
-  log(`✓ initialize protocolVersion=${init.protocolVersion} caps=${JSON.stringify(init.agentCapabilities)}`);
+// ── MULTITURN MODE: session survives an agent-process restart ─────────────
+function answerFrom(agent, fromIdx) {
+  return agent
+    .updatesSince(fromIdx)
+    .filter((u) => u.sessionUpdate === "agent_message_chunk")
+    .map((c) => c.content?.text ?? "")
+    .join("");
+}
 
-  if (RECURSIVE) {
-    await runRecursive();
-  } else {
-    // 2. session/new
-    log("→ session/new");
-    const newMsg = await send("session/new", { cwd: projectDir, mcpServers: [] });
-    const created = expectResult(newMsg, "session/new");
-    if (typeof created.sessionId !== "string" || created.sessionId.length === 0) fail("session/new: sessionId missing", created);
-    log(`✓ session/new sessionId=${created.sessionId}`);
-    await runDefault(created.sessionId);
+async function runMultiturn() {
+  // ── Agent #1: initialize + assert Group 3 capabilities ──────────────────
+  const agent1 = startAgent();
+  const init = await initialize(agent1);
+  const caps = init.agentCapabilities;
+  if (caps.loadSession !== true) fail("initialize: expected agentCapabilities.loadSession === true", caps);
+  if (!caps.mcpCapabilities || typeof caps.mcpCapabilities !== "object") {
+    fail("initialize: expected agentCapabilities.mcpCapabilities (MCP support advertised)", caps);
+  }
+  log(`✓ initialize advertises loadSession=true + mcpCapabilities=${JSON.stringify(caps.mcpCapabilities)}`);
+
+  // ── Turn 1: plant a codeword, with a host MCP server to materialize/store ─
+  const mcpServers = [
+    { type: "http", name: "smoke-mcp", url: "http://127.0.0.1:9/mcp", headers: [] },
+  ];
+  const newMsg = await agent1.send("session/new", { cwd: projectDir, mcpServers });
+  const created = expectResult(newMsg, "session/new");
+  const sessionId = created.sessionId;
+  if (typeof sessionId !== "string" || sessionId.length === 0) fail("session/new: sessionId missing", created);
+  log(`✓ session/new sessionId=${sessionId} (with 1 host MCP server materialized)`);
+
+  const idx1 = agent1.notifications.length;
+  log("→ session/prompt (turn 1: plant codeword)");
+  const t1 = await agent1.send("session/prompt", {
+    sessionId,
+    prompt: [{
+      type: "text",
+      text: `Please remember this codeword for later in our conversation: ${CODEWORD}. Reply with a brief acknowledgement. /no_think`,
+    }],
+  });
+  if ("error" in t1) fail("turn 1 session/prompt errored", t1.error);
+  const t1answer = answerFrom(agent1, idx1);
+  log(`✓ turn 1 answered (${t1answer.length} chars): ${JSON.stringify(t1answer.slice(0, 120))}`);
+
+  // ── KILL agent #1 — the agent process goes away, in-memory sessions lost ─
+  log("→ KILL agent #1 (simulating a host restart)");
+  agent1.finished = true; // an intentional kill, not an early crash
+  agent1.child.kill("SIGKILL");
+  const ex = await agent1.exited;
+  log(`✓ agent #1 exited (code=${ex.code}, signal=${ex.signal})`);
+
+  // ── Agent #2: fresh process, SAME durable store ─────────────────────────
+  const agent2 = startAgent();
+  const init2 = await initialize(agent2);
+  if (init2.agentCapabilities.loadSession !== true) fail("agent #2 initialize: loadSession must still be true", init2.agentCapabilities);
+
+  // ── session/load the SAME id — must NOT throw (restore-on-empty) ─────────
+  log(`→ session/load ${sessionId} on the fresh agent (restore-on-empty)`);
+  const loadMsg = await agent2.send("session/load", { sessionId, cwd: projectDir, mcpServers: [] });
+  if ("error" in loadMsg) {
+    fail(`session/load after restart returned an error — this is the multi-turn bug (Invalid params)`, loadMsg.error);
+  }
+  expectResult(loadMsg, "session/load");
+  log("✓ session/load succeeded after restart (no Invalid params)");
+
+  // ── Turn 2: recall the codeword. No "Invalid params"; coherent answer. ───
+  let recallAnswer = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const idx2 = agent2.notifications.length;
+    log(`→ session/prompt (turn 2, attempt ${attempt}/2: recall codeword)`);
+    const t2 = await agent2.send("session/prompt", {
+      sessionId,
+      prompt: [{
+        type: "text",
+        text: "What was the codeword I asked you to remember earlier? Reply with just the codeword. /no_think",
+      }],
+    });
+    if ("error" in t2) {
+      // A -32602 (Invalid params) here is the exact regression this mode guards.
+      fail(`turn 2 session/prompt returned an error after restart (Invalid params regression?)`, t2.error);
+    }
+    const okResult = t2.result;
+    if (typeof okResult.stopReason !== "string") fail("turn 2: successful response missing stopReason", okResult);
+    recallAnswer = answerFrom(agent2, idx2);
+    if (recallAnswer.trim().length === 0) {
+      log(`attempt ${attempt}: empty answer, retrying`);
+      continue;
+    }
+    if (recallAnswer.includes(CODEWORD)) break;
+    log(`attempt ${attempt}: answer did not contain ${CODEWORD} yet (${JSON.stringify(recallAnswer.slice(0, 120))})`);
   }
 
-  finished = true;
-  clearTimeout(overallTimer);
-  child.stdin.end();
-  child.kill("SIGTERM");
+  if (recallAnswer.trim().length === 0) fail("turn 2 produced no answer text after restart");
+  if (!recallAnswer.includes(CODEWORD)) {
+    fail(`turn 2 answer did not reference the turn-1 codeword ${CODEWORD} — context was not restored`, recallAnswer.slice(0, 300));
+  }
+  log(`✓ turn 2 recalled the codeword across the restart`);
 
+  agent2.finished = true;
+  agent2.child.stdin.end();
+  agent2.child.kill("SIGTERM");
+
+  process.stderr.write("\n=== MULTITURN SMOKE EVIDENCE ===\n");
+  process.stderr.write(`sessionId:        ${sessionId}\n`);
+  process.stderr.write(`store dir:        ${storeDir}\n`);
+  process.stderr.write(`turn 1 answer:    ${JSON.stringify(t1answer.slice(0, 160))}\n`);
+  process.stderr.write(`agent #1 exit:    code=${ex.code} signal=${ex.signal}\n`);
+  process.stderr.write(`session/load:     OK (no Invalid params after restart)\n`);
+  process.stderr.write(`turn 2 answer:    ${JSON.stringify(recallAnswer.slice(0, 200))}\n`);
+  process.stderr.write(`codeword recalled: ${recallAnswer.includes(CODEWORD)} (${CODEWORD})\n`);
+}
+
+// ── drive the lifecycle ──────────────────────────────────────────────────
+try {
+  if (MULTITURN) {
+    await runMultiturn();
+  } else {
+    const agent = startAgent();
+    await initialize(agent);
+    if (RECURSIVE) {
+      await runRecursive(agent);
+    } else {
+      log("→ session/new");
+      const newMsg = await agent.send("session/new", { cwd: projectDir, mcpServers: [] });
+      const created = expectResult(newMsg, "session/new");
+      if (typeof created.sessionId !== "string" || created.sessionId.length === 0) fail("session/new: sessionId missing", created);
+      log(`✓ session/new sessionId=${created.sessionId}`);
+      await runDefault(agent, created.sessionId);
+    }
+    agent.finished = true;
+    agent.child.stdin.end();
+    agent.child.kill("SIGTERM");
+  }
+
+  clearTimeout(overallTimer);
   process.stderr.write(
-    RECURSIVE
-      ? "\nSMOKE PASS: recursive run streamed agent_message_chunk + tool_call/tool_call_update + Recurse node with metrics.\n"
-      : "\nSMOKE PASS: handshake + real prompt round-trip + single-session invariant all verified.\n",
+    MULTITURN
+      ? "\nSMOKE PASS: session survived an agent-process restart — session/load + follow-up prompt recalled turn-1 context (no Invalid params); initialize advertises loadSession:true + MCP support.\n"
+      : RECURSIVE
+        ? "\nSMOKE PASS: recursive run streamed agent_message_chunk + tool_call/tool_call_update + Recurse node with metrics.\n"
+        : "\nSMOKE PASS: handshake + real prompt round-trip + single-session invariant all verified.\n",
   );
   process.exit(0);
 } catch (err) {
