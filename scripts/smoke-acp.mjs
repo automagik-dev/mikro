@@ -34,7 +34,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const cliPath = join(repoRoot, "dist", "src", "cli.js");
 
-const OVERALL_TIMEOUT_MS = 180_000; // generous: the LLM leg can take ~20s+
+// The real-prompt leg drives rlmLoop against the local qwen3.5-2b station
+// model. Left unbounded, that model ignores the "one short sentence" hint and
+// flails to rlmLoop's default 30-iteration budget; on the verified environment
+// a run non-deterministically takes ~125-200s OR overruns rlmLoop's 300s
+// wall-clock timeout — and the wall-clock path forces the final answer on an
+// already-aborted signal, so the answer chunk comes back EMPTY. Neither a real
+// round-trip nor a stable gate.
+//
+// Fix (test-harness only, adapter untouched): the scratch rlmx.yaml below sets
+// a tiny token budget, so rlmLoop exits via budget.isExceeded() (rlm.ts:538)
+// after the FIRST real iteration and forces a genuine final answer on a
+// NON-aborted signal — a real ~1-2 iteration round-trip through the instrumented
+// loop that lands a non-empty answer in ~10-30s, deterministically. The timeout
+// below is a generous backstop, not the mechanism that bounds the run.
+const OVERALL_TIMEOUT_MS = 180_000; // generous backstop; the leg now lands in ~10-30s
 const PROMPT_TEXT = "What is 2+2? Answer in one short sentence.";
 
 function fail(reason, extra) {
@@ -52,7 +66,11 @@ const projectDir = mkdtempSync(join(tmpdir(), "rlmx-acp-smoke-"));
 mkdirSync(join(projectDir, ".rlmx"), { recursive: true });
 writeFileSync(
   join(projectDir, ".rlmx", "rlmx.yaml"),
-  "model:\n  provider: station\n  model: qwen3.5-2b-FLM\n",
+  // A tiny token budget bounds the LLM leg deterministically: rlmLoop runs one
+  // real iteration, trips budget.isExceeded(), and forces a genuine final answer
+  // (non-aborted signal) instead of flailing to its 30-iteration / 300s caps.
+  // Keeps the round-trip REAL while making the gate fast and non-flaky.
+  "model:\n  provider: station\n  model: qwen3.5-2b-FLM\nbudget:\n  max-tokens: 100\n",
 );
 log(`scratch project: ${projectDir}`);
 
