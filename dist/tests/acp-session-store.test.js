@@ -18,10 +18,10 @@
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionStore, MAX_TURNS, storeDir, } from "../src/acp/session-store.js";
+import { SessionStore, MAX_TURNS, MAX_SESSION_FILES, storeDir, } from "../src/acp/session-store.js";
 import { abortActivePrompt, buildConversationalQuery } from "../src/acp/agent.js";
 import { createEmitter } from "../src/sdk/emitter.js";
 let scratch;
@@ -97,6 +97,40 @@ describe("acp session store — bounded growth", () => {
         // The oldest 5 dropped; the newest is retained.
         assert.equal(reloaded.turns[reloaded.turns.length - 1].query, `q${MAX_TURNS + 4}`);
         assert.equal(reloaded.turns[0].query, "q5");
+    });
+    it("prunes the store dir to MAX_SESSION_FILES, deleting the oldest by mtime", async () => {
+        // Dedicated scratch dir so the cap experiment is isolated from other tests.
+        const dir = mkdtempSync(join(tmpdir(), "rlmx-acp-prune-"));
+        const prev = process.env.RLMX_ACP_SESSIONS_DIR;
+        process.env.RLMX_ACP_SESSIONS_DIR = dir;
+        try {
+            const store = new SessionStore();
+            const idOf = (i) => `${String(i).padStart(8, "0")}-0000-0000-0000-000000000000`;
+            // Fill to exactly the cap — no prune fires yet (entries <= MAX_SESSION_FILES).
+            for (let i = 0; i < MAX_SESSION_FILES; i++) {
+                await store.create(idOf(i), "/p", [], null);
+            }
+            assert.equal(readdirSync(dir).filter((f) => f.endsWith(".json")).length, MAX_SESSION_FILES);
+            // Stamp strictly-increasing mtimes so "oldest" is unambiguous: idOf(0) oldest.
+            const base = Math.floor(Date.now() / 1000) - MAX_SESSION_FILES - 10;
+            for (let i = 0; i < MAX_SESSION_FILES; i++) {
+                const t = base + i;
+                utimesSync(join(dir, `${idOf(i)}.json`), t, t);
+            }
+            // One more create tips over the cap → prune deletes the single oldest (idOf(0)).
+            await store.create(idOf(MAX_SESSION_FILES), "/p", [], null);
+            assert.equal(readdirSync(dir).filter((f) => f.endsWith(".json")).length, MAX_SESSION_FILES, "dir must be capped back to MAX_SESSION_FILES after the overflow create");
+            assert.equal(await store.load(idOf(0)), null, "the oldest-by-mtime session must be pruned");
+            assert.ok(await store.load(idOf(1)), "the next-oldest must survive");
+            assert.ok(await store.load(idOf(MAX_SESSION_FILES)), "the just-created newest must survive");
+        }
+        finally {
+            if (prev === undefined)
+                delete process.env.RLMX_ACP_SESSIONS_DIR;
+            else
+                process.env.RLMX_ACP_SESSIONS_DIR = prev;
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });
 describe("acp disconnect hardening — abortActivePrompt", () => {

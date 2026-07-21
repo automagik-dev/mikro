@@ -280,19 +280,28 @@ you. Point the host's `command` at `ssh` and pass the remote launch as args:
   "command": "ssh",
   "args": [
     "REMOTE_HOST",
-    "node", "/ABS/PATH/ON/REMOTE/rlmx/dist/src/cli.js", "acp"
+    "/ABS/PATH/ON/REMOTE/node", "/ABS/PATH/ON/REMOTE/rlmx/dist/src/cli.js", "acp"
   ],
   "cwd": "/ABS/PATH/TO/local-placeholder"
 }
 ```
 
+- **Use the remote node's absolute path — not bare `node`.** A non-interactive
+  SSH command (`ssh HOST node …`) does **not** source your login shell, so a
+  `node` installed via a version manager (nvm, fnm, asdf, volta) or under
+  `~/.local/bin` is **not on `PATH`** and you get `bash: node: command not
+  found`. Find the absolute path once from an interactive session on the remote
+  box — `ssh REMOTE_HOST` then `command -v node` (e.g. `/home/you/.nvm/versions/node/v20.11.0/bin/node`)
+  — and hard-code it. (If node is installed system-wide at `/usr/bin/node`,
+  bare `node` happens to work, but the absolute path is always safe.)
 - Do **not** pass `ssh -t` — a PTY injects terminal control bytes that corrupt
-  the JSON-RPC frame stream. Plain `ssh <host> node … acp` is correct.
+  the JSON-RPC frame stream. Plain `ssh <host> /abs/node … acp` (no PTY) is
+  correct.
 - The session `cwd` that matters is the **remote** one; set it via the remote
   project dir where you launch, or by prefixing `cd /remote/project &&`.
 - To pass env to the remote agent, set it in the remote command (SSH does not
   forward local env by default), e.g.
-  `ssh REMOTE_HOST "RLMX_REPL_TIMEOUT_MS=600000 node /abs/…/cli.js acp"`.
+  `ssh REMOTE_HOST "RLMX_REPL_TIMEOUT_MS=600000 /ABS/PATH/ON/REMOTE/node /abs/…/cli.js acp"`.
 
 ### Env legend
 
