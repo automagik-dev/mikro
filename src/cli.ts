@@ -119,7 +119,7 @@ Examples:
 
 interface CliOptions {
   query: string | null;
-  command: "query" | "init" | "help" | "version" | "schema" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor" | "update";
+  command: "query" | "init" | "help" | "version" | "schema" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor" | "update" | "acp";
   context: string | null;
   output: "text" | "json" | "stream";
   verbose: boolean;
@@ -213,6 +213,7 @@ function parseCliArgs(args: string[]): CliOptions {
     : positionals[0] === "stats" ? "stats"
     : positionals[0] === "doctor" ? "doctor"
     : positionals[0] === "update" ? "update"
+    : positionals[0] === "acp" ? "acp"
     : "query";
   const query = command === "query" ? positionals[0] ?? null : null;
   const batchFile = command === "batch" ? positionals[1] ?? null : null;
@@ -1013,6 +1014,12 @@ async function main(): Promise<void> {
     case "update":
       await runUpdate(process.argv.slice(3));
       break;
+
+    case "acp": {
+      const { runAcp } = await import("./acp/agent.js");
+      await runAcp();
+      break;
+    }
 
     case "query":
       if (!opts.query && process.stdin.isTTY) {
