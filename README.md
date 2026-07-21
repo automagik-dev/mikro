@@ -254,14 +254,22 @@ Add an external agent whose transport is **stdio / exec**:
 }
 ```
 
-### acp-inspector — dev loop
+### acpx — dev loop
 
-Drive the agent by hand with the reference inspector while iterating:
+Drive the agent by hand with [`acpx`](https://github.com/openclaw/acpx), a headless
+ACP CLI client, while iterating. Its `--agent` escape hatch spawns any raw ACP
+command, so point it straight at rlmx's stdio entry (verified with acpx 0.12.0):
 
 ```bash
 # From /ABS/PATH/TO/your-project (this becomes the session cwd):
-npx @agentclientprotocol/inspector -- \
-  node /ABS/PATH/TO/rlmx/dist/src/cli.js acp
+AGENT="node /ABS/PATH/TO/rlmx/dist/src/cli.js acp"
+
+# One-time: register an acpx session for this cwd, driven by rlmx.
+npx --yes acpx --agent "$AGENT" --cwd "$PWD" sessions new
+
+# Then drive prompts by hand, repeating as you iterate (--approve-all skips
+# permission prompts; drop it to answer them interactively):
+npx --yes acpx --agent "$AGENT" --cwd "$PWD" --approve-all "What does this repo do?"
 
 # Or the repo's own scripted end-to-end smoke (spawns + drives the agent):
 node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs              # fast handshake + prompt
