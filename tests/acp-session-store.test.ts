@@ -22,10 +22,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import {
 	SessionStore,
 	MAX_TURNS,
 	MAX_SESSION_FILES,
+	isValidSessionId,
 	storeDir,
 } from "../src/acp/session-store.js";
 import { abortActivePrompt, buildConversationalQuery } from "../src/acp/agent.js";
@@ -177,6 +180,93 @@ describe("acp disconnect hardening — abortActivePrompt", () => {
 		// Second call must not throw and must keep state closed.
 		assert.equal(abortActivePrompt(active), true);
 		assert.equal(emitter.closed, true);
+	});
+});
+
+describe("acp session store — path-traversal defense (final-gate finding)", () => {
+	it("rejects non-UUID ids and accepts canonical UUID shapes", () => {
+		assert.equal(isValidSessionId("11111111-1111-1111-1111-111111111111"), true);
+		assert.equal(isValidSessionId("../escape"), false);
+		assert.equal(isValidSessionId("../../../../tmp/pwned-write"), false);
+		assert.equal(isValidSessionId(""), false);
+		assert.equal(isValidSessionId("not-a-uuid"), false);
+	});
+
+	it("load('../escape') returns null and never reads a file outside the store dir", async () => {
+		// Plant a StoredSession-shaped file OUTSIDE the store dir, one level up.
+		const outside = join(dirname(scratch), "escape.json");
+		writeFileSync(
+			outside,
+			JSON.stringify({
+				version: 1,
+				sessionId: "x",
+				cwd: "/tmp",
+				createdAt: "t",
+				updatedAt: "t",
+				mcpServers: [],
+				configSnapshot: null,
+				turns: [],
+			}),
+		);
+		try {
+			const store = new SessionStore();
+			assert.equal(
+				await store.load("../escape"),
+				null,
+				"a traversal id must not load the outside StoredSession-shaped file",
+			);
+		} finally {
+			rmSync(outside, { force: true });
+		}
+	});
+
+	it("rejects a poisoned internal-id record and never writes outside the store dir", async () => {
+		// A valid-UUID-named file whose INTERNAL sessionId encodes traversal.
+		const id = "55555555-5555-5555-5555-555555555555";
+		const target = "/tmp/rlmx-pwned-write";
+		rmSync(`${target}.json`, { force: true });
+		writeFileSync(
+			join(scratch, `${id}.json`),
+			JSON.stringify({
+				version: 1,
+				sessionId: `../../../../../../../../${target.slice(1)}`,
+				cwd: "/p",
+				createdAt: "t",
+				updatedAt: "t",
+				mcpServers: [],
+				configSnapshot: null,
+				turns: [],
+			}),
+		);
+		const store = new SessionStore();
+		// The internal-id mismatch is treated as corrupt → null.
+		assert.equal(
+			await store.load(id),
+			null,
+			"a record whose internal id != requested id must be refused",
+		);
+		// Defense in depth: even if a poisoned record reaches appendTurn, the
+		// non-UUID internal id makes the write throw rather than escape the dir.
+		const poisoned = {
+			version: 1 as const,
+			sessionId: `../../../../../../../../${target.slice(1)}`,
+			cwd: "/p",
+			createdAt: "t",
+			updatedAt: "t",
+			mcpServers: [],
+			configSnapshot: null,
+			turns: [] as { query: string; answer: string; timestamp: string }[],
+		};
+		await assert.rejects(
+			() => store.appendTurn(poisoned, "q", "a"),
+			/non-UUID sessionId/,
+			"appendTurn on a poisoned record must throw, not write",
+		);
+		assert.equal(
+			existsSync(`${target}.json`),
+			false,
+			"nothing may be written outside the store dir",
+		);
 	});
 });
 

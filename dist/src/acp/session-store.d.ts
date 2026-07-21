@@ -75,6 +75,8 @@ export interface StoredSession {
 }
 /** Resolve the acp-sessions base directory (env-overridable for tests/smoke). */
 export declare function storeDir(): string;
+/** True iff `id` is a canonical UUID string (a path-safe session id). */
+export declare function isValidSessionId(id: string): boolean;
 /**
  * A durable store over `~/.rlmx/acp-sessions/`. One instance per agent process;
  * cheap to construct (no I/O until a method is called).

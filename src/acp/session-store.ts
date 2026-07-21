@@ -91,8 +91,32 @@ export function storeDir(): string {
 	return join(homedir(), ".rlmx", "acp-sessions");
 }
 
+/**
+ * Canonical UUID shape guard (8-4-4-4-12 hex, any version/variant). A session id
+ * is only ever a UUID minted by `randomUUID()`, so anything else — notably a
+ * host-supplied `session/load` value containing `/` or `..` — is rejected. This
+ * is the single source of truth for the path-traversal defense: `sessionPath`
+ * refuses to build a path from a non-UUID id, and `agent.loadSession` rejects a
+ * non-UUID `session/load` with -32602 before ever touching the store.
+ */
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True iff `id` is a canonical UUID string (a path-safe session id). */
+export function isValidSessionId(id: string): boolean {
+	return SESSION_ID_RE.test(id);
+}
+
 /** Absolute path to a session's file. `sessionId` is a UUID, so path-safe. */
 function sessionPath(sessionId: string): string {
+	// Defense in depth: a session id is ALWAYS a UUID. A non-UUID here — a
+	// host-supplied traversal string, or a poisoned record's internal id — must
+	// never be turned into a filesystem path, or a write/appendTurn could land
+	// OUTSIDE the store dir (path traversal).
+	if (!isValidSessionId(sessionId)) {
+		throw new Error(
+			`refusing to build a session path from a non-UUID sessionId: ${sessionId}`,
+		);
+	}
 	return join(storeDir(), `${sessionId}.json`);
 }
 
@@ -137,6 +161,9 @@ export class SessionStore {
 	 * id as "never existed" (a genuine bad id) vs. "restored from disk".
 	 */
 	async load(sessionId: string): Promise<StoredSession | null> {
+		// A non-UUID id is never a real session file: reject before touching the
+		// filesystem so a traversal string can't read outside the store dir.
+		if (!isValidSessionId(sessionId)) return null;
 		let raw: string;
 		try {
 			raw = await readFile(sessionPath(sessionId), "utf-8");
@@ -150,6 +177,10 @@ export class SessionStore {
 			return null; // corrupt (e.g. a crash before atomic rename landed).
 		}
 		if (!isStoredSession(parsed)) return null;
+		// A record whose INTERNAL id is not the requested UUID is corrupt/poisoned
+		// (a valid-named file whose sessionId encodes `../..`): refuse it so a
+		// later appendTurn can't write OUTSIDE the store dir.
+		if (parsed.sessionId !== sessionId) return null;
 		return parsed;
 	}
 

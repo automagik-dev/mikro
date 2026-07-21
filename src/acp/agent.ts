@@ -63,7 +63,7 @@ import { loadConfig } from "../config.js";
 import { rlmLoop } from "../rlm.js";
 import { createEmitter, type EmitterAndStream } from "../sdk/emitter.js";
 import { createTranslationContext, translateEvent } from "./session.js";
-import { SessionStore, type StoredSession } from "./session-store.js";
+import { SessionStore, isValidSessionId, type StoredSession } from "./session-store.js";
 
 /**
  * Per-session state. Group 3 makes this durable: the in-memory copy is a cache
@@ -223,6 +223,15 @@ export class RlmxAcpAgent implements Agent {
     const sessionId = params.sessionId;
     if (typeof sessionId !== "string" || sessionId.length === 0) {
       throw RequestError.invalidParams(undefined, "session/load requires a sessionId");
+    }
+    // A session id is always a UUID minted by session/new. Reject anything else
+    // (notably a host-supplied traversal string like "../escape") BEFORE it can
+    // reach the store and read a StoredSession-shaped file outside the store dir.
+    if (!isValidSessionId(sessionId)) {
+      throw RequestError.invalidParams(
+        undefined,
+        `session/load requires a valid session id`,
+      );
     }
     if (!this.sessions.has(sessionId)) {
       const record = await this.store.load(sessionId);
