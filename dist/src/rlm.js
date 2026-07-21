@@ -312,7 +312,7 @@ export async function rlmLoop(query, context, config, options = {}) {
             const remainingChildBudget = buildRemainingChildBudget(config, budget);
             const results = await handleLLMRequest(request, config, usage, abortController.signal, geminiCounts, storage, childUsage, {
                 logger: opts.logger,
-                parentRunId: opts.logger?.runId ?? runId,
+                parentRunId: selfCorrelationId,
                 maxIterations: opts.maxIterations,
                 timeout: opts.timeout,
                 maxDepth: config.budget.maxDepth ?? 3,

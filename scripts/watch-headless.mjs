@@ -27,7 +27,7 @@
  *   node scripts/watch-headless.mjs -- "<prompt>" | grep -c '"type":"Recurse"'
  */
 
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const sdkUrl = new URL("../dist/src/sdk/index.js", import.meta.url);
 const { createEmitter, createRecursionBridge, makeEvent } = await import(sdkUrl);
@@ -160,6 +160,9 @@ async function runStub(emitter) {
 
 async function runReal(emitter) {
 	const cwd = process.cwd();
+	// Recursive children spawn process.execPath + process.argv[1]; here argv[1]
+	// is this subscriber script, so point it at the real CLI instead.
+	process.argv[1] = fileURLToPath(new URL("../dist/src/cli.js", import.meta.url));
 	const { rlmLoop } = await import(new URL("../dist/src/rlm.js", import.meta.url));
 	const { loadConfig } = await import(new URL("../dist/src/config.js", import.meta.url));
 	const config = await loadConfig(cwd);

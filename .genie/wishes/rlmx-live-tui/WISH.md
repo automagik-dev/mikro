@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | IN_PROGRESS (execution started 2026-07-20; approved amended + re-reviewed 2026-07-20) |
+| **Status** | SHIPPED (merged via PR #107 2026-07-20; live local-LLM QA passed pre-merge; follow-ups fixed via issue #108) |
 | **Slug** | `rlmx-live-tui` |
 | **Date** | 2026-07-20 |
 | **Author** | felipehowit@gmail.com |

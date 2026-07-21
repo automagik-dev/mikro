@@ -8,7 +8,7 @@ import {
 	type AgentEvent,
 	type RecurseEvent,
 } from "../src/sdk/index.js";
-import type { RlmChildResult } from "../src/llm.js";
+import { rlmQuery, type RlmChildResult } from "../src/llm.js";
 
 /** Drain every buffered event from a closed emitter. */
 async function collect(
@@ -132,6 +132,46 @@ describe("recursion bridge — RecurseEvent production + correlationId ancestry"
 		for (const ev of all) {
 			assert.ok(isAgentEvent(JSON.parse(JSON.stringify(ev))), `${ev.type} round-trip`);
 		}
+	});
+
+	it("attributes a spawn-error child completion to the child correlationId, not the parent", async () => {
+		// Regression for the child.on("error") path in rlmQuery: it must pass
+		// correlationId + depth to onChildEnd (mirroring the nonzero-exit path)
+		// so the bridge keys the completion on the CHILD, not the parent. Before
+		// the fix the fields were omitted and the bridge fell back to sessionId.
+		const emitter = createEmitter();
+		const drained = collect(emitter);
+		const bridge = createRecursionBridge({
+			emitter,
+			sessionId: "parent-run",
+			currentIteration: () => 0,
+		});
+
+		// Force child.on("error") by spawning into a cwd that does not exist —
+		// the real spawn-failure path, no live model needed.
+		await rlmQuery("q", "/nonexistent-rlmx-spawn-dir-xyz", undefined, {
+			onChildStart: ({ correlationId, prompt, depth }) => {
+				bridge.onChildStart({ correlationId, prompt, depth });
+				return undefined;
+			},
+			onChildEnd: (data) => bridge.onChildEnd(data),
+		});
+
+		emitter.close();
+		const all = await drained;
+
+		const recurse = all.find((e): e is RecurseEvent => e.type === "Recurse");
+		const childId = recurse?.correlationId;
+		assert.ok(childId && childId !== "parent-run", "child spawn minted its own correlationId");
+
+		// The bridged completion + error are keyed to the CHILD, edged to the parent.
+		const completion = all.find((e) => e.type === "IterationOutput");
+		assert.equal(completion?.correlationId, childId, "completion attributed to child");
+		assert.equal(completion?.parentRunId, "parent-run", "ancestry edge points at parent");
+
+		const err = all.find((e) => e.type === "Error");
+		assert.equal(err?.correlationId, childId, "spawn-error attributed to child, not parent");
+		assert.notEqual(err?.correlationId, "parent-run");
 	});
 
 	it("RecurseEvent carries the optional correlation fields through makeEvent without a schema fork", () => {
