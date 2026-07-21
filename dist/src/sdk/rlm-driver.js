@@ -59,6 +59,7 @@
  * tool-dispatch loop that unblocks Tier 2 agents.
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { registerStationProvider } from "../station-provider.js";
 import { llmCompleteSimple } from "../llm.js";
 const DEFAULT_RETRY_FORMATTER = (hint) => `# Retry hint from the validator\n\n${hint}\n\n`;
 const DEFAULT_MAX_TOOL_ITERATIONS = 16;
@@ -98,6 +99,9 @@ export function formatRlmPrompt(config, req) {
  * replaces the old compat env-key injection the root `completeSimple` gave.
  */
 const piModels = builtinModels();
+// Register the local Lemonade gateway as a first-class `station/<model>`
+// provider at this resolution site (mirrored in src/llm.ts).
+registerStationProvider(piModels);
 /**
  * Resolve a pi-ai Model using the same fallback strategy as llm.ts
  * (try exact id, then strip date suffix). Kept in-sync with `llm.ts`

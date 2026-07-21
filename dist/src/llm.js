@@ -5,6 +5,7 @@
  * from the Python REPL, and rlm_query child process spawning.
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { registerStationProvider } from "./station-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
@@ -15,6 +16,9 @@ import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
  * injection that the root `completeSimple`/`getModel` helpers provided.
  */
 const models = builtinModels();
+// Register the local Lemonade gateway as a first-class `station/<model>`
+// provider at this resolution site (mirrored in src/sdk/rlm-driver.ts).
+registerStationProvider(models);
 /** Create a fresh usage tracker. */
 export function createUsage() {
     return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0, reasoningTokens: 0 };

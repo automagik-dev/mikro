@@ -60,6 +60,7 @@
  */
 
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { registerStationProvider } from "../station-provider.js";
 import type {
 	AssistantMessage as PiAssistantMessage,
 	Context as PiContext,
@@ -197,6 +198,9 @@ export function formatRlmPrompt(
  * replaces the old compat env-key injection the root `completeSimple` gave.
  */
 const piModels = builtinModels();
+// Register the local Lemonade gateway as a first-class `station/<model>`
+// provider at this resolution site (mirrored in src/llm.ts).
+registerStationProvider(piModels);
 
 /**
  * Resolve a pi-ai Model using the same fallback strategy as llm.ts
