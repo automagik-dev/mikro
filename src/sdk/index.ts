@@ -43,6 +43,15 @@ export type {
 	EventStream,
 } from "./emitter.js";
 
+// ─── Recursion bridge (live-tui G2 — the RecurseEvent producer) ───
+export { createRecursionBridge } from "./recursion-bridge.js";
+export type {
+	ChildEndData,
+	ChildStartData,
+	RecursionBridge,
+	RecursionBridgeContext,
+} from "./recursion-bridge.js";
+
 // ─── Session ─────────────────────────────────────────────────────
 export {
 	createFileSessionStore,

@@ -18,6 +18,8 @@ export interface UsageStats {
     cacheWriteTokens: number;
     totalCost: number;
     llmCalls: number;
+    /** Reasoning/thinking tokens (a subset of outputTokens), when the provider reports them. */
+    reasoningTokens?: number;
 }
 /** Create a fresh usage tracker. */
 export declare function createUsage(): UsageStats;
@@ -65,6 +67,8 @@ export interface LLMResponse {
     usage: UsageStats;
     /** Original pi/ai AssistantMessage for multi-turn conversation fidelity. */
     piMessage?: PiAssistantMessage;
+    /** Provider-reported model that actually served the response (AssistantMessage.responseModel). */
+    responseModel?: string;
     /** Count of thought signatures in response (GROUP 2: multi-turn quality tracking). */
     thoughtSignatureCount?: number;
     /** Code execution results from Gemini (GROUP 5). */
@@ -140,6 +144,8 @@ export declare function rlmQuery(prompt: string, cwd: string, signal?: AbortSign
     }) => string | undefined;
     onChildEnd?: (data: {
         spanId?: string;
+        correlationId?: string;
+        depth?: number;
         result: RlmChildResult;
         durationMs: number;
         isError?: boolean;
@@ -159,6 +165,8 @@ export declare function rlmQueryBatched(prompts: string[], cwd: string, signal?:
     }) => string | undefined;
     onChildEnd?: (data: {
         spanId?: string;
+        correlationId?: string;
+        depth?: number;
         result: RlmChildResult;
         durationMs: number;
         isError?: boolean;
@@ -180,6 +188,8 @@ export declare function handleLLMRequest(request: LLMRequest, config: RlmxConfig
     }) => string | undefined;
     onChildEnd?: (data: {
         spanId?: string;
+        correlationId?: string;
+        depth?: number;
         result: RlmChildResult;
         durationMs: number;
         isError?: boolean;

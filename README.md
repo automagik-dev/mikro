@@ -100,6 +100,86 @@ Deeper dives:
 - [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) — `agent.yaml` field reference.
 - [`examples/`](examples/) — three runnable example agents (hello-world / research-agent / brain-triage) with smoke tests.
 
+## Live event stream (`rlmLoop({ emitter })`)
+
+A real recursive `rlmLoop` run emits an observable, in-memory event
+stream over the SDK's `createEmitter()` bus. This is the shared substrate
+that the **rlmx-acp adapter** (web client) and **pi's native TUI** consume
+as renderers — rlmx itself ships the events, not a UI.
+
+### Subscribing (the contractual seam)
+
+Pass a `createEmitter()` you have **already subscribed to** as
+`rlmLoop`'s `emitter` option, so you receive events from the first
+emission. Omit it and the run uses an internal emitter. The run closes
+the emitter when it finishes (a `SessionClose` event, then the iterator
+returns).
+
+```ts
+import { createEmitter } from "@automagik/rlmx/sdk";
+import { rlmLoop } from "@automagik/rlmx";
+
+const emitter = createEmitter();
+
+// Subscribe BEFORE the run starts.
+(async () => {
+	for await (const ev of emitter) {
+		console.log(ev.type, ev.correlationId, ev.parentRunId);
+	}
+})();
+
+await rlmLoop(query, context, config, { emitter }); // same signature the rlmx-acp adapter uses
+```
+
+### Event schema
+
+Events reuse the existing SDK `AgentEvent` union (see
+[`docs/events.md`](docs/events.md)) — **no schema fork**. On the recursion
+path every event additionally carries two optional ancestry fields:
+
+| field | meaning |
+| --- | --- |
+| `correlationId` | Stable id of the node the event belongs to. For a spawned child it is the sortable `uuidv7()` minted at the spawn site; for a run's own iterations it is that run's self-correlation id. |
+| `parentRunId` | The `correlationId` of the parent node — the ancestry edge (maps to the child process's `RLMX_PARENT_RUN_ID`). Absent for the true root. |
+
+**Build the recursion tree by keying on `correlationId` / `parentRunId`,
+not `depth`** — `depth` cannot disambiguate sibling branches at the same
+level, but two siblings of one parent always get distinct `correlationId`s.
+
+Per-run producers and what they emit:
+
+- `AgentStart`, `SessionOpen` — once at run start.
+- `IterationStart`, `IterationOutput` — per parent iteration. `IterationOutput.metrics` carries per-node `latencyMs` / `toolCalls` / `costUsd` / `tokens` (incl. `reasoning`) from the wired `MetricsRecorder`, plus `responseModel` when the provider reports it.
+- `ToolCallBefore` / `ToolCallAfter` — around each REPL execution.
+- `Recurse` — **one per recursive `rlm_query` spawn**, carrying the child's `correlationId` and `parentRunId` (this run) — the ancestry edge.
+- `IterationOutput` (child-completion) — bridged from `RlmChildResult.usage` when a child settles: the child node's cost / tokens / latency, keyed by its `correlationId`. A failed child additionally emits an `Error` (`phase: "recurse"`).
+- `EmitDone`, `SessionClose` — once at run end.
+
+### Headless subscriber (reference consumer)
+
+[`scripts/watch-headless.mjs`](scripts/watch-headless.mjs) is the reference
+consumer: it logs one compact JSON line per event (so `"type"` is
+greppable) and reconstructs the recursion tree by `correlationId`.
+
+```bash
+# Deterministic proof (no credentials needed): a >=2-level recursive run
+# with sibling branches at two levels.
+node scripts/watch-headless.mjs -- "decompose and recurse on each part"
+node scripts/watch-headless.mjs -- "…" | grep -c '"type":"Recurse"'   # one line per spawn
+
+# Against a real run (needs a working model endpoint / provider key):
+RLMX_HEADLESS_REAL=1 node scripts/watch-headless.mjs -- "your prompt"
+```
+
+### Scope note
+
+Level-2 **live child-internal** streaming — a child's own iterations
+surfaced to the parent bus over `src/ipc.ts` — is **not** included. A
+recursive child is summarized as a single bridged completion node; the
+root subscriber sees its direct spawns, and a collector aggregating the
+process tree reconstructs deeper levels by `correlationId`. Streaming
+child-internal events into the parent stream is the documented next step.
+
 ## RTK Integration (token savings)
 
 rlmx auto-detects [RTK](https://github.com/rtk-ai/rtk) and routes CLI subprocess calls through it when available, for 60-90% token savings on tool outputs.

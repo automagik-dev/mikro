@@ -61,6 +61,7 @@ describe("recursive RLM tracing helpers", () => {
       cacheWriteTokens: 4,
       totalCost: 0.09999999999999999,
       llmCalls: 2,
+      reasoningTokens: 0,
     });
   });
 

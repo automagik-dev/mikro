@@ -10,6 +10,8 @@ export { ALL_AGENT_EVENT_TYPES, WISH_SPEC_EVENT_TYPES, isAgentEvent, iso, makeEv
 export type { AgentEvent, AgentEventType, AgentStartEvent, EmitDoneEvent, ErrorEvent, IterationOutputEvent, IterationStartEvent, MessageEvent, RecurseEvent, SessionCloseEvent, SessionCloseReason, SessionOpenEvent, ToolCallAfterEvent, ToolCallBeforeEvent, ToolCallObservationEvent, ToolCallObservationStatus, ValidationEvent, } from "./events.js";
 export { createEmitter } from "./emitter.js";
 export type { EmitterAndStream, EventEmitter, EventStream, } from "./emitter.js";
+export { createRecursionBridge } from "./recursion-bridge.js";
+export type { ChildEndData, ChildStartData, RecursionBridge, RecursionBridgeContext, } from "./recursion-bridge.js";
 export { createFileSessionStore, isSessionState, pauseAgent, resumeAgent, } from "./session.js";
 export type { BudgetSnapshot, HistoryTurn, SessionState, SessionStore, } from "./session.js";
 export { ALLOW, composeHooks, runPermissionChain } from "./permissions.js";

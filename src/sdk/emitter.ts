@@ -40,14 +40,24 @@ export interface EventStream extends AsyncIterable<AgentEvent> {
 export type EmitterAndStream = EventEmitter & EventStream;
 
 /**
+ * Cap on the pre-subscribe backlog. The intended consumers (the headless
+ * subscriber + the rlmx-acp adapter) attach BEFORE the run starts, so the
+ * preBuffer stays empty on the seam path. The default internal-emitter path
+ * has NO subscriber, so without a cap every event — including untruncated
+ * REPL code/stdout on ToolCall* events — would accumulate for the whole run
+ * and never be read. Capping the opening backlog keeps that cost a small
+ * bounded constant instead of a silent per-run memory tax. A late subscriber
+ * still replays the run's opening events (up to the cap); events beyond it
+ * are dropped from the backlog (live delivery once subscribed is unaffected).
+ */
+const PRE_SUBSCRIBE_BUFFER_LIMIT = 256;
+
+/**
  * Create an emitter with an async-iterator backplane. Broadcasts to
  * every subscriber; each subscriber sees events in emit order. Buffers
- * events that arrive before any subscriber is attached so no early
- * emissions are lost.
- *
- * The buffer is unbounded by default — for Group 1 the expected
- * volume is ~10³ events per run. If back-pressure becomes an issue we
- * revisit (Group 3 per-depth metrics may push volume higher).
+ * up to {@link PRE_SUBSCRIBE_BUFFER_LIMIT} events that arrive before any
+ * subscriber is attached so a late subscriber still replays the run's
+ * opening events.
  */
 export function createEmitter(): EmitterAndStream {
 	type PendingPull = {
@@ -87,7 +97,10 @@ export function createEmitter(): EmitterAndStream {
 	function emit(event: AgentEvent): void {
 		if (closed) return; // Silently drop post-close emissions.
 		if (subscribers.length === 0) {
-			preBuffer.push(event);
+			// Bounded backlog: retain only the run's opening events for a
+			// possible late subscriber. On the default (no-subscriber) path
+			// this stops the whole run's events from accumulating unread.
+			if (preBuffer.length < PRE_SUBSCRIBE_BUFFER_LIMIT) preBuffer.push(event);
 			return;
 		}
 		for (const sub of subscribers) {

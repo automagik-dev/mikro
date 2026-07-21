@@ -18,6 +18,24 @@ export type AgentEventType = "AgentStart" | "IterationStart" | "IterationOutput"
 interface BaseEvent {
     /** ISO-8601 timestamp emitted by `iso()`. */
     readonly timestamp: string;
+    /**
+     * Recursion ancestry key (Wish B live-tui G2). Optional, additive —
+     * present once the recursion bridge is wired. This is the STABLE id of
+     * the node the event belongs to: for a spawned child it is the sortable
+     * `uuidv7()` correlation id minted at the spawn site; for a run's own
+     * iterations it is that run's self-correlation id. Consumers build the
+     * recursion tree by keying on `correlationId` + `parentRunId` — NOT on
+     * `depth`, which cannot disambiguate sibling branches at the same level.
+     */
+    readonly correlationId?: string;
+    /**
+     * The `correlationId` of the parent node — the ancestry edge. Maps to
+     * the child process's `RLMX_PARENT_RUN_ID`. Absent (undefined) for the
+     * true root run. A `RecurseEvent`'s `parentRunId` is the spawning run's
+     * self-correlation id; the spawned child node's `correlationId` is the
+     * freshly minted id, so two siblings of one parent are always distinct.
+     */
+    readonly parentRunId?: string;
 }
 /** Fired once per `runAgent()` before the first iteration. */
 export interface AgentStartEvent extends BaseEvent {
@@ -38,11 +56,22 @@ export interface IterationOutputEvent extends BaseEvent {
     readonly iteration: number;
     readonly output: string;
     /**
+     * Provider-reported model that actually served this iteration
+     * (`AssistantMessage.responseModel`, surfaced by the Group 1 Models
+     * runtime). Optional — present when the producer has it. Lets a live
+     * consumer show which concrete model answered a node.
+     */
+    readonly responseModel?: string;
+    /**
      * Per-iteration structured metrics (Wish B G3). Optional — present
      * when runAgent (or a consumer wrapper) wires a `MetricsRecorder`.
      * See `metrics.ts` for the shape. Keeps `ALL_AGENT_EVENT_TYPES`
      * pinned at 12 by riding on an existing event instead of adding
      * a new `MetricEvent` variant.
+     *
+     * On the recursion path this carries per-node cost/tokens/latency:
+     * a run's own iterations populate it from the wired `MetricsRecorder`;
+     * a bridged child-completion populates it from `RlmChildResult.usage`.
      */
     readonly metrics?: {
         readonly depth: number;
@@ -54,6 +83,9 @@ export interface IterationOutputEvent extends BaseEvent {
             readonly input: number;
             readonly output: number;
             readonly cached?: number;
+            /** Reasoning/thinking tokens (subset of output), when the
+             *  provider reports them (Group 1 `UsageStats.reasoningTokens`). */
+            readonly reasoning?: number;
         };
         readonly cacheHitRatio?: number;
     };
