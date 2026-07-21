@@ -432,7 +432,7 @@ export async function rlmLoop(
         childUsage,
         {
           logger: opts.logger,
-          parentRunId: opts.logger?.runId ?? runId,
+          parentRunId: selfCorrelationId,
           maxIterations: opts.maxIterations,
           timeout: opts.timeout,
           maxDepth: config.budget.maxDepth ?? 3,

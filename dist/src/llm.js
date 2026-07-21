@@ -452,7 +452,7 @@ export async function rlmQuery(prompt, cwd, signal, options = {}) {
                 is_error: true,
                 error_message: errorMessage,
             });
-            options.onChildEnd?.({ spanId, result, durationMs, isError: true, errorMessage });
+            options.onChildEnd?.({ spanId, correlationId, depth, result, durationMs, isError: true, errorMessage });
             resolve(result);
         });
     });
