@@ -43,13 +43,15 @@ export declare class RlmxAcpAgent implements Agent {
     private readonly version;
     /** True while a `session/prompt` turn is executing. Serializes prompt turns. */
     private promptInFlight;
+    /** Cancellation handle for the in-flight prompt turn, if any. */
+    private activePrompt;
     constructor(conn: AgentSideConnection);
     initialize(_params: InitializeRequest): Promise<InitializeResponse>;
     authenticate(_params: AuthenticateRequest): Promise<AuthenticateResponse>;
     newSession(params: NewSessionRequest): Promise<NewSessionResponse>;
     loadSession(_params: LoadSessionRequest): Promise<LoadSessionResponse>;
     prompt(params: PromptRequest): Promise<PromptResponse>;
-    cancel(_params: CancelNotification): Promise<void>;
+    cancel(params: CancelNotification): Promise<void>;
 }
 /**
  * Bootstrap the stdio ACP connection and run until stdin closes.

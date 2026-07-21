@@ -53,12 +53,18 @@ import {
 import { loadConfig } from "../config.js";
 import { rlmLoop } from "../rlm.js";
 import { createEmitter } from "../sdk/emitter.js";
-import type { AgentEvent } from "../sdk/events.js";
+import { createTranslationContext, translateEvent } from "./session.js";
 
 /** Per-session state. Group 3 makes this durable; Group 1 keeps it in memory. */
 interface SessionState {
   /** Absolute working directory the session was created in. */
   cwd: string;
+}
+
+/** Cancellation handle for the single in-flight prompt turn. */
+interface ActivePrompt {
+  readonly sessionId: string;
+  readonly abort: AbortController;
 }
 
 /** Resolve the package version for `agentInfo`, best-effort. */
@@ -96,6 +102,8 @@ export class RlmxAcpAgent implements Agent {
   private readonly version = resolveVersion();
   /** True while a `session/prompt` turn is executing. Serializes prompt turns. */
   private promptInFlight = false;
+  /** Cancellation handle for the in-flight prompt turn, if any. */
+  private activePrompt: ActivePrompt | null = null;
 
   constructor(conn: AgentSideConnection) {
     this.conn = conn;
@@ -172,40 +180,93 @@ export class RlmxAcpAgent implements Agent {
     }
 
     this.promptInFlight = true;
+    const abort = new AbortController();
+    this.activePrompt = { sessionId: params.sessionId, abort };
     try {
       // Load the project config from the session cwd, exactly as the CLI does.
       const config = await loadConfig(session.cwd);
 
       // The instrumented rlmLoop seam: subscribe a caller-created emitter
       // BEFORE the run starts, then drive the REAL loop in-process. Group 2
-      // translates these AgentEvents into session/update notifications; Group 1
-      // drains them (keeping the emitter from backing up) and sends a single
-      // end-of-run agent_message_chunk with the final answer.
+      // translates each AgentEvent into session/update notifications LIVE, as
+      // it arrives — the drain loop below is the translation site. A translator
+      // throw or a client-side send failure never kills the run.
       const emitter = createEmitter();
-      const drained: AgentEvent[] = [];
+      const ctx = createTranslationContext(params.sessionId);
+      let messageChunksSent = 0;
       const drain = (async () => {
-        for await (const ev of emitter) drained.push(ev);
+        for await (const ev of emitter) {
+          // Cooperative cancel: once aborted, stop forwarding updates. The
+          // rlmLoop keeps running in-process (it exposes no abort option;
+          // see cancel()), but the client sees no further output.
+          if (abort.signal.aborted) break;
+          let updates;
+          try {
+            updates = translateEvent(ev, ctx);
+          } catch (translateErr) {
+            // Forward-compat: a translator fault must not crash the drain.
+            const m =
+              translateErr instanceof Error
+                ? translateErr.message
+                : String(translateErr);
+            process.stderr.write(`rlmx acp: translate error: ${m}\n`);
+            continue;
+          }
+          for (const update of updates) {
+            if (abort.signal.aborted) break;
+            if (update.sessionUpdate === "agent_message_chunk") messageChunksSent++;
+            try {
+              await this.conn.sessionUpdate({
+                sessionId: params.sessionId,
+                update,
+              });
+            } catch {
+              // Client stream gone — stop draining; the run still completes.
+              return;
+            }
+          }
+        }
       })();
 
       // Wrap the run so a failing run fails only THIS prompt, never the agent
       // process. output: "json" keeps rlmLoop off its stream-mode stdout path.
+      //
+      // A recursive turn (parent iterations + a child spawn that itself takes
+      // tens of seconds) can exceed rlmLoop's 300s default wall-clock cap. The
+      // client owns turn duration (it can session/cancel), so an ACP-hosted run
+      // honors an optional RLMX_ACP_RUN_TIMEOUT_MS override for the loop's
+      // internal timeout. Unset → rlmLoop's own default applies (unchanged for
+      // the fast non-recursive path). Additive; rlm.ts untouched.
+      const runTimeoutMs = Number(process.env.RLMX_ACP_RUN_TIMEOUT_MS);
       const result = await rlmLoop(query, null, config, {
         emitter,
         output: "json",
+        ...(Number.isFinite(runTimeoutMs) && runTimeoutMs > 0
+          ? { timeout: runTimeoutMs }
+          : {}),
       });
       await drain; // emitter is closed by rlmLoop when the run finishes.
-      void drained; // Group 2 consumes these; referenced to satisfy noUnused.
 
-      const answer = result.answer ?? "";
-      await this.conn.sessionUpdate({
-        sessionId: params.sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: answer },
-        },
-      });
+      // Invariant backstop: some rlmLoop exit paths (e.g. the consecutive-empty
+      // abort) return an answer WITHOUT emitting EmitDone, so no answer chunk
+      // was streamed. If nothing reached the client as a message chunk, send
+      // the final answer once so a prompt turn always yields an answer.
+      if (!abort.signal.aborted && messageChunksSent === 0) {
+        const answer = result.answer ?? "";
+        if (answer.length > 0) {
+          await this.conn.sessionUpdate({
+            sessionId: params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: answer },
+              messageId: `answer:${params.sessionId}`,
+            },
+          });
+        }
+      }
 
-      return { stopReason: "end_turn" };
+      // A cancelled turn reports `cancelled`; a normal turn reports `end_turn`.
+      return { stopReason: abort.signal.aborted ? "cancelled" : "end_turn" };
     } catch (err) {
       // A RequestError propagates as a structured JSON-RPC error; any other
       // failure is surfaced as an internal error scoped to this prompt turn.
@@ -214,13 +275,24 @@ export class RlmxAcpAgent implements Agent {
       throw RequestError.internalError(undefined, `rlmLoop failed: ${message}`);
     } finally {
       this.promptInFlight = false;
+      this.activePrompt = null;
     }
   }
 
-  async cancel(_params: CancelNotification): Promise<void> {
-    // Group 1: no cooperative cancellation of an in-flight rlmLoop yet. The
-    // notification is accepted so clients do not error; the run completes.
-    // (Group 2/3 can thread an AbortSignal through the loop.)
+  async cancel(params: CancelNotification): Promise<void> {
+    // Cooperative cancellation. rlmLoop exposes no AbortSignal option in
+    // RLMOptions (src/rlm.ts) and this file is forbidden from refactoring it,
+    // so the minimal correct hook is to abort at the ACP boundary: the drain
+    // loop stops forwarding session/update notifications and the prompt turn
+    // resolves with stopReason "cancelled". LIMITATION: the underlying rlmLoop
+    // continues to completion in-process (its work is not interrupted); only
+    // the client-visible update stream is cut. Threading a real AbortSignal
+    // into rlmLoop is a documented follow-up (a tiny additive RLMOptions.signal
+    // that llmComplete's existing abortController would honor).
+    const active = this.activePrompt;
+    if (active && active.sessionId === params.sessionId) {
+      active.abort.abort();
+    }
   }
 }
 
