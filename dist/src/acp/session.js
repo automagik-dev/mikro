@@ -110,10 +110,17 @@ const RAW_TRUNCATED_KEY = "rlmx/truncated";
  * pairs and a handful of well-known credential shapes are rewritten to
  * `[REDACTED]`. Applied to string content and to the serialized form of raw
  * fields before they cross the web boundary.
+ *
+ * The keyword pattern's surrounding `[\w.-]` runs are bounded (`{0,64}`) so the
+ * engine cannot backtrack superlinearly on a long keyword-substring run that
+ * never reaches the `[:=]` delimiter (e.g. `"auth"` repeated 100k times) — that
+ * previously blocked the stdio event loop for tens of seconds. Callers also
+ * bound the redaction INPUT length (see `boundedRedact`), so redaction cost is
+ * O(MAX_PAYLOAD_CHARS) regardless of raw payload size.
  */
 const REDACTIONS = [
     [
-        /(["']?\b[\w.-]*(?:secret|token|password|passwd|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|auth|credential|bearer)[\w.-]*\b["']?\s*[:=]\s*)(["'][^"']*["']|[^\s,;}"']+)/gi,
+        /(["']?\b[\w.-]{0,64}(?:secret|token|password|passwd|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|auth|credential|bearer)[\w.-]{0,64}\b["']?\s*[:=]\s*)(["'][^"']*["']|[^\s,;}"']+)/gi,
         "$1[REDACTED]",
     ],
     [
@@ -133,16 +140,33 @@ function redactSecrets(text) {
         out = out.replace(re, sub);
     return out;
 }
-/** Width-bound a string, appending an explicit, self-describing marker. */
-function truncateText(text) {
+/**
+ * Overlap kept past the width cap when redacting an oversized payload: the
+ * redaction pass sees `MAX_PAYLOAD_CHARS + REDACT_OVERLAP` chars so a secret
+ * straddling the cut is still matched (and dropped) before the final hard cap
+ * removes the tail. Comfortably longer than any credential shape in REDACTIONS.
+ */
+const REDACT_OVERLAP = 256;
+/**
+ * Truncate-THEN-redact with a self-describing marker.
+ *
+ * The redaction INPUT is bounded to `MAX_PAYLOAD_CHARS + REDACT_OVERLAP` BEFORE
+ * `redactSecrets` runs, so redaction cost is O(MAX_PAYLOAD_CHARS) even on a
+ * multi-megabyte payload — the earlier full-payload redaction blocked the
+ * synchronous stdio drain loop for tens of seconds on a hostile input. A secret
+ * straddling the cut cannot leak: the overlap slice is redacted first, then the
+ * result is hard-capped to `MAX_PAYLOAD_CHARS` (dropping the redacted tail).
+ */
+function boundedRedact(text) {
     if (text.length <= MAX_PAYLOAD_CHARS)
-        return text;
+        return redactSecrets(text);
+    const head = redactSecrets(text.slice(0, MAX_PAYLOAD_CHARS + REDACT_OVERLAP));
     const omitted = text.length - MAX_PAYLOAD_CHARS;
-    return `${text.slice(0, MAX_PAYLOAD_CHARS)}\n…[rlmx: truncated ${omitted} of ${text.length} chars]`;
+    return `${head.slice(0, MAX_PAYLOAD_CHARS)}\n…[rlmx: truncated ${omitted} of ${text.length} chars]`;
 }
-/** Redact THEN truncate (redact first so no secret can survive at the cut). */
+/** Bound + redact a client-facing string. */
 function sanitizeText(text) {
-    return truncateText(redactSecrets(text));
+    return boundedRedact(text);
 }
 /**
  * Bound + redact a machine-readable raw field before it crosses the web
@@ -153,8 +177,10 @@ function sanitizeText(text) {
 function sanitizeRaw(value) {
     if (value === null || value === undefined)
         return value;
-    const redacted = redactSecrets(safeJson(value));
-    if (redacted.length <= MAX_PAYLOAD_CHARS) {
+    const json = safeJson(value);
+    // Small enough to keep structured: redact the whole (bounded) JSON, re-parse.
+    if (json.length <= MAX_PAYLOAD_CHARS) {
+        const redacted = redactSecrets(json);
         try {
             return JSON.parse(redacted);
         }
@@ -162,10 +188,12 @@ function sanitizeRaw(value) {
             return redacted;
         }
     }
+    // Oversized: bound the redaction INPUT before redacting (see boundedRedact),
+    // so a hostile megabyte-scale raw field cannot stall the drain loop.
     return {
         [RAW_TRUNCATED_KEY]: true,
-        originalChars: redacted.length,
-        preview: truncateText(redacted),
+        originalChars: json.length,
+        preview: boundedRedact(json),
     };
 }
 /** Fresh translation state for one prompt turn. */

@@ -331,6 +331,78 @@ describe("acp translation — payload hygiene (truncation + redaction)", () => {
         assert.equal(raw["rlmx/truncated"], true);
         assert.equal(typeof raw.originalChars, "number");
     });
+    it("redacts a hostile keyword-repeat payload in bounded time (ReDoS guard)", () => {
+        // Regression: redactSecrets used to run on the FULL untruncated payload,
+        // and its keyword pattern backtracked superlinearly on a long keyword-
+        // substring run with no `[:=]` delimiter — 400KB of "auth" froze the
+        // synchronous stdio drain loop for ~15s. Truncate-then-redact + bounded
+        // `[\w.-]{0,64}` runs make this O(MAX_PAYLOAD_CHARS). ~500KB must be fast.
+        const hostile = "token".repeat(100_000); // 500_000 chars, all keyword runs
+        const events = [
+            makeEvent("ToolCallBefore", {
+                sessionId: ROOT,
+                correlationId: ROOT,
+                iteration: 0,
+                tool: "repl",
+                args: hostile,
+            }),
+            makeEvent("ToolCallAfter", {
+                sessionId: ROOT,
+                correlationId: ROOT,
+                iteration: 0,
+                tool: "repl",
+                result: hostile,
+                durationMs: 5,
+                ok: true,
+            }),
+        ];
+        const t0 = Date.now();
+        const { updates } = drive(events);
+        const elapsedMs = Date.now() - t0;
+        // Coarse bound: the fixed path is ~15ms; the vulnerable path was ~19_700ms.
+        // 1s leaves ample margin against CI jitter while still failing hard on the
+        // superlinear regression (which was three orders of magnitude slower).
+        assert.ok(elapsedMs < 1_000, `translation must not block the event loop (took ${elapsedMs}ms)`);
+        // Structural cap: whatever crosses the boundary is width-bounded, proving
+        // redaction operated on a truncated slice, not the full 500KB payload.
+        const after = updates.find((u) => u.sessionUpdate === "tool_call_update");
+        assert.ok(after);
+        assert.ok(contentText(after).length < 20_000, "content capped");
+        const raw = after.rawOutput;
+        assert.equal(raw["rlmx/truncated"], true);
+    });
+    it("redacts a secret in the retained head of an oversized payload (no leak past truncation)", () => {
+        // A secret living just before the width cap, inside an oversized payload,
+        // must still be redacted: truncate-then-redact redacts the bounded head
+        // slice (cap + overlap) BEFORE the final hard cap, so nothing recognizable
+        // survives in what crosses the boundary.
+        const head = "A".repeat(16_000); // < MAX_PAYLOAD_CHARS (16_384)
+        const tail = "A".repeat(5_000); // pushes total well past the cap
+        const leak = `${head} password=hunter2straddling ${tail}`;
+        const events = [
+            makeEvent("ToolCallBefore", {
+                sessionId: ROOT,
+                correlationId: ROOT,
+                iteration: 0,
+                tool: "repl",
+                args: "print(secret)",
+            }),
+            makeEvent("ToolCallAfter", {
+                sessionId: ROOT,
+                correlationId: ROOT,
+                iteration: 0,
+                tool: "repl",
+                result: leak,
+                durationMs: 5,
+                ok: true,
+            }),
+        ];
+        const { updates } = drive(events);
+        const after = updates.find((u) => u.sessionUpdate === "tool_call_update");
+        const text = contentText(after);
+        assert.ok(!text.includes("hunter2straddling"), "straddling secret redacted");
+        assert.match(text, /\[REDACTED\]/, "redaction marker present at the cut");
+    });
     it("redacts secrets in tool-call content and raw fields", () => {
         const leak = "export API_KEY=sk-verysecretvalue1234567890 and password=hunter2";
         const events = [
