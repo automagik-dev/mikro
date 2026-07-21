@@ -7,6 +7,7 @@
 
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Message, UserMessage, AssistantMessage as PiAssistantMessage, SimpleStreamOptions, KnownProvider, TextContent } from "@earendil-works/pi-ai";
+import { registerStationProvider } from "./station-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
@@ -22,6 +23,9 @@ import { buildGeminiOnPayload, isGoogleProvider, type ThinkingLevel } from "./ge
  * injection that the root `completeSimple`/`getModel` helpers provided.
  */
 const models = builtinModels();
+// Register the local Lemonade gateway as a first-class `station/<model>`
+// provider at this resolution site (mirrored in src/sdk/rlm-driver.ts).
+registerStationProvider(models);
 
 /** Token usage tracking. */
 export interface UsageStats {
