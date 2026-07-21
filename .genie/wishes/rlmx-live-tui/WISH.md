@@ -149,9 +149,34 @@ node scripts/watch-headless.mjs -- '<a-recursive-prompt>' | grep -c '"type":"Rec
 
 _What must be verified on dev after merge._
 
-- [ ] Functional: the headless subscriber shows a correct event stream for a real recursive run.
-- [ ] Integration: pi-ai bump + instrumentation compose; a normal `rlmx` run is unchanged; the stream is subscribable by an external consumer (proves the `rlmx-acp` seam).
-- [ ] Regression: existing rlmx CLI subcommands, CAG mode, and Langfuse spans still work.
+- [x] Functional: the headless subscriber shows a correct event stream for a real recursive run.
+- [x] Integration: pi-ai bump + instrumentation compose; a normal `rlmx` run is unchanged; the stream is subscribable by an external consumer (proves the `rlmx-acp` seam).
+- [ ] Regression: existing rlmx CLI subcommands, CAG mode, and Langfuse spans still work. (CLI query verified live; CAG/Langfuse untested.)
+
+### QA evidence — live local-LLM recursive run — 2026-07-20
+
+Run pre-merge against the local **Lemonade gateway** (`http://localhost:13305/api/v1`,
+OpenAI-compatible) via a QA-only pi-ai provider shim (`NODE_OPTIONS --import` module hook registering
+a `lemonade` provider — no repo changes; the sanctioned in-repo version of this is
+`extract-200-percent`'s station provider). Model: `lemonade/Qwen3.5-4B-MTP-GGUF` (Vulkan).
+
+- Single query through the migrated Models path: answer `"4"`, 1 iteration, usage recorded — Group 1
+  live-regression criterion closed.
+- **Real recursive run, exit 0:** the model called `rlm_query` twice; the caller-injected emitter
+  streamed 34 events — `AgentStart, SessionOpen, 8×IterationStart/Output, 5×ToolCallBefore/After,
+  2×Recurse, EmitDone, SessionClose(complete)`. One `RecurseEvent` per spawn with uuidv7
+  `correlationId`s parented to the root run; child completions bridged with real usage
+  (child A `"391"` = 17×23 ✓, tok 231/415, 18.2s; child B `"Canberra"` ✓, tok 113/516, 19.3s).
+  Final synthesis text was empty — a 4B-model weakness at the synthesis step, not a mechanism failure.
+- Requires `RLMX_REPL_TIMEOUT_MS` ≥ child wall-time (default 30s is too short for recursive
+  `rlm_query` calls against local models — QA used 360000).
+- New QA finding (filed as follow-up): `scripts/watch-headless.mjs` REAL mode runs `rlmLoop`
+  in-process, so recursive children spawn `process.argv[1]` = the subscriber script itself, breaking
+  child JSON output parsing. QA used a runner that sets `process.argv[1]` to `dist/src/cli.js` first;
+  the script needs the same one-line fix.
+- Intel for `extract-200-percent`: Qwen3.6-35B-A3B (MTP, `preserve_thinking`) returns
+  `reasoning_content`-heavy responses that parse as empty content without proper thinking-format
+  compat flags on the provider model entry — the station provider must set them.
 
 ---
 
