@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | APPROVED |
+| **Status** | IN_PROGRESS (execution started 2026-07-21; depends-on rlmx-live-tui SHIPPED) |
 | **Slug** | `rlmx-acp-adapter` |
 | **Date** | 2026-07-20 |
 | **Author** | felipehowit@gmail.com |
@@ -214,6 +214,55 @@ _What must be verified on dev after merge._
 
 _Execution and PR review evidence appended below as they occur._
 
+### Execution review — Group 1 (acp skeleton + lifecycle) — 2026-07-21 — **SHIP**
+
+- **Engineer:** engineer-complex (Opus 4.8/high) — commits `2aff0eb` → `261dd10`. New `src/acp/agent.ts`
+  (ACP `Agent` + `runAcp` stdio bootstrap on `@agentclientprotocol/sdk` ^0.26.0 — pi-acp's family;
+  registry 1.2.x deliberately not taken), additive `acp` subcommand in cli.ts (union/parse/switch),
+  `scripts/smoke-acp.mjs`. Drives the REAL instrumented `rlmLoop(query, null, config, { emitter,
+  output:"json" })` with a `createEmitter()` subscribed before the run — NOT `runAgent`.
+- **Design facts recorded:** SDK member→wire mapping 1:1 (`newSession`→`session/new` etc.);
+  single-session serialization via race-free `promptInFlight` guard, concurrent prompt REJECTED with
+  JSON-RPC -32600 (documented choice); per-run try/catch → `RequestError.internalError`, agent never
+  dies; stdout discipline = console rerouted to stderr + SDK owns stdout, smoke asserts every stdout
+  line parses as JSON-RPC; `loadSession:false` advertised HONESTLY until Group 3; cancel() no-op
+  (Group 3 threads AbortSignal).
+- **Acceptance review:** SHIP first pass — reviewer re-ran the gate, probed concurrency + stdout
+  discipline independently, verified the diff additive-only and the query path byte-identical.
+- **Quality review:** FIX-FIRST (major: smoke was non-deterministic — unbounded LLM leg on the 2B
+  could over-iterate) → fixed via `budget.max-tokens` cap in the smoke's scratch config (`261dd10`) →
+  re-review **SHIP** with 4 consecutive smoke passes (~5-8s each). Deferred minors: mid-run client
+  disconnect exits without rlmLoop cleanup (Group 3 owns connection lifecycle + AbortSignal).
+- **Orchestrator validation:** check/build/test **391/391** + `smoke-acp.mjs` exit 0 — real local
+  round-trip (station/qwen3.5-2b-FLM), handshake + prompt + single-session invariant verified.
+
+### Execution review — Group 2 (event translation) — 2026-07-21 — **SHIP**
+
+- **Engineer:** engineer-complex (Opus 4.8/high) — commits `e0668bb` → `00cfa63` → `00ac0ac`. New
+  `src/acp/session.ts` (translateEvent): Message/EmitDone→`agent_message_chunk` (suffix-dedupe,
+  shared messageId), root IterationOutput→`agent_thought_chunk`, ToolCallBefore/After→
+  `tool_call`/`tool_call_update` (FIFO-paired, durationMs), **Recurse→flat tool-call node
+  `rlm:<childCorrelationId>`** with ancestry in title (`[d{depth}]`) + machine-readable
+  `_meta["rlmx/node"]` {correlationId,parentRunId,depth,latencyMs,costUsd,tokens}; child completions
+  update the same node; Errors route to failed updates or error chunks; unknown events counted, never
+  thrown. Cooperative cancel() (stream-cut; rlmLoop untouched — additive `RLMOptions.signal` noted as
+  the future fix). `--recursive` smoke mode + 15 deterministic unit tests.
+- **Engineering finds:** the 2B cannot drive delegation (emits ```python, ~12 tok/s) — recursive
+  smokes pin the 35B-A3B; child budget is bounded via parent remaining budget; per-turn wall-clock
+  override `RLMX_ACP_RUN_TIMEOUT_MS`.
+- **Acceptance review:** SHIP — reviewer's OWN live recursive run passed end-to-end (full update
+  sequence, real metrics latencyMs=231120 tokens 5137/3486, answer "391"). Minors recorded:
+  completed-then-failed update ordering on failed children (bridge emit order, out of scope);
+  streamedAnswer accumulation assumption documented; single-depth live proof.
+- **Quality review (payload hygiene mandate):** FIX-FIRST twice, both real: (1) no truncation/
+  redaction at the web boundary → added MAX_PAYLOAD_CHARS=16384 cap + secret redaction (`00cfa63`);
+  (2) **measured ReDoS** — redaction regex ran on uncapped payloads (400KB "auth"-repeat = 15.4s
+  synchronous event-loop freeze) → truncate-then-redact via boundedRedact (+256 overlap so secrets
+  never straddle-leak) + regex runs bounded `{0,64}` (`00ac0ac`; 400KB → 3.2ms, verified from dist
+  at 3 boundary placements). Final verdict **SHIP**; informational note: preview() safety rests on
+  the regex bound — never add unbounded quantifiers to REDACTIONS.
+- **Orchestrator validation:** check clean, **406/406 tests**, default smoke exit 0.
+
 ---
 
 ## Files to Create/Modify
@@ -227,3 +276,22 @@ _Execution and PR review evidence appended below as they occur._
 ~/prod/rlmx/scripts/smoke-acp.mjs (new: automated ACP handshake/prompt/multiturn gate)
 ~/prod/rlmx/README.md             (Tidewave exec + Newio custom + acp-inspector dev loop)
 ```
+
+### Execution review — Group 3 (recognition + persistence + docs) — 2026-07-21 — **SHIP**
+
+- **Engineer:** engineer-complex (Opus 4.8/high) — commit `199d605` (+1 fix-loop commit). New
+  `src/acp/session-store.ts`: one JSON/session at `~/.rlmx/acp-sessions/` (override
+  `RLMX_ACP_SESSIONS_DIR`), atomic writes, bounded (32KB/field, 100 turns, 500 files);
+  restore-on-empty on session/load; multi-turn via `buildConversationalQuery` preamble (8 turns,
+  original query stored — never compounds). `initialize` advertises `loadSession:true` +
+  `mcpCapabilities{http,sse}` with `_meta` honesty note (store/advertise only). Disconnect hardening:
+  `abortActivePrompt` reuses cancel path + best-effort process-group reap. README client-wiring
+  section (Tidewave/Zed/Newio/acp-inspector + ssh-remote first-class). `--multiturn` smoke:
+  real SIGKILL → respawn → session/load → codeword recalled.
+- **Reviews:** acceptance SHIP (1 fix loop); quality SHIP. Recorded minors: host-supplied sessionId
+  lacks UUID guard in `sessionPath()` (same-user trust boundary — recommend guard); group-reap only
+  when group leader; `--recursive` smoke environmentally blocked (35B decode > 600s REPL cap;
+  recursion-path diff EMPTY — not a regression; passing runs recorded earlier in Group 2; latent
+  smoke-budget note: attempt-2 window too small).
+- **Orchestrator validation:** check clean, **417/417**, default + `--multiturn` smokes PASS
+  (session survived agent restart, no "Invalid params").
