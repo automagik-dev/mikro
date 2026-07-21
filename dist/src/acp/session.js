@@ -84,6 +84,90 @@
 export const NODE_META_KEY = "rlmx/node";
 /** Truncation cap for titles/previews so a spawn node stays legible. */
 const PREVIEW_CHARS = 80;
+/**
+ * Payload-hygiene policy — the rlmx-live-tui final gate mandates THIS adapter
+ * own truncation + redaction at the translator boundary. Every client-facing
+ * field a tool-call node ships (its content text blocks AND the machine-readable
+ * `rawInput` / `rawOutput`) is passed through `sanitizeText` / `sanitizeRaw`
+ * before it leaves `translateEvent`, so it is both width-bounded to
+ * MAX_PAYLOAD_CHARS and secret-redacted. Rationale: a single repl cell can emit
+ * megabytes of stdout — an unbounded SessionNotification chokes a browser client
+ * — or echo the environment/secrets, which must not cross the web boundary.
+ * Titles are separately capped at PREVIEW_CHARS via `preview()`.
+ *
+ * SCOPE: the answer/thought streams (`agent_message_chunk` / `agent_thought_chunk`)
+ * are intentionally NOT truncated here — the settled answer is the deliverable
+ * and its length is model-bounded, not stdout-bounded, so truncating it would
+ * corrupt the product. The oversized-payload vector this gate closes is tool
+ * stdout/args/raw, not model-authored answer text.
+ */
+const MAX_PAYLOAD_CHARS = 16_384;
+/** Marker key set on a raw field whose serialized form exceeded the cap. */
+const RAW_TRUNCATED_KEY = "rlmx/truncated";
+/**
+ * Basic secret redaction. Deliberately pattern-targeted (not entropy heuristics)
+ * so it does not corrupt ordinary output: sensitive `key=value` / `"key":"value"`
+ * pairs and a handful of well-known credential shapes are rewritten to
+ * `[REDACTED]`. Applied to string content and to the serialized form of raw
+ * fields before they cross the web boundary.
+ */
+const REDACTIONS = [
+    [
+        /(["']?\b[\w.-]*(?:secret|token|password|passwd|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|auth|credential|bearer)[\w.-]*\b["']?\s*[:=]\s*)(["'][^"']*["']|[^\s,;}"']+)/gi,
+        "$1[REDACTED]",
+    ],
+    [
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+        "[REDACTED PRIVATE KEY]",
+    ],
+    [/(Bearer\s+)[A-Za-z0-9._-]{8,}/gi, "$1[REDACTED]"],
+    [/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]"],
+    [/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[REDACTED]"],
+    [/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[REDACTED]"],
+    [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, "[REDACTED]"],
+];
+/** Rewrite recognizable secrets in `text` to `[REDACTED]`. */
+function redactSecrets(text) {
+    let out = text;
+    for (const [re, sub] of REDACTIONS)
+        out = out.replace(re, sub);
+    return out;
+}
+/** Width-bound a string, appending an explicit, self-describing marker. */
+function truncateText(text) {
+    if (text.length <= MAX_PAYLOAD_CHARS)
+        return text;
+    const omitted = text.length - MAX_PAYLOAD_CHARS;
+    return `${text.slice(0, MAX_PAYLOAD_CHARS)}\n…[rlmx: truncated ${omitted} of ${text.length} chars]`;
+}
+/** Redact THEN truncate (redact first so no secret can survive at the cut). */
+function sanitizeText(text) {
+    return truncateText(redactSecrets(text));
+}
+/**
+ * Bound + redact a machine-readable raw field before it crosses the web
+ * boundary. Serializes, redacts string leaves, and re-parses so the client
+ * still receives structured data; if the serialized form is oversized it is
+ * replaced with a truncation marker carrying a bounded preview.
+ */
+function sanitizeRaw(value) {
+    if (value === null || value === undefined)
+        return value;
+    const redacted = redactSecrets(safeJson(value));
+    if (redacted.length <= MAX_PAYLOAD_CHARS) {
+        try {
+            return JSON.parse(redacted);
+        }
+        catch {
+            return redacted;
+        }
+    }
+    return {
+        [RAW_TRUNCATED_KEY]: true,
+        originalChars: redacted.length,
+        preview: truncateText(redacted),
+    };
+}
 /** Fresh translation state for one prompt turn. */
 export function createTranslationContext(acpSessionId) {
     return {
@@ -96,14 +180,17 @@ export function createTranslationContext(acpSessionId) {
         ignoredCount: 0,
     };
 }
-/** Truncate + single-line a string for a title/preview. */
+/** Truncate + single-line + secret-redact a string for a title/preview.
+ *  Titles cross the web boundary too, so they get the same redaction as
+ *  content — the PREVIEW_CHARS cap bounds width, redactSecrets bounds leakage. */
 function preview(text, cap = PREVIEW_CHARS) {
-    const flat = text.replace(/\s+/g, " ").trim();
+    const flat = redactSecrets(text.replace(/\s+/g, " ").trim());
     return flat.length > cap ? `${flat.slice(0, cap)}…` : flat;
 }
-/** Wrap a plain string as a single tool-call text content block. */
+/** Wrap a plain string as a single tool-call text content block, width-bounded
+ *  and secret-redacted per the payload-hygiene policy. */
 function textContent(text) {
-    return { type: "content", content: { type: "text", text } };
+    return { type: "content", content: { type: "text", text: sanitizeText(text) } };
 }
 /** Map an rlmx tool name to the closest ACP `ToolKind`. */
 function kindForTool(tool) {
@@ -224,7 +311,7 @@ function translateIterationOutput(ev, ctx) {
             toolCallId: nodeId,
             status: "completed",
             content,
-            rawOutput: { answer: ev.output, metrics: ev.metrics },
+            rawOutput: { answer: sanitizeRaw(ev.output), metrics: ev.metrics },
             _meta: {
                 [NODE_META_KEY]: {
                     correlationId: ev.correlationId,
@@ -266,7 +353,7 @@ function translateToolCallBefore(ev, ctx) {
             kind: kindForTool(ev.tool),
             status: "in_progress",
             content,
-            rawInput: ev.args,
+            rawInput: sanitizeRaw(ev.args),
         },
     ];
 }
@@ -287,7 +374,7 @@ function translateToolCallAfter(ev, ctx) {
             toolCallId,
             status: (ev.ok ? "completed" : "failed"),
             content,
-            rawOutput: ev.result,
+            rawOutput: sanitizeRaw(ev.result),
             _meta: { "rlmx/durationMs": ev.durationMs },
         },
     ];
@@ -305,7 +392,7 @@ function translateRecurse(ev, ctx) {
                 kind: "think",
                 status: "in_progress",
                 content: [textContent(ev.query)],
-                rawInput: { query: ev.query, depth: ev.depth },
+                rawInput: sanitizeRaw({ query: ev.query, depth: ev.depth }),
             },
         ];
     }
@@ -323,12 +410,12 @@ function translateRecurse(ev, ctx) {
             kind: "think",
             status: "in_progress",
             content: [textContent(ancestry), textContent(ev.query)],
-            rawInput: {
+            rawInput: sanitizeRaw({
                 query: ev.query,
                 depth: ev.depth,
                 parentRunId: ev.parentRunId,
                 correlationId: childId,
-            },
+            }),
         },
     ];
 }

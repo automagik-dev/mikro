@@ -214,7 +214,16 @@ export class RlmxAcpAgent implements Agent {
           }
           for (const update of updates) {
             if (abort.signal.aborted) break;
-            if (update.sessionUpdate === "agent_message_chunk") messageChunksSent++;
+            // Only a genuine ANSWER chunk (shared answer messageId) suppresses
+            // the end-of-run backstop. A root/unknown Error surfaced by
+            // translateError is also an agent_message_chunk but carries an
+            // `error:` messageId — counting it would let an error-then-empty-
+            // answer turn skip the backstop and yield no actual answer chunk.
+            if (
+              update.sessionUpdate === "agent_message_chunk" &&
+              update.messageId === `answer:${params.sessionId}`
+            )
+              messageChunksSent++;
             try {
               await this.conn.sessionUpdate({
                 sessionId: params.sessionId,

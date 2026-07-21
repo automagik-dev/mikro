@@ -331,3 +331,92 @@ describe("acp translation — errors + forward-compat", () => {
 		assert.equal(ctx.ignoredCount, 1);
 	});
 });
+
+describe("acp translation — payload hygiene (truncation + redaction)", () => {
+	/** Extract the concatenated text from a tool-call update's content blocks. */
+	function contentText(
+		u: Extract<SessionUpdate, { sessionUpdate: "tool_call" | "tool_call_update" }>,
+	): string {
+		const blocks = u.content ?? [];
+		return blocks
+			.map((b) => (b.type === "content" && b.content.type === "text" ? b.content.text : ""))
+			.join("");
+	}
+
+	it("bounds oversized repl stdout in both content and rawOutput", () => {
+		// A repl cell that emits ~200KB of stdout must not cross the web boundary
+		// whole: content is width-bounded and rawOutput is replaced with a marker.
+		const big = "A".repeat(200_000);
+		const events: AgentEvent[] = [
+			makeEvent<ToolCallBeforeEvent>("ToolCallBefore", {
+				sessionId: ROOT,
+				correlationId: ROOT,
+				iteration: 0,
+				tool: "repl",
+				args: "print('x' * 200000)",
+			}),
+			makeEvent<ToolCallAfterEvent>("ToolCallAfter", {
+				sessionId: ROOT,
+				correlationId: ROOT,
+				iteration: 0,
+				tool: "repl",
+				result: big,
+				durationMs: 5,
+				ok: true,
+			}),
+		];
+		const { updates } = drive(events);
+		const after = updates.find(
+			(u) => u.sessionUpdate === "tool_call_update",
+		) as Extract<SessionUpdate, { sessionUpdate: "tool_call_update" }>;
+		assert.ok(after);
+		const text = contentText(after);
+		// Bounded far below the original 200K, with a self-describing marker.
+		assert.ok(text.length < 20_000, `content bounded (was ${text.length})`);
+		assert.match(text, /rlmx: truncated \d+ of 200000 chars/);
+		// rawOutput becomes a truncation marker rather than the whole 200KB blob.
+		const raw = after.rawOutput as Record<string, unknown>;
+		assert.equal(raw["rlmx/truncated"], true);
+		assert.equal(typeof raw.originalChars, "number");
+	});
+
+	it("redacts secrets in tool-call content and raw fields", () => {
+		const leak = "export API_KEY=sk-verysecretvalue1234567890 and password=hunter2";
+		const events: AgentEvent[] = [
+			makeEvent<ToolCallBeforeEvent>("ToolCallBefore", {
+				sessionId: ROOT,
+				correlationId: ROOT,
+				iteration: 0,
+				tool: "repl",
+				args: leak,
+			}),
+			makeEvent<ToolCallAfterEvent>("ToolCallAfter", {
+				sessionId: ROOT,
+				correlationId: ROOT,
+				iteration: 0,
+				tool: "repl",
+				result: leak,
+				durationMs: 5,
+				ok: true,
+			}),
+		];
+		const { updates } = drive(events);
+		const before = updates[0] as Extract<SessionUpdate, { sessionUpdate: "tool_call" }>;
+		const after = updates[1] as Extract<SessionUpdate, { sessionUpdate: "tool_call_update" }>;
+
+		for (const [label, text] of [
+			["before content", contentText(before)],
+			["after content", contentText(after)],
+			["before rawInput", JSON.stringify(before.rawInput)],
+			["after rawOutput", JSON.stringify(after.rawOutput)],
+			["before title", before.title],
+		] as const) {
+			assert.ok(!text.includes("hunter2"), `${label} redacts password value`);
+			assert.ok(
+				!text.includes("sk-verysecretvalue1234567890"),
+				`${label} redacts api key value`,
+			);
+			assert.match(text, /\[REDACTED\]/, `${label} carries redaction marker`);
+		}
+	});
+});
