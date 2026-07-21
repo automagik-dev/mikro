@@ -156,8 +156,11 @@ interface GatewayModel {
  */
 async function fetchStationModels(): Promise<readonly StationModel[]> {
   try {
+    // 5s abort: a gateway that accepts the connection but never responds must
+    // not hang refreshModels() forever — fall back to the static baseline.
     const res = await fetch(`${STATION_BASE_URL}/models`, {
       headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return STATION_BASELINE_MODELS;
     const body = (await res.json()) as { data?: GatewayModel[] };
@@ -179,6 +182,9 @@ async function fetchStationModels(): Promise<readonly StationModel[]> {
       }
       const isFlm = recipe === "flm";
       const isQwen = /qwen/i.test(gm.id) || /qwen/i.test(gm.checkpoint ?? "");
+      // Failure mode: a future non-Qwen THINKING GGUF falls through to "flm"
+      // here and would parse as EMPTY content (no thinking format applied) —
+      // same bug class this provider fixes for the Qwen MTP baselines.
       const engine: StationEngine = isFlm ? "flm" : isQwen ? "qwen-gguf" : "flm";
       const ctx = gm.max_context_window
         ? Math.min(gm.max_context_window, 32768)
