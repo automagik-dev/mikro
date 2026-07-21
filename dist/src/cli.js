@@ -177,7 +177,8 @@ function parseCliArgs(args) {
                         : positionals[0] === "stats" ? "stats"
                             : positionals[0] === "doctor" ? "doctor"
                                 : positionals[0] === "update" ? "update"
-                                    : "query";
+                                    : positionals[0] === "acp" ? "acp"
+                                        : "query";
     const query = command === "query" ? positionals[0] ?? null : null;
     const batchFile = command === "batch" ? positionals[1] ?? null : null;
     const dir = values.dir || process.cwd();
@@ -887,6 +888,11 @@ async function main() {
         case "update":
             await runUpdate(process.argv.slice(3));
             break;
+        case "acp": {
+            const { runAcp } = await import("./acp/agent.js");
+            await runAcp();
+            break;
+        }
         case "query":
             if (!opts.query && process.stdin.isTTY) {
                 console.log(HELP);
