@@ -60,6 +60,7 @@ Usage:
   rlmx doctor                    Health check: providers, RTK, config
   rlmx update [--force]          Fetch latest main commit for a git install
   rlmx acp                       Run as a stdio ACP agent (EXPERIMENTAL)
+  rlmx mcp                       Run as a stdio MCP server (agents as tools)
 
 Options:
   --context <path>        Path to context (directory or file)
@@ -179,7 +180,8 @@ function parseCliArgs(args) {
                             : positionals[0] === "doctor" ? "doctor"
                                 : positionals[0] === "update" ? "update"
                                     : positionals[0] === "acp" ? "acp"
-                                        : "query";
+                                        : positionals[0] === "mcp" ? "mcp"
+                                            : "query";
     const query = command === "query" ? positionals[0] ?? null : null;
     const batchFile = command === "batch" ? positionals[1] ?? null : null;
     const dir = values.dir || process.cwd();
@@ -892,6 +894,11 @@ async function main() {
         case "acp": {
             const { runAcp } = await import("./acp/agent.js");
             await runAcp();
+            break;
+        }
+        case "mcp": {
+            const { runMcp } = await import("./mcp/server.js");
+            await runMcp();
             break;
         }
         case "query":

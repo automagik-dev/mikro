@@ -65,6 +65,7 @@ Usage:
   rlmx doctor                    Health check: providers, RTK, config
   rlmx update [--force]          Fetch latest main commit for a git install
   rlmx acp                       Run as a stdio ACP agent (EXPERIMENTAL)
+  rlmx mcp                       Run as a stdio MCP server (agents as tools)
 
 Options:
   --context <path>        Path to context (directory or file)
@@ -120,7 +121,7 @@ Examples:
 
 interface CliOptions {
   query: string | null;
-  command: "query" | "init" | "help" | "version" | "schema" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor" | "update" | "acp";
+  command: "query" | "init" | "help" | "version" | "schema" | "cache" | "batch" | "config" | "benchmark" | "stats" | "doctor" | "update" | "acp" | "mcp";
   context: string | null;
   output: "text" | "json" | "stream";
   verbose: boolean;
@@ -215,6 +216,7 @@ function parseCliArgs(args: string[]): CliOptions {
     : positionals[0] === "doctor" ? "doctor"
     : positionals[0] === "update" ? "update"
     : positionals[0] === "acp" ? "acp"
+    : positionals[0] === "mcp" ? "mcp"
     : "query";
   const query = command === "query" ? positionals[0] ?? null : null;
   const batchFile = command === "batch" ? positionals[1] ?? null : null;
@@ -1019,6 +1021,12 @@ async function main(): Promise<void> {
     case "acp": {
       const { runAcp } = await import("./acp/agent.js");
       await runAcp();
+      break;
+    }
+
+    case "mcp": {
+      const { runMcp } = await import("./mcp/server.js");
+      await runMcp();
       break;
     }
 
