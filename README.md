@@ -182,6 +182,12 @@ child-internal events into the parent stream is the documented next step.
 
 ## ACP agent (`rlmx acp`) — wire rlmx into an ACP host
 
+> **⚠️ Experimental.** `rlmx acp` works and is tested end-to-end, but its
+> protocol surface may change without a deprecation cycle, and v1 **serializes
+> prompt turns within a single active session** — a concurrent
+> `session/prompt` is rejected with JSON-RPC `-32600` rather than queued. Every
+> other part of rlmx documented here is stable.
+
 `rlmx acp` is a stdio [Agent Client Protocol](https://agentclientprotocol.com)
 agent: it speaks newline-delimited JSON-RPC over **stdin/stdout**, so any ACP
 host (Tidewave, Zed, Newio, …) can drive a real `rlmLoop` and render its live
