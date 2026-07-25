@@ -7,7 +7,11 @@
 
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Message, UserMessage, AssistantMessage as PiAssistantMessage, SimpleStreamOptions, KnownProvider, TextContent } from "@earendil-works/pi-ai";
-import { registerStationProvider } from "./station-provider.js";
+import {
+  ensureStationModels,
+  registerStationProvider,
+  STATION_PROVIDER_ID,
+} from "./station-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
@@ -211,6 +215,11 @@ export async function llmComplete(
     geminiConfig?: GeminiConfig;
   }
 ): Promise<LLMResponse> {
+  // The station catalog is dynamic: the gateway may serve ids that are not in
+  // the static baseline. Apply the overlay before resolving so those resolve.
+  if (modelConfig.provider === STATION_PROVIDER_ID) {
+    await ensureStationModels(models);
+  }
   const model = resolveModel(modelConfig.provider, modelConfig.model);
   const startTime = Date.now();
 

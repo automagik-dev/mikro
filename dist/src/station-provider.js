@@ -156,16 +156,52 @@ async function fetchStationModels() {
     }
 }
 /** Build the station provider (pi-ai `createProvider`). */
-export function stationProvider() {
+export function stationProvider(catalog = STATION_BASELINE_MODELS) {
     return createProvider({
         id: STATION_PROVIDER_ID,
         name: "Station (local Lemonade gateway)",
         baseUrl: STATION_BASE_URL,
         auth: { apiKey: keylessAuth },
-        models: STATION_BASELINE_MODELS,
+        models: catalog,
         fetchModels: fetchStationModels,
         api: openAICompletionsApi(),
     });
+}
+/**
+ * Apply the dynamic overlay so gateway-only model ids resolve.
+ *
+ * `fetchModels` is a pi-ai hook that only runs on `Models.refresh()`, and
+ * nothing called it — so `getModel()` saw only STATION_BASELINE_MODELS and any
+ * model the gateway serves under a custom id (e.g. `Brain-35B`) was reported
+ * as unknown despite being live. `Models.refresh()` itself is not the fix: it
+ * fans out to every dynamic provider, so resolving one local model would hit
+ * the network for all of them.
+ *
+ * Instead fetch station's catalog directly and re-register the provider with
+ * the merged list. Memoized on the in-flight promise so concurrent runs share
+ * one fetch; cleared on failure so a later call can retry (the gateway may
+ * simply have been down). Never throws — resolution must not depend on the
+ * network, and the baseline still resolves offline.
+ */
+let stationOverlay = null;
+export async function ensureStationModels(models) {
+    if (!stationOverlay) {
+        stationOverlay = (async () => {
+            const catalog = await fetchStationModels();
+            // fetchStationModels already falls back to the baseline and never
+            // throws; only re-register when it actually found more.
+            if (catalog.length > STATION_BASELINE_MODELS.length) {
+                models.setProvider(stationProvider(catalog));
+            }
+        })().catch(() => {
+            stationOverlay = null;
+        });
+    }
+    await stationOverlay;
+}
+/** Test seam: forget the memoized overlay. */
+export function resetStationModelsCache() {
+    stationOverlay = null;
 }
 /**
  * Register the station provider on a pi-ai `Models` runtime. Call once per
