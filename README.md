@@ -189,10 +189,9 @@ child-internal events into the parent stream is the documented next step.
 > other part of rlmx documented here is stable.
 
 `rlmx acp` is a stdio [Agent Client Protocol](https://agentclientprotocol.com)
-agent: it speaks newline-delimited JSON-RPC over **stdin/stdout**, so any ACP
-host (Tidewave, Zed, Newio, …) can drive a real `rlmLoop` and render its live
-event stream. No network port, no daemon — the host spawns the process and owns
-its lifetime.
+agent: newline-delimited JSON-RPC over **stdin/stdout**, so any ACP client can
+drive a real `rlmLoop` and render its live event stream. No port, no daemon —
+the client spawns the process and owns its lifetime.
 
 ### One-time: find your absolute launch command
 
@@ -216,55 +215,15 @@ absolute path for `/ABS/PATH/TO/rlmx` in every snippet — nothing else changes.
 > restarts the agent** — no "Invalid params". Override the store location with
 > `RLMX_ACP_SESSIONS_DIR`.
 
-### Tidewave — External Agent (exec entry)
+### From Claude Code, Codex, or Hermes — via `acpx`
 
-Add an external agent whose transport is **stdio / exec**:
+**This is the main path.** In ACP, the *client* is the editor and the *agent* is
+the AI tool. Claude Code and Codex are themselves **agents**, so they cannot
+consume `rlmx acp` directly — two agents don't speak to each other.
 
-| Field | Value |
-| --- | --- |
-| Name | `rlmx` |
-| Command | `node` |
-| Args | `["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"]` |
-| Working directory (`cwd`) | `/ABS/PATH/TO/your-project` |
-| Env | `RLMX_ACP_RUN_TIMEOUT_MS=660000` (optional; lift the 300s run cap for recursive turns) |
-
-### Zed — `agent_servers` (settings.json)
-
-```jsonc
-// Zed settings.json
-{
-  "agent_servers": {
-    "rlmx": {
-      "command": "node",
-      "args": ["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"],
-      "cwd": "/ABS/PATH/TO/your-project",
-      "env": {
-        "RLMX_ACP_RUN_TIMEOUT_MS": "660000"
-      }
-    }
-  }
-}
-```
-
-### Newio — custom agent type
-
-```jsonc
-// Newio agent config — a custom stdio ACP agent
-{
-  "type": "acp",
-  "transport": "stdio",
-  "command": "node",
-  "args": ["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"],
-  "cwd": "/ABS/PATH/TO/your-project",
-  "env": { "RLMX_ACP_RUN_TIMEOUT_MS": "660000" }
-}
-```
-
-### acpx — dev loop
-
-Drive the agent by hand with [`acpx`](https://github.com/openclaw/acpx), a headless
-ACP CLI client, while iterating. Its `--agent` escape hatch spawns any raw ACP
-command, so point it straight at rlmx's stdio entry (verified with acpx 0.12.0):
+Bridge them with [`acpx`](https://github.com/openclaw/acpx), a headless ACP
+client (verified with acpx 0.12.0). Any harness that can run a shell command
+then drives rlmx:
 
 ```bash
 # From /ABS/PATH/TO/your-project (this becomes the session cwd):
@@ -282,6 +241,28 @@ node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs              # fast handshake + pro
 node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs --multiturn  # survives an agent restart
 node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs --recursive  # live translated recursion stream
 ```
+
+### From an ACP editor client
+
+Any editor that is a real ACP client can spawn rlmx directly — no `acpx` needed.
+Zed is the reference implementation (Zed Industries authored ACP):
+
+```jsonc
+// Zed settings.json
+{
+  "agent_servers": {
+    "rlmx": {
+      "command": "node",
+      "args": ["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"],
+      "cwd": "/ABS/PATH/TO/your-project",
+      "env": { "RLMX_ACP_RUN_TIMEOUT_MS": "660000" }
+    }
+  }
+}
+```
+
+Other ACP clients take the same three inputs — `command`, `args`, `cwd` — in
+whatever shape their config uses.
 
 ### Remote (stdio over SSH) — first-class
 

@@ -25,8 +25,10 @@ clears the production dependency tree of known advisories.
 ### Added
 
 - **`rlmx acp` — stdio ACP agent (experimental).** Exposes rlmx over the
-  [Agent Client Protocol](https://agentclientprotocol.com) so it can be driven
-  from ACP hosts (Zed, Tidewave, Newio, `acpx`). Translates the instrumented
+  [Agent Client Protocol](https://agentclientprotocol.com). The intended use is
+  driving rlmx as a sub-agent from Claude Code, Codex, Hermes, or the CLI via a
+  headless ACP client such as `acpx`; ACP editor clients (Zed) can spawn it
+  directly. Translates the instrumented
   `rlmLoop` event stream into live ACP session updates, mapping recursion into
   tool-call nodes. Includes durable multi-turn sessions, MCP advertisement, and
   disconnect handling. **Experimental:** the protocol surface may change, and
