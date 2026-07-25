@@ -16,6 +16,37 @@ release is the git commit on `main`. See `docs/release-contract.md`.
 
 ## [Unreleased]
 
+### Added
+
+- **`rlmx mcp` — stdio MCP server.** The native way to drive rlmx from Claude
+  Code, Codex, or Hermes: `claude mcp add rlmx -- rlmx mcp`. Exposes an
+  `rlmx_query` tool plus **one tool per `agent.yaml` microagent** discovered
+  under `~/.rlmx/agents/`, `<project>/.agents/`, or `<project>/.rlmx/agents/`
+  (project shadows global; `RLMX_AGENTS_DIR` overrides). Each agent runs on the
+  model its `agent.yaml` names, which is how repeatable work moves off an
+  expensive host model.
+  - Every result carries a token/cost footer, so the offload is visible in the
+    transcript rather than taken on faith.
+  - Emits `notifications/progress` per iteration. This is load-bearing: MCP
+    clients time requests out (the reference client defaults to 60s) and a
+    delegated recursive run on a local model routinely exceeds that.
+  - `RLMX_MCP_RUN_TIMEOUT_MS` lifts rlmx's own wall-clock cap.
+  - A failing tool call fails only that call, never the server process.
+  - Gate: `scripts/smoke-mcp.mjs` drives the real server with the MCP SDK's own
+    client — handshake, `tools/list`, per-agent tools, and error isolation.
+
+### Security
+
+- Adding `@modelcontextprotocol/sdk` pulled in `@hono/node-server` 1.x, which
+  carries a moderate advisory (path traversal in `serve-static` on Windows via
+  encoded backslash, GHSA-frvp-7c67-39w9). Pinned to `^2.0.11` via a
+  `package.json` `overrides` entry; `npm audit --omit=dev` reports zero
+  vulnerabilities again. rlmx uses only the SDK's **stdio** transport, so the
+  affected `serve-static` path is never loaded.
+  **Caveat:** npm `overrides` apply to this repo's install, not to consumers of
+  the published SDK package — a downstream tree may still resolve the
+  vulnerable transitive version until the upstream SDK bumps its own range.
+
 ## [0.260725.1] — 2026-07-25
 
 First release since `0.260528.2`. Lands the ACP agent, the recursion event

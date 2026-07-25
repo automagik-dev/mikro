@@ -1,7 +1,7 @@
 {
   "name": "@automagik/rlmx",
   "version": "0.260725.1",
-  "description": "RLM algorithm SDK for coding agents — prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
+  "description": "RLM algorithm SDK for coding agents \u2014 prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -27,6 +27,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.26.0",
     "@earendil-works/pi-ai": "0.80.10",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "js-yaml": "^4.1.1",
     "pg": "^8.20.0",
     "pgserve": "^1.1.10"
@@ -54,5 +55,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/automagik-dev/rlmx.git"
+  },
+  "overrides": {
+    "@hono/node-server": "^2.0.11"
   }
 }

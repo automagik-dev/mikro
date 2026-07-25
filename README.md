@@ -62,6 +62,57 @@ rlmx "Summarize this paper" --context paper.md --output json
 cat data.csv | rlmx "Analyze this dataset"
 ```
 
+## Use rlmx from Claude Code / Codex (`rlmx mcp`)
+
+Offload repeatable work to a cheap or local model instead of paying host-model
+prices for it every time.
+
+```bash
+claude mcp add rlmx -- rlmx mcp
+```
+
+That's it. Claude Code now has an `rlmx_query` tool, plus **one tool per
+microagent** you've defined — `rlmx_triage`, `rlmx_test_writer`, and so on — so
+the model delegates to them by name.
+
+A microagent is an `agent.yaml` folder ([schema](docs/agent-yaml-schema.md))
+in any of:
+
+```
+~/.rlmx/agents/<name>/      # global
+<project>/.agents/<name>/   # project
+<project>/.rlmx/agents/<name>/
+```
+
+Project agents shadow global ones with the same name. `RLMX_AGENTS_DIR`
+(colon-separated) replaces those roots.
+
+```yaml
+# ~/.rlmx/agents/triage/agent.yaml
+schema_version: 1
+shape: loop
+model: station/Qwen3.6-35B-A3B-MTP-GGUF   # local — $0 marginal cost
+description: Classifies inbound issues and proposes a label + owner.
+system: SYSTEM.md
+```
+
+Each result ends with what it cost, so the offload is visible rather than
+assumed:
+
+```
+rlmx · agent=triage · station/Qwen3.6-35B-A3B-MTP-GGUF · 3 iterations · 307 in / 36 out · $0.00 · 3.9s
+```
+
+Long runs emit `notifications/progress` per iteration, which keeps conforming
+clients from timing out mid-delegation. `RLMX_MCP_RUN_TIMEOUT_MS` lifts rlmx's
+own wall-clock cap.
+
+Gate: `node scripts/smoke-mcp.mjs`.
+
+> Not to be confused with `rlmx acp` below. In ACP the *client* is an editor and
+> the *agent* is the AI tool — Claude Code and Codex are agents themselves, so
+> they can't drive rlmx over ACP. MCP is the protocol they speak as clients.
+
 ## SDK (`rlmx.sdk.*`)
 
 rlmx also ships a programmatic SDK for consumers that need to drive
