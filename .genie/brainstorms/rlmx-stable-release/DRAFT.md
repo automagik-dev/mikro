@@ -289,6 +289,44 @@ labeling, dist-tag hygiene, calendar version bump + release.
   deltas (global today: 65.7%, 26.8M tokens, 13 265 cmds — not rlmx-scoped).
 - Output: `docs/benchmarks.md`, reproducible.
 
+### D9 — ACP positioning + README constraints ✅ (owner, 2026-07-25)
+
+**The ACP integration exists to drive rlmx from Claude Code, Codex, Hermes, and
+the CLI. Nothing else.** Owner does not use Tidewave or Newio; those sections
+were pre-existing README content, not a product direction.
+
+Researched (2026-07-25) — this is an architectural constraint, not a
+preference:
+
+- ACP defines **Client = the editor/IDE**, **Agent = the AI coding tool**
+  (<https://agentclientprotocol.com/get-started/introduction>).
+- `rlmx acp` is therefore an **Agent**.
+- **Claude Code and Codex are also Agents, not Clients** — Zed had to build a
+  bridge to wrap Claude Code as an agent. Two agents cannot speak ACP to each
+  other, so nothing in Claude Code natively consumes `rlmx acp`.
+- The path that actually works is **`acpx`** (<https://github.com/openclaw/acpx>),
+  a headless ACP client, verified in-repo at 0.12.0. Any harness that can run a
+  shell command drives rlmx through it. This was buried as a "dev loop"
+  footnote beneath three unused hosts; it is the **primary** integration.
+- **Zed stays** — Zed Industries authored ACP and is the reference client, so
+  it is the honest example of "a real ACP client spawning rlmx directly". It is
+  demoted below the `acpx` path, not deleted.
+- **Hermes is owner-controlled**, so making Hermes a true ACP *client* is the
+  one route to first-class editor-style integration without a bridge. Worth
+  considering in wish 3 or later.
+
+**README verdict (owner, blunt):** the current 722-line README is *"too verbose,
+AI slop, trash that needs cleaning."* Binding constraints for the wish-3
+rewrite:
+
+1. **Terse.** Assume the reader bails in 30 seconds. Reference material moves
+   to `docs/`.
+2. **No AI-slop register** — no throat-clearing, no padded transitions, no
+   feature-marketing adjectives.
+3. **Only claim integrations that are real and used.** Every host named must be
+   one a reader can actually use, with a verified command.
+4. Every number comes from wish 2; nothing unbacked.
+
 ### Wish 3 — `rlmx-launch` (blocked on wish 2's numbers)
 README from scratch around the three proven claims; **microagent** recipes as
 first-class content (owner's killer use: specialized rlmx agents absorbing
