@@ -42,9 +42,9 @@ function getTodayPublishCount(datePrefix) {
 
 function generateVersion() {
   const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
+  const yy = String(now.getUTCFullYear()).slice(-2);
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(now.getUTCDate()).padStart(2, '0');
   const datePrefix = `${yy}${mm}${dd}`;
 
   const envBuild = process.env.RLMX_BUILD_NUMBER;

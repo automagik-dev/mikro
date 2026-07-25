@@ -2,8 +2,8 @@ name: Release Metadata
 
 # GitHub Releases are optional metadata cut from package.json's version only.
 # They are not the CLI/application release authority. The app release boundary
-# is the reviewed dev -> main merge consumed by scripts/install.sh and
-# `rlmx update`.
+# is the reviewed topic-branch -> main merge consumed by scripts/install.sh and
+# `rlmx update`. (There is no `dev` branch; see docs/release-contract.md.)
 # Do not derive ad-hoc hotfix release tags in this workflow: npm publishing
 # uses the same SDK package version in version.yml, and rlmx --version reads
 # src/version.ts generated from that package version. If the exact release

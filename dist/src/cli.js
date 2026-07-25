@@ -59,6 +59,7 @@ Usage:
   rlmx stats [options]           Query run history and cost breakdowns
   rlmx doctor                    Health check: providers, RTK, config
   rlmx update [--force]          Fetch latest main commit for a git install
+  rlmx acp                       Run as a stdio ACP agent (EXPERIMENTAL)
 
 Options:
   --context <path>        Path to context (directory or file)
