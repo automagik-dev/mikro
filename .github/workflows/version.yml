@@ -5,21 +5,30 @@ name: SDK Package
 # npm is NOT the canonical CLI/application release channel. End-user CLI
 # installs and updates are git-managed through scripts/install.sh and
 # `rlmx update`, with public `main` as the release boundary after a reviewed
-# dev -> main merge.
+# topic-branch -> main merge.
 #
 #   Trigger                              Context  npm tag   Bump?
 #   -----------------------------------  -------  --------  ------
-#   workflow_run (CI success on dev)     SDK dev  @next     yes
+#   workflow_run (CI success on dev)     SDK dev  @next     yes   <- DORMANT
 #   workflow_run (merge PR to main)      SDK main @latest   no
 #   workflow_dispatch (manual)           SDK dev  @next     yes
+#
+# NOTE (2026-07-25): there is no `dev` branch on origin. Topic branches
+# (wish/*, fix/*, feat/*, chore/*) merge directly into main, so the `dev` ->
+# @next path below never fires. That is why the `next` dist-tag has been
+# frozen at 0.260528.1 while `latest` moved on. The `dev` trigger is retained
+# but inert; if @next publishing is wanted again, either create a `dev` branch
+# or repoint this at the topic-branch flow. Until then, `next` must be
+# repointed manually so it never trails `latest`:
+#   npm dist-tag add @automagik/rlmx@<version> next
 #
 # On dev triggers we DERIVE a fresh version (today + build-count),
 # commit + tag + push back to dev, then publish as @next.
 #
-# On main triggers we DO NOT bump — the version that dev already tagged is in
-# package.json. We just publish that exact SDK artifact as @latest, so npm and
-# GitHub Release metadata agree. The CLI/application release already happened
-# when the protected dev -> main merge made the commit reachable to
+# On main triggers we DO NOT bump — package.json already carries the version
+# tagged before the merge. We just publish that exact SDK artifact as @latest,
+# so npm and GitHub Release metadata agree. The CLI/application release already
+# happened when the protected merge into main made the commit reachable to
 # scripts/install.sh and `rlmx update`.
 #
 # Auth: npm OIDC Trusted Publishing. The package's only Trusted
