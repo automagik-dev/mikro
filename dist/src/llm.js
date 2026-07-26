@@ -6,6 +6,7 @@
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ensureStationModels, registerStationProvider, STATION_PROVIDER_ID, } from "./station-provider.js";
+import { ensureKhalModels, registerKhalProvider, KHAL_PROVIDER_ID, } from "./khal-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
@@ -19,6 +20,8 @@ const models = builtinModels();
 // Register the local Lemonade gateway as a first-class `station/<model>`
 // provider at this resolution site (mirrored in src/sdk/rlm-driver.ts).
 registerStationProvider(models);
+// Same for the khal LiteLLM gateway (`khal/<model>`).
+registerKhalProvider(models);
 /** Create a fresh usage tracker. */
 export function createUsage() {
     return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0, reasoningTokens: 0 };
@@ -123,6 +126,12 @@ export async function llmComplete(messages, modelConfig, options) {
     // the static baseline. Apply the overlay before resolving so those resolve.
     if (modelConfig.provider === STATION_PROVIDER_ID) {
         await ensureStationModels(models);
+    }
+    // khal's catalog is *entirely* dynamic, so the same hook runs first here —
+    // and throws naming KHAL_API_KEY when the key is missing, so a keyless run
+    // never degrades into a misleading "unknown model" from an empty catalog.
+    if (modelConfig.provider === KHAL_PROVIDER_ID) {
+        await ensureKhalModels(models);
     }
     const model = resolveModel(modelConfig.provider, modelConfig.model);
     const startTime = Date.now();
