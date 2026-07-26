@@ -65,7 +65,7 @@ Usage:
   rlmx doctor                    Health check: providers, RTK, config
   rlmx update [--force]          Fetch latest main commit for a git install
   rlmx acp                       Run as a stdio ACP agent (EXPERIMENTAL)
-  rlmx mcp                       Run as a stdio MCP server (agents as tools)
+  rlmx mcp [--dir <path>]        Run as a stdio MCP server (agents as tools)
 
 Options:
   --context <path>        Path to context (directory or file)
@@ -73,7 +73,7 @@ Options:
   --verbose               Show iteration progress on stderr
   --max-iterations <n>    Maximum RLM iterations (default: 30)
   --timeout <ms>          Timeout in milliseconds (default: 300000)
-  --dir <path>            Directory for init command (default: cwd)
+  --dir <path>            Working directory for init and mcp (default: cwd)
   --help, -h              Show this help message
   --version, -v           Show version
   --schema                Output machine-readable CLI schema JSON
@@ -1025,6 +1025,17 @@ async function main(): Promise<void> {
     }
 
     case "mcp": {
+      // `--dir` is the server's cwd contract. An MCP host spawns the server
+      // from its own directory, and agent discovery, loadConfig, relative
+      // `context` arguments and the REPL cwd must all agree on one root —
+      // so chdir once, up front, and let every downstream default follow.
+      const target = resolve(opts.dir);
+      const { existsSync, statSync } = await import("node:fs");
+      if (!existsSync(target) || !statSync(target).isDirectory()) {
+        console.error(`Error: --dir must be an existing directory (got "${opts.dir}")`);
+        process.exit(1);
+      }
+      process.chdir(target);
       const { runMcp } = await import("./mcp/server.js");
       await runMcp();
       break;

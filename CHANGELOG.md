@@ -47,6 +47,118 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   the published SDK package — a downstream tree may still resolve the
   vulnerable transitive version until the upstream SDK bumps its own range.
 
+### khal provider
+
+- **`khal/<model>` — the khal LiteLLM gateway as a first-class provider.**
+  Every model the gateway serves (`llm.khal.ai`, override `KHAL_BASE_URL`)
+  resolves on both the CLI and SDK paths, the same seam `station/<model>` uses.
+  The key is env-only: `KHAL_API_KEY`, falling back to `RLMX_KHAL_API_KEY`.
+  - The catalog is built from LiteLLM's `/model/info`, which quotes prices
+    **per token** where pi-ai's `Model.cost` is **per million** — so prices are
+    converted ×1e6 on the way in. Without that conversion every khal run would
+    report `$0.0000`; a fixture test pins it (`deepseek-v4-flash` at
+    `1e-7`/token → `$0.10`/Mtok).
+  - Aliases that front several gateway deployments fold into one model, taking
+    the highest quoted price, so reported cost never depends on `/model/info`
+    ordering and never under-reports against `--max-cost`. **Reported cost is
+    therefore an upper bound for multi-deployment aliases**: on the live
+    gateway `khal/kimi-k2.6` fronts deployments at 7.5e-7 / 9.5e-7 / 1.2e-6
+    per input token, so a run billed at the cheapest deployment reports up to
+    ~60% high. Single-deployment and uniformly-priced aliases — including the
+    `deepseek-v4-flash` default — are exact.
+  - `/model/info` being down does not block resolution: models come from
+    `/v1/models` with cost 0, plus one warning on stderr — emitted only once
+    that fallback has actually answered, so the warning never promises a
+    resolution that did not happen. If neither endpoint answers, the warning
+    names both failures instead.
+  - Every khal-specific failure is named at the resolution hook, because
+    `resolveModel` downstream has one error for all of them ("unknown model"),
+    which is true of none of them: no key → `khal provider requires
+    KHAL_API_KEY`; key rejected (401/403) → `khal gateway rejected
+    KHAL_API_KEY (HTTP 401) …`, naming whichever env var supplied it; gateway
+    up but serving no catalog → `khal catalog unavailable (/model/info: …;
+    /models: …)`. A rejected key is never retried against the fallback
+    endpoint — it answers the same 401 — and never degrades into an empty
+    catalog.
+
+### MCP
+
+- **The `rlmx mcp` tool set is now live.** Every `tools/list` *and* every
+  `tools/call` re-scans the agent roots, and the advertised list plus the call
+  lookup are rebuilt from that one scan — so an `agent.yaml` folder authored
+  mid-session is listed **and callable** without reconnecting, and one deleted
+  mid-session stops dispatching even while a client's cached list still shows
+  it. `notifications/tools/list_changed` fires when the set actually changes
+  (never for an edited spec, which is not a set change), and
+  `tools.listChanged` is declared only because it is genuinely emitted.
+- **The tool surface now mirrors the host's native Agent tool**, so delegating
+  to rlmx needs no new interaction pattern:
+  - `prompt` is the primary input; `query` remains as a deprecated alias. Both
+    are optional in the schema (`required: []`) with the exactly-one rule
+    enforced at runtime and every error naming `prompt` — deliberately not
+    `anyOf`, which MCP hosts surface to models inconsistently.
+  - Descriptions read as spawn instructions (what it is, that it runs to
+    completion and cannot ask follow-up questions, what comes back).
+  - Every result carries `session_id` in `structuredContent` — backed by a
+    declared `{session_id: string}` `outputSchema` so it is a contract rather
+    than an undocumented extra — and echoes it in the prose footer for hosts
+    that render only text.
+  - Passing that `session_id` back **continues the conversation**: the
+    session's bounded turn history is replayed into the new prompt, the same
+    mechanism `rlmx acp` uses. Each call still runs a fresh `rlmLoop` with a
+    fresh Python REPL, so **live REPL state is explicitly not preserved across
+    a resume** — conversation is, interpreter variables are not.
+  - Sessions live in-process with a TTL, a size cap with LRU eviction, and a
+    per-session turn cap; they are advisory, so losing one costs a fresh start
+    and never correctness. An unknown or expired `session_id` is a clear error,
+    never a silent fresh start; a concurrent call on the same session is
+    rejected as "session busy"; a `session_id` is bound to the tool that
+    created it and is not portable to another; and an agent deleted mid-session
+    answers "Unknown tool" while its orphaned sessions are evicted.
+  - `rlmx_query` participates fully (prompt, session_id, resume) and keeps its
+    `model` override.
+- **`rlmx mcp --dir <path>`** chdirs to a validated directory before starting,
+  making agent discovery, `loadConfig`, relative `context` paths, and the REPL's
+  working directory agree on one root instead of on wherever the host happened
+  to spawn the server. Reuses the existing `--dir` flag — no second
+  directory-flag convention.
+- Gate: `scripts/smoke-mcp.mjs` now drives a **real workspace root** through the
+  ordinary discovery precedence (temp cwd, no `RLMX_AGENTS_DIR` override) with
+  the server spawned from a different directory and pointed at it by `--dir`.
+  It proves create-then-list-then-call mid-session, the `list_changed`
+  notification (and its absence while the set is static), the new input schema,
+  a resume round-trip, and the unknown-session / session-busy / cross-tool
+  errors. Live turns run against the local station gateway — keyless, same
+  convention as `smoke-acp.mjs`; `--no-live` gates the protocol surface alone.
+
+### explore microagent
+
+- **`examples/agents/explore/`** — the reference microagent, and the first
+  recipe in what becomes the canonical `examples/agents/` subtree. It answers a
+  question about the repository it runs in and returns the answer with
+  `file:line` citations that resolve. Install it as
+  `<project>/.rlmx/agents/explore/` and a host sees `rlmx_explore`.
+  - `shape: loop` with `budget.max_iterations`, never `single-step`: the tree
+    is on the filesystem, not in the prompt, so a single pass answers from
+    memory before opening a file. The system prompt is built around that —
+    print-or-see-nothing REPL discipline, search-for-literals, and a citation
+    contract (line numbers come from executed code, never a dump, "not found"
+    over a guess).
+  - Default model `khal/deepseek-v4-flash`; any `station/<model>` works too.
+- **`scripts/smoke-explore.mjs`** — the recipe's own gate, distinct from
+  `smoke-mcp.mjs`'s synthetic fixture: it installs the shipped agent into this
+  checkout, drives `rlmx mcp --dir <checkout>` over MCP, asks a fixed question
+  about this repo, and mechanically resolves the citations that come back
+  against the same tree. Station arm by default (keyless, `RLMX_SMOKE_MODEL`
+  overrides); the khal arm runs the shipped model when `KHAL_API_KEY` is set.
+- **`scripts/mine-explore-tasks.mjs`** — builds the explore parity suite out of
+  real work rather than invented questions: it reads this host's Claude Code
+  transcripts, lifts out read-only question→search→answer segments, and
+  verifies each claim against the repository the session ran in. Verification
+  is content-anchored, so a claim whose code moved is re-anchored to where it
+  lives today and one whose symbols are gone is excluded from scoring. Every
+  verbatim excerpt is redacted for credentials on the way out.
+
 ## [0.260725.1] — 2026-07-25
 
 First release since `0.260528.2`. Lands the ACP agent, the recursion event

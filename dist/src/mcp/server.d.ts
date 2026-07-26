@@ -18,12 +18,125 @@
  * Every result carries its own token/cost footer, so the offload is visible in
  * the transcript as it happens instead of having to be taken on faith.
  *
+ * Two properties make this usable rather than merely present:
+ *
+ *   Live tool set — every `tools/list` AND every `tools/call` re-scans the
+ *   agent roots, and both the advertised list and the dispatch table are built
+ *   from that one scan. An agent directory authored mid-session is therefore
+ *   listed *and* callable without a reconnect, and the server emits
+ *   `notifications/tools/list_changed` when the set actually changes.
+ *
+ *   Agent-tool isomorphism — the surface mirrors the host's own Agent tool:
+ *   `prompt` in, one final report out, a `session_id` to continue with. A
+ *   follow-up resumes by replaying the session's bounded turn history into the
+ *   new prompt (the mechanism `src/acp/agent.ts` uses); the Python REPL is
+ *   rebuilt per call and its state is deliberately not promised across turns.
+ *
  * stdout discipline: MCP stdio frames JSON-RPC on stdout, so all human/
  * diagnostic logging is redirected to stderr and `rlmLoop` is run with
  * `output: "json"` to keep it off its stream-mode stdout path — the same
  * contract `src/acp/agent.ts` follows.
  */
 import { type Microagent } from "./agents.js";
+/** One re-scan: what to advertise, what to dispatch on, and what changed. */
+export interface AgentScan {
+    readonly agents: readonly Microagent[];
+    /** Call lookup, built from the SAME scan that produced `agents`. */
+    readonly byToolName: ReadonlyMap<string, Microagent>;
+    /** True when the advertised tool-name set differs from the previous scan. */
+    readonly changed: boolean;
+    /** Tool names present in the previous scan and gone from this one. */
+    readonly removed: readonly string[];
+}
+/**
+ * Re-scan the agent roots and diff the resulting tool-name set.
+ *
+ * The failure mode this designs out is a tool that is listed but not callable
+ * (or callable but not listed): `agents` and `byToolName` come from one
+ * `discoverAgents` call, so the advertised list and the dispatch table cannot
+ * drift apart. The first refresh only seeds the baseline — it never reports a
+ * change, or every connect would emit a spurious `list_changed`.
+ *
+ * `changed` is computed and the baseline updated in the same synchronous step,
+ * so two concurrent requests that both observe a new agent still report the
+ * change exactly once.
+ */
+export declare function createAgentRegistry(scan: () => Promise<readonly Microagent[]>): {
+    refresh: () => Promise<AgentScan>;
+};
+/** One completed exchange, replayed into a follow-up call on the session. */
+export interface SessionTurn {
+    readonly prompt: string;
+    readonly answer: string;
+}
+export interface McpSession {
+    readonly id: string;
+    /**
+     * The tool that created this session. A `session_id` is not portable: the
+     * turns were produced by one agent's spec, so replaying them into another
+     * agent would silently mix two identities.
+     */
+    readonly toolName: string;
+    readonly turns: SessionTurn[];
+    /** Epoch ms of the last use — drives both TTL expiry and LRU eviction. */
+    lastUsedAt: number;
+    /** True while a call on this session is in flight (serialize-and-reject). */
+    busy: boolean;
+}
+export interface SessionStoreOptions {
+    readonly ttlMs?: number;
+    readonly maxSessions?: number;
+    readonly maxTurns?: number;
+    /** Test seam: injectable clock. */
+    readonly now?: () => number;
+    /** Test seam: injectable id source. */
+    readonly newId?: () => string;
+}
+/**
+ * In-process session map: `session_id` → bounded turn history.
+ *
+ * Bounded three ways, because an MCP server outlives any single conversation:
+ * a TTL retires idle sessions, a size cap with LRU eviction bounds the map,
+ * and a per-session turn cap bounds each entry. Nothing is persisted — a
+ * server restart starts every conversation over, which is the honest contract
+ * given the REPL is rebuilt per call anyway.
+ */
+export declare class McpSessionStore {
+    private readonly sessions;
+    private readonly ttlMs;
+    private readonly maxSessions;
+    private readonly maxTurns;
+    private readonly now;
+    private readonly newId;
+    constructor(options?: SessionStoreOptions);
+    get size(): number;
+    create(toolName: string): McpSession;
+    /** Live session, or undefined when it is unknown or has expired. */
+    get(id: string): McpSession | undefined;
+    /** Append a completed turn, dropping the oldest beyond the cap. */
+    record(session: McpSession, turn: SessionTurn): void;
+    delete(id: string): boolean;
+    /**
+     * Drop every session bound to a tool that no longer exists. An agent deleted
+     * mid-session leaves its sessions unreachable — "Unknown tool" is the answer
+     * a caller gets, so keeping the orphans would only hold memory.
+     */
+    evictTools(toolNames: Iterable<string>): number;
+    private sweep;
+    /** Evict least-recently-used sessions until there is room for one more. */
+    private evictToCap;
+}
+/**
+ * Fold prior turns into a follow-up prompt.
+ *
+ * Same mechanism as ACP's `buildConversationalQuery` (`src/acp/agent.ts`) and
+ * for the same reason: a fresh `rlmLoop` — and therefore a fresh Python REPL —
+ * runs on every call, so conversation continuity is carried by replaying the
+ * transcript, not by holding interpreter state. Live REPL variables are
+ * explicitly *not* promised across a resume. Each field is char-capped so the
+ * preamble cannot grow without bound.
+ */
+export declare function buildResumeQuery(turns: readonly SessionTurn[], prompt: string): string;
 /**
  * Iteration cap implied by an agent's spec.
  *

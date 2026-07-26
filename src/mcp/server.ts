@@ -18,6 +18,20 @@
  * Every result carries its own token/cost footer, so the offload is visible in
  * the transcript as it happens instead of having to be taken on faith.
  *
+ * Two properties make this usable rather than merely present:
+ *
+ *   Live tool set — every `tools/list` AND every `tools/call` re-scans the
+ *   agent roots, and both the advertised list and the dispatch table are built
+ *   from that one scan. An agent directory authored mid-session is therefore
+ *   listed *and* callable without a reconnect, and the server emits
+ *   `notifications/tools/list_changed` when the set actually changes.
+ *
+ *   Agent-tool isomorphism — the surface mirrors the host's own Agent tool:
+ *   `prompt` in, one final report out, a `session_id` to continue with. A
+ *   follow-up resumes by replaying the session's bounded turn history into the
+ *   new prompt (the mechanism `src/acp/agent.ts` uses); the Python REPL is
+ *   rebuilt per call and its state is deliberately not promised across turns.
+ *
  * stdout discipline: MCP stdio frames JSON-RPC on stdout, so all human/
  * diagnostic logging is redirected to stderr and `rlmLoop` is run with
  * `output: "json"` to keep it off its stream-mode stdout path — the same
@@ -32,6 +46,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { loadConfig, type RlmxConfig } from "../config.js";
 import { loadContext } from "../context.js";
@@ -57,9 +72,39 @@ const HEARTBEAT_MS = 15_000;
 /** Tool always present, so the server is useful before any agent is authored. */
 const GENERIC_TOOL = "rlmx_query";
 
+/**
+ * Input surface, deliberately isomorphic to the host's native Agent tool:
+ * `prompt` in, one final report out, `session_id` to continue. Delegation that
+ * pattern-matches the tool a host model already knows gets used; a new idiom
+ * gets ignored.
+ *
+ * `query` remains as a deprecated alias for `prompt`. Both are *optional* in
+ * the schema and exactly one is demanded at runtime: JSON Schema can only say
+ * "exactly one of" via `anyOf`/`oneOf`, which several MCP hosts flatten or
+ * reject outright, so the constraint lives in code and the error names
+ * `prompt`.
+ */
+const PROMPT_PROPERTY = {
+  type: "string",
+  description:
+    "The task for rlmx to perform. Write it as a complete, standalone " +
+    "instruction: the agent runs autonomously to completion and cannot ask " +
+    "follow-up questions mid-run.",
+} as const;
+
 const QUERY_PROPERTY = {
   type: "string",
-  description: "The task or question to hand to rlmx.",
+  description:
+    "Deprecated alias for `prompt`, kept for existing callers. Pass one or " +
+    "the other, never both.",
+} as const;
+
+const SESSION_ID_PROPERTY = {
+  type: "string",
+  description:
+    "Continue an earlier call on this same tool: pass the `session_id` its " +
+    "result returned. The prior turns are replayed into the new prompt, so " +
+    "the follow-up can reference them. Omit to start a fresh session.",
 } as const;
 
 const CONTEXT_PROPERTY = {
@@ -69,11 +114,33 @@ const CONTEXT_PROPERTY = {
     "server's working directory. Equivalent to the CLI's --context.",
 } as const;
 
+/**
+ * Minimal output contract. Declaring it is what makes `structuredContent` a
+ * stated promise rather than an undocumented extra a client may drop.
+ */
+function toolOutputSchema(): Tool["outputSchema"] {
+  return {
+    type: "object",
+    properties: {
+      session_id: {
+        type: "string",
+        description: "Pass this back as `session_id` to continue this session.",
+      },
+    },
+    required: ["session_id"],
+  };
+}
+
 function agentToolSchema(): Tool["inputSchema"] {
   return {
     type: "object",
-    properties: { query: QUERY_PROPERTY, context: CONTEXT_PROPERTY },
-    required: ["query"],
+    properties: {
+      prompt: PROMPT_PROPERTY,
+      query: QUERY_PROPERTY,
+      session_id: SESSION_ID_PROPERTY,
+      context: CONTEXT_PROPERTY,
+    },
+    required: [],
   };
 }
 
@@ -81,7 +148,9 @@ function genericToolSchema(): Tool["inputSchema"] {
   return {
     type: "object",
     properties: {
+      prompt: PROMPT_PROPERTY,
       query: QUERY_PROPERTY,
+      session_id: SESSION_ID_PROPERTY,
       context: CONTEXT_PROPERTY,
       model: {
         type: "string",
@@ -90,26 +159,41 @@ function genericToolSchema(): Tool["inputSchema"] {
           '"station/Brain-35B" to run locally at no marginal cost.',
       },
     },
-    required: ["query"],
+    required: [],
   };
 }
 
+/** Spawn-style description: what it is, how to prompt it, what comes back. */
 function describeAgent(agent: Microagent): string {
   const model = agent.spec.model ? ` Runs on ${agent.spec.model}.` : "";
-  return `${agent.summary}${model} (rlmx microagent "${agent.name}", shape=${agent.spec.shape})`;
+  return (
+    `Launch the "${agent.name}" rlmx agent to handle a task autonomously. ` +
+    `${agent.summary}${model} Give it a complete, standalone prompt — it runs ` +
+    `to completion and returns a single final report, and cannot ask ` +
+    `follow-up questions mid-run. The result carries the tokens and cost it ` +
+    `used plus a session_id; pass that session_id back to this tool to ` +
+    `continue the conversation. ` +
+    `(rlmx microagent "${agent.name}", shape=${agent.spec.shape})`
+  );
 }
+
+const GENERIC_DESCRIPTION =
+  "Launch a general-purpose rlmx agent to handle a self-contained task " +
+  "autonomously (RLM loop: Python REPL plus recursion). Use it to offload " +
+  "work you would otherwise grind through inline — analysis over a large " +
+  "body of files, repeated extraction, wide searches. Give it a complete, " +
+  "standalone prompt: it runs to completion and returns a single final " +
+  "report, and cannot ask follow-up questions mid-run. The result carries " +
+  "the tokens and cost it used plus a session_id; pass that session_id back " +
+  "to this tool to continue the conversation.";
 
 function buildToolList(agents: readonly Microagent[]): Tool[] {
   const tools: Tool[] = [
     {
       name: GENERIC_TOOL,
-      description:
-        "Run an ad-hoc query through rlmx (RLM loop with a Python REPL and " +
-        "recursion). Use this to offload self-contained work — analysis over " +
-        "a large body of files, repeated extraction, anything you would " +
-        "otherwise grind through inline. Returns the answer plus the tokens " +
-        "and cost it used.",
+      description: GENERIC_DESCRIPTION,
       inputSchema: genericToolSchema(),
+      outputSchema: toolOutputSchema(),
     },
   ];
 
@@ -118,10 +202,248 @@ function buildToolList(agents: readonly Microagent[]): Tool[] {
       name: agent.toolName,
       description: describeAgent(agent),
       inputSchema: agentToolSchema(),
+      outputSchema: toolOutputSchema(),
     });
   }
 
   return tools;
+}
+
+// ── Live tool set ─────────────────────────────────────────────────────────
+
+/** One re-scan: what to advertise, what to dispatch on, and what changed. */
+export interface AgentScan {
+  readonly agents: readonly Microagent[];
+  /** Call lookup, built from the SAME scan that produced `agents`. */
+  readonly byToolName: ReadonlyMap<string, Microagent>;
+  /** True when the advertised tool-name set differs from the previous scan. */
+  readonly changed: boolean;
+  /** Tool names present in the previous scan and gone from this one. */
+  readonly removed: readonly string[];
+}
+
+/**
+ * Re-scan the agent roots and diff the resulting tool-name set.
+ *
+ * The failure mode this designs out is a tool that is listed but not callable
+ * (or callable but not listed): `agents` and `byToolName` come from one
+ * `discoverAgents` call, so the advertised list and the dispatch table cannot
+ * drift apart. The first refresh only seeds the baseline — it never reports a
+ * change, or every connect would emit a spurious `list_changed`.
+ *
+ * `changed` is computed and the baseline updated in the same synchronous step,
+ * so two concurrent requests that both observe a new agent still report the
+ * change exactly once.
+ */
+export function createAgentRegistry(scan: () => Promise<readonly Microagent[]>): {
+  refresh: () => Promise<AgentScan>;
+} {
+  let previous: Set<string> | undefined;
+
+  return {
+    async refresh(): Promise<AgentScan> {
+      const agents = await scan();
+      const byToolName = new Map(agents.map((a) => [a.toolName, a]));
+      const current = new Set(byToolName.keys());
+
+      const baseline = previous;
+      previous = current;
+
+      if (!baseline) {
+        return { agents, byToolName, changed: false, removed: [] };
+      }
+
+      const removed = [...baseline].filter((name) => !current.has(name));
+      const added = [...current].filter((name) => !baseline.has(name));
+      return {
+        agents,
+        byToolName,
+        changed: removed.length > 0 || added.length > 0,
+        removed,
+      };
+    },
+  };
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────
+
+/** One completed exchange, replayed into a follow-up call on the session. */
+export interface SessionTurn {
+  readonly prompt: string;
+  readonly answer: string;
+}
+
+export interface McpSession {
+  readonly id: string;
+  /**
+   * The tool that created this session. A `session_id` is not portable: the
+   * turns were produced by one agent's spec, so replaying them into another
+   * agent would silently mix two identities.
+   */
+  readonly toolName: string;
+  readonly turns: SessionTurn[];
+  /** Epoch ms of the last use — drives both TTL expiry and LRU eviction. */
+  lastUsedAt: number;
+  /** True while a call on this session is in flight (serialize-and-reject). */
+  busy: boolean;
+}
+
+/** Sessions are advisory: losing one costs a fresh start, never correctness. */
+const SESSION_TTL_MS = 30 * 60_000;
+const MAX_SESSIONS = 64;
+/** Turns retained per session; also the number replayed on a follow-up. */
+const MAX_SESSION_TURNS = 8;
+const REPLAY_PROMPT_CHARS = 2_000;
+const REPLAY_ANSWER_CHARS = 4_000;
+
+export interface SessionStoreOptions {
+  readonly ttlMs?: number;
+  readonly maxSessions?: number;
+  readonly maxTurns?: number;
+  /** Test seam: injectable clock. */
+  readonly now?: () => number;
+  /** Test seam: injectable id source. */
+  readonly newId?: () => string;
+}
+
+/**
+ * In-process session map: `session_id` → bounded turn history.
+ *
+ * Bounded three ways, because an MCP server outlives any single conversation:
+ * a TTL retires idle sessions, a size cap with LRU eviction bounds the map,
+ * and a per-session turn cap bounds each entry. Nothing is persisted — a
+ * server restart starts every conversation over, which is the honest contract
+ * given the REPL is rebuilt per call anyway.
+ */
+export class McpSessionStore {
+  private readonly sessions = new Map<string, McpSession>();
+  private readonly ttlMs: number;
+  private readonly maxSessions: number;
+  private readonly maxTurns: number;
+  private readonly now: () => number;
+  private readonly newId: () => string;
+
+  constructor(options: SessionStoreOptions = {}) {
+    this.ttlMs = options.ttlMs ?? SESSION_TTL_MS;
+    this.maxSessions = options.maxSessions ?? MAX_SESSIONS;
+    this.maxTurns = options.maxTurns ?? MAX_SESSION_TURNS;
+    this.now = options.now ?? Date.now;
+    this.newId = options.newId ?? (() => `sess_${randomBytes(8).toString("hex")}`);
+  }
+
+  get size(): number {
+    return this.sessions.size;
+  }
+
+  create(toolName: string): McpSession {
+    this.sweep();
+    this.evictToCap();
+    const session: McpSession = {
+      id: this.newId(),
+      toolName,
+      turns: [],
+      lastUsedAt: this.now(),
+      busy: false,
+    };
+    this.sessions.set(session.id, session);
+    return session;
+  }
+
+  /** Live session, or undefined when it is unknown or has expired. */
+  get(id: string): McpSession | undefined {
+    this.sweep();
+    const session = this.sessions.get(id);
+    if (session) session.lastUsedAt = this.now();
+    return session;
+  }
+
+  /** Append a completed turn, dropping the oldest beyond the cap. */
+  record(session: McpSession, turn: SessionTurn): void {
+    session.turns.push(turn);
+    if (session.turns.length > this.maxTurns) {
+      session.turns.splice(0, session.turns.length - this.maxTurns);
+    }
+    session.lastUsedAt = this.now();
+  }
+
+  delete(id: string): boolean {
+    return this.sessions.delete(id);
+  }
+
+  /**
+   * Drop every session bound to a tool that no longer exists. An agent deleted
+   * mid-session leaves its sessions unreachable — "Unknown tool" is the answer
+   * a caller gets, so keeping the orphans would only hold memory.
+   */
+  evictTools(toolNames: Iterable<string>): number {
+    const doomed = new Set(toolNames);
+    let evicted = 0;
+    for (const [id, session] of this.sessions) {
+      if (doomed.has(session.toolName)) {
+        this.sessions.delete(id);
+        evicted += 1;
+      }
+    }
+    return evicted;
+  }
+
+  private sweep(): void {
+    const cutoff = this.now() - this.ttlMs;
+    for (const [id, session] of this.sessions) {
+      // An in-flight call keeps its session alive regardless of age.
+      if (!session.busy && session.lastUsedAt <= cutoff) this.sessions.delete(id);
+    }
+  }
+
+  /** Evict least-recently-used sessions until there is room for one more. */
+  private evictToCap(): void {
+    if (this.sessions.size < this.maxSessions) return;
+    const candidates = [...this.sessions.values()]
+      .filter((s) => !s.busy)
+      .sort((a, b) => a.lastUsedAt - b.lastUsedAt);
+    for (const victim of candidates) {
+      if (this.sessions.size < this.maxSessions) break;
+      this.sessions.delete(victim.id);
+    }
+    // If every session is busy the cap yields rather than killing a live call;
+    // in-flight calls are bounded by the host's own concurrency.
+  }
+}
+
+/**
+ * Fold prior turns into a follow-up prompt.
+ *
+ * Same mechanism as ACP's `buildConversationalQuery` (`src/acp/agent.ts`) and
+ * for the same reason: a fresh `rlmLoop` — and therefore a fresh Python REPL —
+ * runs on every call, so conversation continuity is carried by replaying the
+ * transcript, not by holding interpreter state. Live REPL variables are
+ * explicitly *not* promised across a resume. Each field is char-capped so the
+ * preamble cannot grow without bound.
+ */
+export function buildResumeQuery(
+  turns: readonly SessionTurn[],
+  prompt: string
+): string {
+  if (turns.length === 0) return prompt;
+  const lines: string[] = [
+    "This is a continuing conversation. Earlier turns in this session (for context — do not repeat them unless the new request asks you to):",
+    "",
+  ];
+  turns.forEach((turn, i) => {
+    lines.push(`--- Turn ${i + 1} ---`);
+    lines.push(`User: ${truncate(turn.prompt, REPLAY_PROMPT_CHARS)}`);
+    lines.push(`Assistant: ${truncate(turn.answer, REPLAY_ANSWER_CHARS)}`);
+    lines.push("");
+  });
+  lines.push(
+    "Now respond to this new request, drawing on the conversation above when relevant:"
+  );
+  lines.push(prompt);
+  return lines.join("\n");
+}
+
+function truncate(text: string, cap: number): string {
+  return text.length > cap ? `${text.slice(0, cap)}…` : text;
 }
 
 /**
@@ -180,7 +502,8 @@ function formatFooter(
   label: string,
   config: RlmxConfig,
   result: Awaited<ReturnType<typeof rlmLoop>>,
-  elapsedMs: number
+  elapsedMs: number,
+  sessionId: string
 ): string {
   const tokensIn = result.usage.inputTokens.toLocaleString("en-US");
   const tokensOut = result.usage.outputTokens.toLocaleString("en-US");
@@ -188,15 +511,36 @@ function formatFooter(
   const seconds = (elapsedMs / 1000).toFixed(1);
   const budget = result.budgetHit ? ` · budget hit: ${result.budgetHit}` : "";
 
+  // The session id is echoed in prose as well as structuredContent: a host
+  // that renders only the text block still shows the model how to follow up.
   return (
     `rlmx · ${label} · ${model} · ${result.iterations} iteration` +
     `${result.iterations === 1 ? "" : "s"} · ${tokensIn} in / ${tokensOut} out ` +
-    `· ${formatCost(result.usage.totalCost)} · ${seconds}s${budget}`
+    `· ${formatCost(result.usage.totalCost)} · ${seconds}s${budget}` +
+    ` · session ${sessionId}`
   );
 }
 
 function textResult(text: string, isError = false): CallToolResult {
   return { content: [{ type: "text", text }], isError };
+}
+
+/** Trimmed string argument; "" when absent, blank, or not a string. */
+function readArg(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Result of a call that reached a session, success or failure alike. Declaring
+ * `outputSchema` obliges a non-error result to carry `structuredContent`; an
+ * error carries it too, so a caller can retry on the same session.
+ */
+function sessionResult(text: string, sessionId: string, isError = false): CallToolResult {
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: { session_id: sessionId },
+    isError,
+  };
 }
 
 /**
@@ -209,15 +553,26 @@ function runTimeout(): { timeout?: number } {
   return Number.isFinite(ms) && ms > 0 ? { timeout: ms } : {};
 }
 
-async function runQuery(
+interface TurnOutcome {
+  readonly answer: string;
+  readonly text: string;
+}
+
+/**
+ * Run one turn. `query` is already the resume-folded prompt; `prompt` is the
+ * caller's own text, which is what gets recorded as the turn (a preamble must
+ * never be replayed inside the next preamble).
+ */
+async function runTurn(
   config: RlmxConfig,
   label: string,
   query: string,
+  sessionId: string,
   contextPath: string | undefined,
   cwd: string,
   progress?: ProgressSink,
   maxIterations?: number
-): Promise<CallToolResult> {
+): Promise<TurnOutcome> {
   let context = null;
   if (contextPath) {
     const resolved = resolve(cwd, contextPath);
@@ -298,8 +653,8 @@ async function runQuery(
       ...runTimeout(),
     });
 
-    const footer = formatFooter(label, config, result, Date.now() - started);
-    return textResult(`${result.answer}\n\n---\n${footer}`);
+    const footer = formatFooter(label, config, result, Date.now() - started, sessionId);
+    return { answer: result.answer, text: `${result.answer}\n\n---\n${footer}` };
   } finally {
     if (heartbeat) clearInterval(heartbeat);
   }
@@ -325,22 +680,47 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
   console.debug = toStderr as typeof console.debug;
   console.warn = toStderr as typeof console.warn;
 
-  const agents = await discoverAgents(cwd);
-  const byToolName = new Map(agents.map((a) => [a.toolName, a]));
+  const registry = createAgentRegistry(() => discoverAgents(cwd));
+  const sessions = new McpSessionStore();
 
+  // Seed the baseline before connecting, so the first tools/list is not
+  // reported as a change.
+  const initial = await registry.refresh();
   process.stderr.write(
-    `rlmx mcp: ${agents.length} microagent${agents.length === 1 ? "" : "s"} discovered` +
-      `${agents.length ? ` (${agents.map((a) => a.name).join(", ")})` : ""}\n`
+    `rlmx mcp: ${initial.agents.length} microagent${initial.agents.length === 1 ? "" : "s"} discovered` +
+      `${initial.agents.length ? ` (${initial.agents.map((a) => a.name).join(", ")})` : ""}\n`
   );
 
   const server = new Server(
     { name: "rlmx", version: VERSION },
-    { capabilities: { tools: {} } }
+    // listChanged is declared because it is genuinely emitted — a capability
+    // claimed and never honored is worse than none at all.
+    { capabilities: { tools: { listChanged: true } } }
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: buildToolList(agents),
-  }));
+  /**
+   * Re-scan on every request. Agents are directories an agent (human or model)
+   * creates mid-session, so a tool set frozen at connect time is wrong within
+   * seconds; the client is told about a change even when it learned of it by
+   * asking, because the *call* path re-scans too.
+   */
+  const refresh = async (): Promise<AgentScan> => {
+    const scan = await registry.refresh();
+    if (scan.changed) {
+      if (scan.removed.length > 0) sessions.evictTools(scan.removed);
+      try {
+        await server.sendToolListChanged();
+      } catch {
+        // Not connected yet, or the client went away — never fail the request.
+      }
+    }
+    return scan;
+  };
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const scan = await refresh();
+    return { tools: buildToolList(scan.agents) };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
@@ -363,43 +743,104 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
               });
           };
 
-    const query = typeof args?.query === "string" ? args.query.trim() : "";
-    const contextPath =
-      typeof args?.context === "string" && args.context.trim()
-        ? args.context.trim()
-        : undefined;
-
-    if (!query) {
-      return textResult(`${name}: "query" is required and must be a non-empty string.`, true);
+    // Dispatch off the SAME scan that feeds tools/list: an agent authored a
+    // moment ago is callable on its first appearance, and one deleted a moment
+    // ago is not callable even though the client's cached list still shows it.
+    const scan = await refresh();
+    const agent = name === GENERIC_TOOL ? undefined : scan.byToolName.get(name);
+    if (name !== GENERIC_TOOL && !agent) {
+      // Agent deleted mid-session: "Unknown tool" wins over any session the
+      // caller may hold, and the orphaned sessions go with it.
+      sessions.evictTools([name]);
+      return textResult(`Unknown tool: ${name}`, true);
     }
 
+    const promptArg = readArg(args?.prompt);
+    const queryArg = readArg(args?.query);
+    if (promptArg && queryArg) {
+      return textResult(
+        `${name}: pass "prompt" on its own — "query" is a deprecated alias for ` +
+          `"prompt", so supplying both is ambiguous.`,
+        true
+      );
+    }
+    const prompt = promptArg || queryArg;
+    if (!prompt) {
+      return textResult(
+        `${name}: "prompt" is required and must be a non-empty string ` +
+          `("query" is still accepted as a deprecated alias).`,
+        true
+      );
+    }
+
+    const contextPath = readArg(args?.context);
+
+    // ── session resolution ────────────────────────────────────────────────
+    const requestedSession = readArg(args?.session_id);
+    let session: McpSession;
+    if (requestedSession) {
+      const existing = sessions.get(requestedSession);
+      if (!existing) {
+        return textResult(
+          `${name}: unknown or expired session_id "${requestedSession}". Sessions ` +
+            `are in-process and time-limited; omit session_id to start a new one.`,
+          true
+        );
+      }
+      if (existing.toolName !== name) {
+        return textResult(
+          `${name}: session_id "${requestedSession}" belongs to ${existing.toolName}. ` +
+            `A session cannot be moved between tools — omit session_id to start ` +
+            `one on ${name}.`,
+          true
+        );
+      }
+      if (existing.busy) {
+        return textResult(
+          `${name}: session ${requestedSession} is busy — a call on it is already ` +
+            `in flight. rlmx serializes calls per session; retry once it returns.`,
+          true
+        );
+      }
+      session = existing;
+    } else {
+      session = sessions.create(name);
+    }
+
+    session.busy = true;
     try {
       const baseConfig = await loadConfig(cwd);
+      // Resume is conversation replay, not REPL state: every call builds a
+      // fresh rlmLoop, and the prior turns ride in with the prompt.
+      const query = buildResumeQuery(session.turns, prompt);
 
-      if (name === GENERIC_TOOL) {
-        const override = typeof args?.model === "string" ? args.model.trim() : "";
+      let outcome: TurnOutcome;
+      if (agent) {
+        outcome = await runTurn(
+          applyAgent(baseConfig, agent),
+          `agent=${agent.name}`,
+          query,
+          session.id,
+          contextPath,
+          cwd,
+          progress,
+          agentMaxIterations(agent)
+        );
+      } else {
+        const override = readArg(args?.model);
         const config = override ? applyModelOverride(baseConfig, override) : baseConfig;
-        return await runQuery(config, "query", query, contextPath, cwd, progress);
+        outcome = await runTurn(config, "query", query, session.id, contextPath, cwd, progress);
       }
 
-      const agent = byToolName.get(name);
-      if (!agent) {
-        return textResult(`Unknown tool: ${name}`, true);
-      }
-
-      return await runQuery(
-        applyAgent(baseConfig, agent),
-        `agent=${agent.name}`,
-        query,
-        contextPath,
-        cwd,
-        progress,
-        agentMaxIterations(agent)
-      );
+      sessions.record(session, { prompt, answer: outcome.answer });
+      return sessionResult(outcome.text, session.id);
     } catch (err) {
       // A failing run must fail only this tool call, never the server process.
+      // The session survives so the caller can retry on it.
       const message = err instanceof Error ? err.message : String(err);
-      return textResult(`rlmx ${name} failed: ${message}`, true);
+      return sessionResult(`rlmx ${name} failed: ${message}`, session.id, true);
+    } finally {
+      session.busy = false;
     }
   });
 
