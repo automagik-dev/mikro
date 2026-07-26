@@ -39,7 +39,10 @@ type StationModel = Model<"openai-completions">;
  */
 export declare const STATION_BASELINE_MODELS: readonly StationModel[];
 /** Build the station provider (pi-ai `createProvider`). */
-export declare function stationProvider(): Provider<"openai-completions">;
+export declare function stationProvider(catalog?: readonly StationModel[]): Provider<"openai-completions">;
+export declare function ensureStationModels(models: MutableModels): Promise<void>;
+/** Test seam: forget the memoized overlay. */
+export declare function resetStationModelsCache(): void;
 /**
  * Register the station provider on a pi-ai `Models` runtime. Call once per
  * runtime, right after `builtinModels()`, at every resolution site.

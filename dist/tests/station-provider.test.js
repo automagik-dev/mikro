@@ -61,4 +61,36 @@ describe("station provider", () => {
         assert.ok(resolved?.auth.apiKey, "keyless auth must supply a placeholder key");
     });
 });
+/**
+ * Dynamic-catalog regression — the gateway serves ids that are not in the
+ * static baseline (e.g. `Brain-35B`). `fetchModels` is a pi-ai hook that only
+ * runs on `Models.refresh()`, which nothing called, so those ids resolved as
+ * "Unknown model" despite being live. `stationProvider(catalog)` is the seam
+ * `ensureStationModels` re-registers through.
+ */
+describe("stationProvider — dynamic catalog", () => {
+    it("defaults to the static baseline", () => {
+        const ids = stationProvider().getModels().map((m) => m.id);
+        assert.deepEqual([...ids].sort(), [...STATION_BASELINE_MODELS.map((m) => m.id)].sort());
+    });
+    it("serves a supplied catalog so gateway-only ids resolve", () => {
+        const extra = {
+            ...STATION_BASELINE_MODELS[0],
+            id: "Brain-35B",
+            name: "Brain-35B",
+        };
+        const models = builtinModels();
+        models.setProvider(stationProvider([...STATION_BASELINE_MODELS, extra]));
+        assert.ok(models.getModel(STATION_PROVIDER_ID, "Brain-35B"), "a gateway-only id must resolve once the overlay is registered");
+        // Re-registering must not drop the baseline.
+        for (const baseline of STATION_BASELINE_MODELS) {
+            assert.ok(models.getModel(STATION_PROVIDER_ID, baseline.id), `baseline model ${baseline.id} must survive the overlay`);
+        }
+    });
+    it("does not resolve a gateway-only id without the overlay", () => {
+        const models = builtinModels();
+        registerStationProvider(models);
+        assert.equal(models.getModel(STATION_PROVIDER_ID, "Brain-35B"), undefined, "baseline-only registration must not invent models");
+    });
+});
 //# sourceMappingURL=station-provider.test.js.map

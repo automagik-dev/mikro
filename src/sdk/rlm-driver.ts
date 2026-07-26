@@ -60,7 +60,11 @@
  */
 
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { registerStationProvider } from "../station-provider.js";
+import {
+	ensureStationModels,
+	registerStationProvider,
+	STATION_PROVIDER_ID,
+} from "../station-provider.js";
 import type {
 	AssistantMessage as PiAssistantMessage,
 	Context as PiContext,
@@ -347,6 +351,11 @@ function buildToolDispatchDriver(
 	const llm =
 		config.toolsLlm ??
 		(async (ctx, modelCfg, signal) => {
+			// Station's catalog is dynamic; apply the overlay before resolving so
+			// gateway-only model ids resolve here too (mirrors src/llm.ts).
+			if (modelCfg.provider === STATION_PROVIDER_ID) {
+				await ensureStationModels(piModels);
+			}
 			const model = resolvePiModel(modelCfg.provider, modelCfg.model);
 			const opts: PiSimpleStreamOptions = { signal };
 			return await piModels.completeSimple(model, ctx, opts);

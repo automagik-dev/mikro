@@ -59,7 +59,7 @@
  * tool-dispatch loop that unblocks Tier 2 agents.
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { registerStationProvider } from "../station-provider.js";
+import { ensureStationModels, registerStationProvider, STATION_PROVIDER_ID, } from "../station-provider.js";
 import { llmCompleteSimple } from "../llm.js";
 const DEFAULT_RETRY_FORMATTER = (hint) => `# Retry hint from the validator\n\n${hint}\n\n`;
 const DEFAULT_MAX_TOOL_ITERATIONS = 16;
@@ -235,6 +235,11 @@ function buildToolDispatchDriver(config, toolsCfg) {
     const tools = buildPiTools(toolsCfg);
     const llm = config.toolsLlm ??
         (async (ctx, modelCfg, signal) => {
+            // Station's catalog is dynamic; apply the overlay before resolving so
+            // gateway-only model ids resolve here too (mirrors src/llm.ts).
+            if (modelCfg.provider === STATION_PROVIDER_ID) {
+                await ensureStationModels(piModels);
+            }
             const model = resolvePiModel(modelCfg.provider, modelCfg.model);
             const opts = { signal };
             return await piModels.completeSimple(model, ctx, opts);

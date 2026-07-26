@@ -5,7 +5,7 @@
  * from the Python REPL, and rlm_query child process spawning.
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { registerStationProvider } from "./station-provider.js";
+import { ensureStationModels, registerStationProvider, STATION_PROVIDER_ID, } from "./station-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
@@ -119,6 +119,11 @@ function resolveModel(provider, modelId) {
  * Tracks cost and time_ms per call. Optionally emits to a Logger.
  */
 export async function llmComplete(messages, modelConfig, options) {
+    // The station catalog is dynamic: the gateway may serve ids that are not in
+    // the static baseline. Apply the overlay before resolving so those resolve.
+    if (modelConfig.provider === STATION_PROVIDER_ID) {
+        await ensureStationModels(models);
+    }
     const model = resolveModel(modelConfig.provider, modelConfig.model);
     const startTime = Date.now();
     const systemPrompt = messages.find((m) => m.role === "system")?.content;
