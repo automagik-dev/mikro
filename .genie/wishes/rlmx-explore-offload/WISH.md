@@ -111,10 +111,13 @@ by a fixed rubric against native Explore. Wish B (plugin packaging, shootout,
 - [ ] A2: An agent directory created mid-session is listed **and callable**
   without reconnect; the server emits `notifications/tools/list_changed` on
   set change (extended smoke-mcp proves list + call + notification).
-- [ ] A3: `khal/<model>` resolves with the key present and shows real
+- [x] A3: `khal/<model>` resolves with the key present and shows real
   per-token cost in the MCP footer (sourced from `/model/info`, ×1e6);
   without the key, resolution fails fast naming `KHAL_API_KEY`. Station
-  behavior unchanged.
+  behavior unchanged. — Group 1 evidence: live MCP footer
+  `khal/deepseek-v4-flash · 2,290 in / 33 out · $0.0002`, keyless and
+  rejected-key calls both `isError` with the credential named, 472/472 tests
+  green ([evidence-group-1.md](evidence-group-1.md)).
 - [ ] A4: Parity gate **executed** on the ≥5-task mined suite and
   `docs/parity-explore.md` committed with per-task rubric, scores,
   tuning/escalation history, and premium-token accounting (reported, not
@@ -182,13 +185,28 @@ fail-fast no-key behavior.
    conflicts, not anchor collisions).
 
 **Acceptance Criteria:**
-- [ ] With key (**prerequisite: `KHAL_API_KEY` in env + reachable
+- [x] With key (**prerequisite: `KHAL_API_KEY` in env + reachable
   `llm.khal.ai` — present on this host; a keyless run failing here is an
-  environment gap, not a code defect**): `rlmx -m khal/deepseek-v4-flash
-  "..."` completes and the footer shows nonzero cost.
-- [ ] Without key: resolution fails before lookup with the exact message
-  naming `KHAL_API_KEY`.
-- [ ] Fixture test pins the ×1e6 conversion; station tests untouched and green.
+  environment gap, not a code defect**): a real khal run completes and reports
+  nonzero cost. **Corrected invocation** (rev 3): rlmx has no `-m`/`--model`
+  flag — it is absent from the parseArgs table (`src/cli.ts:151-175`) and
+  `strict: false` swallows it silently, so `rlmx -m khal/<model> "…"` runs the
+  *configured* model with `khal/<model>` as the query — and the plain-text CLI
+  prints no cost footer. Use either:
+  `HOME=<tmp> rlmx --stats "…"` with
+  `{"model.provider":"khal","model.model":"deepseek-v4-flash"}` in
+  `<tmp>/.rlmx/settings.json` (cost in the `--stats` JSON on stderr, or in
+  `--output json`), **or** the MCP `rlmx_query` tool with
+  `model: "khal/deepseek-v4-flash"` (cost in the footer — A3's surface).
+- [x] Without a usable key, resolution fails before lookup naming the
+  credential: missing → exactly `khal provider requires KHAL_API_KEY`;
+  present but rejected (401/403) → `khal gateway rejected <ENV_VAR> (HTTP
+  401) …`. Neither degrades into "unknown model" (decision 2).
+- [x] Fixture test pins the ×1e6 conversion; station tests untouched and green.
+
+**Evidence:** [evidence-group-1.md](evidence-group-1.md) — every command above
+run live, verbatim output, with the cost arithmetic checked against the
+fixture rate.
 
 **Validation:**
 ```bash
@@ -305,12 +323,34 @@ and ≥5 real mined tasks with rubrics are ready for the gate.
    interactive dogfood, not this script.)
 
 **Acceptance Criteria:**
-- [ ] `rlmx_explore` visible and callable from a Claude Code session in
-  `~/workspace` (A1 precondition).
-- [ ] ≥5 task files exist, each with a repo-verified required-facts checklist
-  and rubric; no synthetic tasks.
-- [ ] Explore agent answers a smoke question about the rlmx repo with ≥1
-  resolvable citation.
+- [x] `rlmx_explore` visible and callable from a Claude Code session in
+  `~/workspace` (A1 precondition). — listed among 5 tools and answered a
+  question about `~/workspace/.rlmx/agents/explore/agent.yaml` with a resolving
+  citation ([evidence-group-3.md](evidence-group-3.md)).
+- [x] ≥5 task files exist, each with a repo-verified required-facts checklist
+  and rubric; no synthetic tasks. — 6 tasks, 60 facts (43 `exact`, 17
+  `re-anchored`, nothing weaker), every one a `path:line` claim the native
+  answer made about that task's own root, emitted only when a term the claim
+  *itself supplies* — an identifier it names or a fragment it quotes — is still
+  in that file and is specific enough to point at a line; the term is printed
+  beside the quoted evidence, so each fact is auditable rather than asserted.
+  Drawn from 4 sessions across 2 repos under per-session/per-repo caps. Review
+  commissions are rejected (WISH.md:66), and a task is not written unless the
+  native arm passes its own criteria 2 and 3, so decision 6 is checked rather
+  than assumed.
+- [x] Explore agent answers a smoke question about the rlmx repo with ≥1
+  resolvable citation. — station (gating) and khal (reported) arms both answered
+  with grounded citations. The gate rests on **prompt-independence**: a citation
+  must resolve, be grounded, and carry an anchor and identifier absent from
+  `SYSTEM.md`, `agent.yaml`, and the question — proven to bite by re-introducing
+  the historical leak for one run, which failed the gating arm at 3 iterations
+  with resolution and grounding both green. The iteration floor is kept as a
+  floor and described as one: a model that never emits `FINAL` saturates at
+  `max_iterations`, so it cannot fail that check.
+
+**Evidence:** [evidence-group-3.md](evidence-group-3.md) — every command above
+run live, verbatim output, with four facts spot-checked against the trees they
+were mined from.
 
 **Validation:**
 ```bash
