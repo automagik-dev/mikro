@@ -38,6 +38,20 @@ The npm package is SDK-only:
 
 - npm publishes library/SDK artifacts for programmatic consumers.
 - npm dist-tags are not the canonical CLI release signal.
+- **Publishing is manual.** The `SDK Package` workflow runs on
+  `workflow_dispatch` only — it does not fire on a merge to `main`. Publish
+  when the SDK surface actually changed:
+
+  ```bash
+  npm run bump-version     # reviewed commit, lands on main first
+  gh workflow run "SDK Package"
+  ```
+
+  This keeps the contract's invariant structurally true rather than merely
+  stated: a CLI release cannot trigger or imply an npm publish, and npm being
+  unavailable cannot make a CLI release look failed.
+- The `next` dist-tag is legacy — it was fed by a `dev` branch that no longer
+  exists, so it trails `latest`. Repoint or retire it manually.
 - `rlmx --version` reports the package/runtime version embedded in the checkout, but CLI freshness is primarily determined by the git commit on `main`.
 
 ## Main release boundary

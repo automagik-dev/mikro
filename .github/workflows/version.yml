@@ -7,40 +7,36 @@ name: SDK Package
 # `rlmx update`, with public `main` as the release boundary after a reviewed
 # topic-branch -> main merge.
 #
-#   Trigger                              Context  npm tag   Bump?
-#   -----------------------------------  -------  --------  ------
-#   workflow_run (CI success on dev)     SDK dev  @next     yes   <- DORMANT
-#   workflow_run (merge PR to main)      SDK main @latest   no
-#   workflow_dispatch (manual)           SDK dev  @next     yes
+#   Trigger                Context   npm tag   Bump?
+#   ---------------------  --------  --------  ------
+#   workflow_dispatch      SDK       @latest   no
 #
-# NOTE (2026-07-25): there is no `dev` branch on origin. Topic branches
-# (wish/*, fix/*, feat/*, chore/*) merge directly into main, so the `dev` ->
-# @next path below never fires. That is why the `next` dist-tag has been
-# frozen at 0.260528.1 while `latest` moved on. The `dev` trigger is retained
-# but inert; if @next publishing is wanted again, either create a `dev` branch
-# or repoint this at the topic-branch flow. Until then, `next` must be
-# repointed manually so it never trails `latest`:
+# There is no automatic trigger. Publishing the SDK is a deliberate act, taken
+# when the SDK surface actually changed — not a side effect of merging a CLI
+# change. The version bump is a reviewed commit (`npm run bump-version`) that
+# lands on main first, so the published artifact always matches a real commit
+# and tag.
+#
+# The `next` dist-tag is legacy: it was fed by a `dev` branch that no longer
+# exists, so it trails `latest`. Repoint or retire it manually:
 #   npm dist-tag add @automagik/rlmx@<version> next
-#
-# On dev triggers we DERIVE a fresh version (today + build-count),
-# commit + tag + push back to dev, then publish as @next.
-#
-# On main triggers we DO NOT bump — package.json already carries the version
-# tagged before the merge. We just publish that exact SDK artifact as @latest,
-# so npm and GitHub Release metadata agree. The CLI/application release already
-# happened when the protected merge into main made the commit reachable to
-# scripts/install.sh and `rlmx update`.
 #
 # Auth: npm OIDC Trusted Publishing. The package's only Trusted
 # Publisher entry on npmjs.com is THIS file (version.yml). All other
 # workflows defer to this one for npm publishing. Mirrors the genie
 # repo's setup (genie/.github/workflows/version.yml).
 
+# SDK publishing is MANUAL (2026-07-25). It no longer rides on a merge to main.
+# Rationale: the release contract states "npm publishing must not create or
+# imply a CLI release". While this fired automatically on every main push, the
+# two were coupled in practice — a CLI change attempted an SDK publish, and a
+# publish outage looked like a release failure. The CLI release boundary is the
+# git merge itself, consumed by scripts/install.sh and `rlmx update`; npm is a
+# separate, SDK-only artifact that ships when the SDK surface actually changes.
+#
+# To publish the SDK: bump the version, merge, then run this workflow from the
+# Actions tab (or `gh workflow run "SDK Package"`).
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -48,7 +44,7 @@ permissions:
   id-token: write   # required for npm OIDC trusted-publisher token exchange
 
 concurrency:
-  group: version-${{ github.event.workflow_run.head_branch || 'manual' }}
+  group: version-manual
   cancel-in-progress: false
 
 jobs:
@@ -56,36 +52,20 @@ jobs:
     name: Auto Version
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: >-
-      (github.event_name == 'workflow_dispatch') ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       !contains(github.event.workflow_run.head_commit.message, '[auto-version]') &&
-       !contains(github.event.workflow_run.head_commit.message, '[skip ci]') &&
-       (
-         github.event.workflow_run.head_branch == 'main'
-         ||
-         github.event.workflow_run.head_branch == 'dev'
-       ))
 
     steps:
       - name: Determine branch and version prefix
         id: context
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch || 'dev' }}"
-          if [ "$BRANCH" = "main" ]; then
-            # Main push: publish whatever dev already tagged. Do NOT bump.
-            echo "branch=main" >> "$GITHUB_OUTPUT"
-            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
-            echo "should_bump=false" >> "$GITHUB_OUTPUT"
-          else
-            # Dev push (or manual dispatch): derive + bump + publish @next.
-            echo "branch=dev" >> "$GITHUB_OUTPUT"
-            echo "npm_tag=next" >> "$GITHUB_OUTPUT"
-            echo "should_bump=true" >> "$GITHUB_OUTPUT"
-          fi
+          # Manual dispatch only. Publish exactly what is committed as @latest;
+          # never bump here. The version bump is a reviewed commit
+          # (`npm run bump-version`) that lands on main before this runs, so the
+          # published artifact always matches a real commit and tag.
+          echo "branch=main" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+          echo "should_bump=false" >> "$GITHUB_OUTPUT"
           echo "prefix=0" >> "$GITHUB_OUTPUT"
-          echo "Resolved: branch=${BRANCH}"
+          echo "Resolved: manual SDK publish from $(git rev-parse --abbrev-ref HEAD)"
 
       - uses: actions/checkout@v4
         with:
