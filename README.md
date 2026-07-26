@@ -96,6 +96,13 @@ description: Classifies inbound issues and proposes a label + owner.
 system: SYSTEM.md
 ```
 
+> **Choosing `shape`.** rlmx externalizes context into the Python REPL — the
+> model has to *run code* to read it. So `shape: single-step` gives it one pass
+> and it answers **before ever opening your file**. Use `single-step` only when
+> the whole input fits in the prompt; use `loop` with a `budget.max_iterations`
+> whenever the agent takes `context`. Symptom of getting this wrong: a
+> confident answer and a suspiciously small input-token count in the footer.
+
 Each result ends with what it cost, so the offload is visible rather than
 assumed:
 

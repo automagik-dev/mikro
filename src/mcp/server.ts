@@ -51,6 +51,9 @@ import { discoverAgents, splitModel, type Microagent } from "./agents.js";
  */
 type ProgressSink = (message: string) => void;
 
+/** How often to tick when the run itself is emitting nothing. */
+const HEARTBEAT_MS = 15_000;
+
 /** Tool always present, so the server is useful before any agent is authored. */
 const GENERIC_TOOL = "rlmx_query";
 
@@ -119,6 +122,21 @@ function buildToolList(agents: readonly Microagent[]): Tool[] {
   }
 
   return tools;
+}
+
+/**
+ * Iteration cap implied by an agent's spec.
+ *
+ * `shape: single-step` means exactly one pass — without this the agent
+ * inherits rlmLoop's 30-iteration default and loops long past the point of
+ * usefulness (observed: a single-step triage agent burning 30 iterations and
+ * 157s, and getting the answer wrong). An explicit `budget.max_iterations`
+ * always wins over the shape default.
+ */
+export function agentMaxIterations(agent: Microagent): number | undefined {
+  const explicit = agent.spec.budget?.maxIterations;
+  if (explicit !== undefined) return explicit;
+  return agent.spec.shape === "single-step" ? 1 : undefined;
 }
 
 /** Apply an agent's `agent.yaml` to the ambient config for one run. */
@@ -197,7 +215,8 @@ async function runQuery(
   query: string,
   contextPath: string | undefined,
   cwd: string,
-  progress?: ProgressSink
+  progress?: ProgressSink,
+  maxIterations?: number
 ): Promise<CallToolResult> {
   let context = null;
   if (contextPath) {
@@ -210,6 +229,14 @@ async function runQuery(
       : undefined;
     context = await loadContext(resolved, contextOpts);
   }
+
+  let lastProgressAt = Date.now();
+  const emit = progress
+    ? (message: string) => {
+        lastProgressAt = Date.now();
+        progress(message);
+      }
+    : undefined;
 
   // Subscribe BEFORE the run so no early event is missed; rlmLoop closes the
   // emitter when it finishes, which ends this loop.
@@ -225,11 +252,11 @@ async function runQuery(
           switch (ev.type) {
             case "IterationStart":
               iterations += 1;
-              progress(`${label} · iteration ${iterations}`);
+              emit?.(`${label} · iteration ${iterations}`);
               break;
             case "Recurse":
               spawns += 1;
-              progress(
+              emit?.(
                 `${label} · iteration ${iterations} · ${spawns} recursive spawn${spawns === 1 ? "" : "s"}`
               );
               break;
@@ -244,16 +271,38 @@ async function runQuery(
   }
 
   const started = Date.now();
-  // output: "json" keeps rlmLoop off its stream-mode stdout path, which the
-  // MCP transport owns.
-  const result = await rlmLoop(query, context, config, {
-    output: "json",
-    ...(emitter ? { emitter } : {}),
-    ...runTimeout(),
-  });
 
-  const footer = formatFooter(label, config, result, Date.now() - started);
-  return textResult(`${result.answer}\n\n---\n${footer}`);
+  // Heartbeat. Event-driven progress alone is not enough: a `single-step`
+  // agent emits exactly one IterationStart and then goes quiet for the whole
+  // call, so a slow local model silently blows past the client's deadline —
+  // observed as MCP -32001 on a 402-line log. Tick on a timer so liveness does
+  // not depend on the agent's shape. `unref` so it can never hold the process
+  // open.
+  let heartbeat: NodeJS.Timeout | undefined;
+  if (progress) {
+    heartbeat = setInterval(() => {
+      const idleMs = Date.now() - lastProgressAt;
+      if (idleMs < HEARTBEAT_MS) return; // real events already kept it alive
+      emit?.(`${label} · working ${Math.round((Date.now() - started) / 1000)}s`);
+    }, HEARTBEAT_MS);
+    heartbeat.unref();
+  }
+
+  try {
+    // output: "json" keeps rlmLoop off its stream-mode stdout path, which the
+    // MCP transport owns.
+    const result = await rlmLoop(query, context, config, {
+      output: "json",
+      ...(emitter ? { emitter } : {}),
+      ...(maxIterations !== undefined ? { maxIterations } : {}),
+      ...runTimeout(),
+    });
+
+    const footer = formatFooter(label, config, result, Date.now() - started);
+    return textResult(`${result.answer}\n\n---\n${footer}`);
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
+  }
 }
 
 /**
@@ -344,7 +393,8 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
         query,
         contextPath,
         cwd,
-        progress
+        progress,
+        agentMaxIterations(agent)
       );
     } catch (err) {
       // A failing run must fail only this tool call, never the server process.

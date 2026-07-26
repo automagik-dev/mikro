@@ -23,6 +23,17 @@
  * `output: "json"` to keep it off its stream-mode stdout path — the same
  * contract `src/acp/agent.ts` follows.
  */
+import { type Microagent } from "./agents.js";
+/**
+ * Iteration cap implied by an agent's spec.
+ *
+ * `shape: single-step` means exactly one pass — without this the agent
+ * inherits rlmLoop's 30-iteration default and loops long past the point of
+ * usefulness (observed: a single-step triage agent burning 30 iterations and
+ * 157s, and getting the answer wrong). An explicit `budget.max_iterations`
+ * always wins over the shape default.
+ */
+export declare function agentMaxIterations(agent: Microagent): number | undefined;
 /**
  * Run the MCP server on stdio until the client disconnects.
  *

@@ -33,6 +33,8 @@ import { rlmLoop } from "../rlm.js";
 import { createEmitter } from "../sdk/emitter.js";
 import { VERSION } from "../version.js";
 import { discoverAgents, splitModel } from "./agents.js";
+/** How often to tick when the run itself is emitting nothing. */
+const HEARTBEAT_MS = 15_000;
 /** Tool always present, so the server is useful before any agent is authored. */
 const GENERIC_TOOL = "rlmx_query";
 const QUERY_PROPERTY = {
@@ -91,6 +93,21 @@ function buildToolList(agents) {
     }
     return tools;
 }
+/**
+ * Iteration cap implied by an agent's spec.
+ *
+ * `shape: single-step` means exactly one pass — without this the agent
+ * inherits rlmLoop's 30-iteration default and loops long past the point of
+ * usefulness (observed: a single-step triage agent burning 30 iterations and
+ * 157s, and getting the answer wrong). An explicit `budget.max_iterations`
+ * always wins over the shape default.
+ */
+export function agentMaxIterations(agent) {
+    const explicit = agent.spec.budget?.maxIterations;
+    if (explicit !== undefined)
+        return explicit;
+    return agent.spec.shape === "single-step" ? 1 : undefined;
+}
 /** Apply an agent's `agent.yaml` to the ambient config for one run. */
 function applyAgent(config, agent) {
     const next = { ...config };
@@ -146,7 +163,7 @@ function runTimeout() {
     const ms = Number(process.env.RLMX_MCP_RUN_TIMEOUT_MS);
     return Number.isFinite(ms) && ms > 0 ? { timeout: ms } : {};
 }
-async function runQuery(config, label, query, contextPath, cwd, progress) {
+async function runQuery(config, label, query, contextPath, cwd, progress, maxIterations) {
     let context = null;
     if (contextPath) {
         const resolved = resolve(cwd, contextPath);
@@ -158,6 +175,13 @@ async function runQuery(config, label, query, contextPath, cwd, progress) {
             : undefined;
         context = await loadContext(resolved, contextOpts);
     }
+    let lastProgressAt = Date.now();
+    const emit = progress
+        ? (message) => {
+            lastProgressAt = Date.now();
+            progress(message);
+        }
+        : undefined;
     // Subscribe BEFORE the run so no early event is missed; rlmLoop closes the
     // emitter when it finishes, which ends this loop.
     let emitter;
@@ -172,11 +196,11 @@ async function runQuery(config, label, query, contextPath, cwd, progress) {
                     switch (ev.type) {
                         case "IterationStart":
                             iterations += 1;
-                            progress(`${label} · iteration ${iterations}`);
+                            emit?.(`${label} · iteration ${iterations}`);
                             break;
                         case "Recurse":
                             spawns += 1;
-                            progress(`${label} · iteration ${iterations} · ${spawns} recursive spawn${spawns === 1 ? "" : "s"}`);
+                            emit?.(`${label} · iteration ${iterations} · ${spawns} recursive spawn${spawns === 1 ? "" : "s"}`);
                             break;
                         default:
                             break;
@@ -189,15 +213,38 @@ async function runQuery(config, label, query, contextPath, cwd, progress) {
         })();
     }
     const started = Date.now();
-    // output: "json" keeps rlmLoop off its stream-mode stdout path, which the
-    // MCP transport owns.
-    const result = await rlmLoop(query, context, config, {
-        output: "json",
-        ...(emitter ? { emitter } : {}),
-        ...runTimeout(),
-    });
-    const footer = formatFooter(label, config, result, Date.now() - started);
-    return textResult(`${result.answer}\n\n---\n${footer}`);
+    // Heartbeat. Event-driven progress alone is not enough: a `single-step`
+    // agent emits exactly one IterationStart and then goes quiet for the whole
+    // call, so a slow local model silently blows past the client's deadline —
+    // observed as MCP -32001 on a 402-line log. Tick on a timer so liveness does
+    // not depend on the agent's shape. `unref` so it can never hold the process
+    // open.
+    let heartbeat;
+    if (progress) {
+        heartbeat = setInterval(() => {
+            const idleMs = Date.now() - lastProgressAt;
+            if (idleMs < HEARTBEAT_MS)
+                return; // real events already kept it alive
+            emit?.(`${label} · working ${Math.round((Date.now() - started) / 1000)}s`);
+        }, HEARTBEAT_MS);
+        heartbeat.unref();
+    }
+    try {
+        // output: "json" keeps rlmLoop off its stream-mode stdout path, which the
+        // MCP transport owns.
+        const result = await rlmLoop(query, context, config, {
+            output: "json",
+            ...(emitter ? { emitter } : {}),
+            ...(maxIterations !== undefined ? { maxIterations } : {}),
+            ...runTimeout(),
+        });
+        const footer = formatFooter(label, config, result, Date.now() - started);
+        return textResult(`${result.answer}\n\n---\n${footer}`);
+    }
+    finally {
+        if (heartbeat)
+            clearInterval(heartbeat);
+    }
 }
 /**
  * Run the MCP server on stdio until the client disconnects.
@@ -260,7 +307,7 @@ export async function runMcp(cwd = process.cwd()) {
             if (!agent) {
                 return textResult(`Unknown tool: ${name}`, true);
             }
-            return await runQuery(applyAgent(baseConfig, agent), `agent=${agent.name}`, query, contextPath, cwd, progress);
+            return await runQuery(applyAgent(baseConfig, agent), `agent=${agent.name}`, query, contextPath, cwd, progress, agentMaxIterations(agent));
         }
         catch (err) {
             // A failing run must fail only this tool call, never the server process.

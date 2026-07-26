@@ -19,6 +19,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverAgents, splitModel, toToolName } from "../src/mcp/agents.js";
+import { agentMaxIterations } from "../src/mcp/server.js";
 
 const MCP_TOOL_NAME = /^[a-zA-Z0-9_-]{1,128}$/;
 
@@ -182,5 +183,45 @@ describe("discoverAgents", () => {
       triage.summary,
       "Project triage agent that classifies inbound issues."
     );
+  });
+});
+
+/**
+ * Iteration-cap regression. Two bugs found by dogfooding a real triage agent:
+ *   1. `shape` was ignored entirely, so a single-step agent inherited
+ *      rlmLoop's 30-iteration default — 30 iterations and 157s for one pass.
+ *   2. An explicit `budget.max_iterations` must still win over the shape
+ *      default, or a `loop` agent has no way to bound itself.
+ */
+describe("agentMaxIterations", () => {
+  const asAgent = (shape: string, maxIterations?: number) =>
+    ({
+      name: "t",
+      toolName: "rlmx_t",
+      dir: "/tmp/t",
+      summary: "t",
+      spec: {
+        dir: "/tmp/t",
+        schemaVersion: 1,
+        toolsApi: 1,
+        shape,
+        tools: [],
+        extras: {},
+        ...(maxIterations === undefined ? {} : { budget: { maxIterations } }),
+      },
+    }) as unknown as Parameters<typeof agentMaxIterations>[0];
+
+  it("caps a single-step agent at one iteration", () => {
+    assert.equal(agentMaxIterations(asAgent("single-step")), 1);
+  });
+
+  it("leaves loop and recurse agents uncapped by default", () => {
+    assert.equal(agentMaxIterations(asAgent("loop")), undefined);
+    assert.equal(agentMaxIterations(asAgent("recurse")), undefined);
+  });
+
+  it("lets an explicit budget.max_iterations win over the shape default", () => {
+    assert.equal(agentMaxIterations(asAgent("single-step", 5)), 5);
+    assert.equal(agentMaxIterations(asAgent("loop", 6)), 6);
   });
 });
