@@ -1803,3 +1803,405 @@ rlmx it is published as such — `r6-mimo-tune1` lost five of its six rows to
 6 strict / 8 generous.
 
 **`Gate: FAIL` stands, on 97 recorded runs and 104 invocations.**
+
+---
+
+## 12. Round-2 frozen-suite shot — `r2-shot-gen1-flash`
+
+The pre-registered single shot of the round-2 recipe at the frozen gate.
+Narrative, gate arithmetic and the campaign summary are in
+[docs/parity-explore.md](../../../docs/parity-explore.md) → *Round 2 — the
+frozen-suite shot*. This section is the machine-checkable half.
+
+### 12.1 What ran
+
+| | |
+|---|---|
+| Round label | `r2-shot-gen1-flash` |
+| Recipe | `parity/round2/optimizer/gens/gen-1/recipe`, installed verbatim, zero edits |
+| `sha256 SYSTEM.md` | `02184f3595d64de903f34b72b1ab9618afaafb947a881b767daa6f32125245c4` (27,840 chars) |
+| `sha256 agent.yaml` (installed) | `20f8e0181f6adc08badfe9c5c95a11e25a39f3dec23bbed460d08eec5a9d385d` |
+| Prompt snapshot | `parity/prompts/02184f3595d64de903f34b72b1ab9618afaafb947a881b767daa6f32125245c4.md` |
+| Agent / tool | `explore-r` / `rlmx_explore-r` |
+| Model | `khal/deepseek-v4-flash`, parent and children |
+| Child pin | `{"model.provider":"khal","model.model":"deepseek-v4-flash","model.sub-call-model":"deepseek-v4-flash"}` written to each scratch `HOME` |
+| Suite (recorded per run) | `frozen-eval`, `tasksDir` = `<wish>/tasks` |
+| Concurrency | 1, tasks in order 1..6 |
+| Env corrections | `RLMX_REPL_TIMEOUT_MS=600000`, `RLMX_MCP_RUN_TIMEOUT_MS=900000`, `PARITY_CALL_TIMEOUT_MS=600000`, `PARITY_MAX_TOTAL_TIMEOUT_MS=2400000` |
+| rlmx HEAD | `6ec4822` (worktree dirty — round-2 harness staged, not committed) |
+| Root HEADs | `/home/namastex/prod/brain` `040bb83`; `/home/namastex/workspace/repos/genie` `71dd019` |
+| Window | 2026-07-27 13:35:02Z → 14:16:22Z |
+| Retries used | **0** — all six runs exited 0 on the first attempt |
+| Records | `parity/runs/r2-shot-gen1-flash/task-{1..6}.{json,score.json,score.suffix.json}`, `logs/`, `shot.sh`, `score-shot.sh`, `gate-table.mjs` |
+
+Reproduce:
+
+```bash
+export KHAL_API_KEY=…                       # shell only, never in a file
+cd ~/prod/rlmx
+node .genie/wishes/rlmx-explore-offload/parity/verify-native.mjs
+bash .genie/wishes/rlmx-explore-offload/parity/runs/r2-shot-gen1-flash/shot.sh
+bash .genie/wishes/rlmx-explore-offload/parity/runs/r2-shot-gen1-flash/score-shot.sh
+node .genie/wishes/rlmx-explore-offload/parity/runs/r2-shot-gen1-flash/gate-table.mjs
+node .genie/wishes/rlmx-explore-offload/parity/tokens.mjs r2-shot-gen1-flash
+```
+
+`shot.sh` is a serial specialization of `run-round.sh` — it exists because
+`run-round.sh` hardcodes `run-task.mjs <n> <model> <round>` with no recipe
+argument, and the frozen gate's own runner must keep meaning what it meant. It
+keeps `timeout 2400`, one log per task and per-exit-code aggregation.
+`score-shot.sh` runs the **suffix reading first** and moves it aside before the
+default reading, because `score-task.mjs` writes both to `<run>.score.json` —
+the clobbering defect §11 found in the native pair.
+
+### 12.2 Ground truth, re-verified immediately before the shot
+
+```
+$ node .genie/wishes/rlmx-explore-offload/parity/verify-native.mjs
+task 1: 14/14 fact anchors still resolve with their recorded text
+task 2: 10/10 fact anchors still resolve with their recorded text
+task 3: 11/11 fact anchors still resolve with their recorded text
+task 4: 12/12 fact anchors still resolve with their recorded text
+task 5: 5/5 fact anchors still resolve with their recorded text
+task 6: 8/8 fact anchors still resolve with their recorded text
+
+NATIVE GROUND TRUTH VERIFIED
+```
+
+**Zero drift across all 60 anchors**, so raw and drift-adjusted readings are
+identical and no fact required adjustment.
+
+### 12.3 Train-set leakage check
+
+gen-1 inherits gen-4's four leaked *training* anchoring terms. Tested against
+this suite:
+
+```
+frozen-suite anchoring terms checked: 60
+terms appearing verbatim in gen-1 SYSTEM.md: 0
+```
+
+`MAX_ATTEMPTS`, `findCmd`, `FETCH_BODY_TIMEOUT_MS` and `RECORD_SCHEMA_VERSION`
+appear in **no** frozen task file and anchor **no** frozen fact. The shot is
+clean of the defect that rejected gen-4.
+
+### 12.4 Mechanical results — both readings
+
+| Task | need | ok | iters | spawns | wall | cost | answer | cites | c2 | c3 | c2 suffix | c3 suffix |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 13/14 | ✓ | 8 | 4 | 514.9s | $0.05 | 11,517 | 62 | PASS | PASS | PASS | PASS |
+| 2 | 9/10 | ✓ | 14 | 3 | 480.8s | $0.03 | 8,088 | 28 | PASS | PASS | PASS | PASS |
+| 3 | 10/11 | ✓ | 14 | 4 | 340.4s | $0.04 | 4,427 | 19 | PASS | PASS | PASS | PASS |
+| 4 | 11/12 | ✓ | 4 | 4 | 390.8s | $0.03 | 5,674 | 32 | PASS | PASS | PASS | PASS |
+| 5 | 5/5 | ✓ | 13 | 4 | 441.2s | $0.05 | 9,497 | 47 | PASS | PASS | PASS | PASS |
+| 6 | 8/8 | ✓ | 11 | **0** | 310.1s | $0.02 | 8,987 | 27 | PASS | PASS | PASS | PASS |
+
+**215 citations, 0 unresolvable, 0 fabricated, both readings.** The suffix
+reading flips nothing — no citation in this shot depends on partial-path
+resolution. Seven round-1 rounds were also 6/6 citation-clean, so this
+reproduces a solved property rather than establishing a new one.
+
+Task 6 ran with **zero recursive spawns** — the fan-out never fired. That is the
+`SEEN`-seeding defect logged for gen-5 at the gen-4 closeout, observed here on
+the frozen suite.
+
+### 12.5 Criterion 1 — screening, then judgement
+
+Screening rule (pre-registered by §11 for every future round): judge, do not
+screen, every c2/c3-clean run within 2 facts of threshold on **either** column.
+
+| Task | need | strict (full path) | basename | disposition |
+|---|---|---|---|---|
+| 1 | 13 | 3/14 | 3/14 | screened out — 10 short |
+| 2 | 9 | 8/10 | 8/10 | judged |
+| 3 | 10 | 6/11 | 8/11 | judged |
+| 4 | 11 | 2/12 | 2/12 | screened out — 9 short |
+| 5 | 5 | 4/5 | 4/5 | judged |
+| 6 | 8 | 6/8 | 6/8 | judged |
+
+Judged results, fact by fact, both readings:
+
+| Task | need | strict | generous | Misses under the generous reading |
+|---|---|---|---|---|
+| 2 | 9 | **5** | **7** | F1 `runtime-integrations.ts` cwd; F3 `syncOneSkill`; F7 `councilStampState` |
+| 3 | 10 | **6** | **9** | F7 `BRAIN_ENDPOINT` — **contradicted**, called "status-only … used only for display" against the claim that it is the one true remote knob; F9 `BRAIN_ADMIN_DATABASE_URL` / `db.ts` never named |
+| 5 | 5 | **3** | **3** | F4 the `conclusion == 'success'` gate (answer says CI "completed", not "succeeded"); F5 `sign-attest.yml` never named |
+| 6 | 8 | **3** | **7** | F1 the Hermes `skills.external_dirs` → `$GENIE_HOME/skills` mechanism |
+
+Facts counted generous-only, with the reason each is generous rather than
+strict:
+
+- task 2 F4 — answer states digest-mismatch→stale, not the
+  `sourceDigest === managedDigest && computeDirDigest(dir) === managedDigest`
+  conjunction.
+- task 2 F6 — answer says `stampWorkflow` at `agent-sync.ts:4977`; the fact
+  anchors `stampWorkflowTemplate` at `:5078`. Same substance, different symbol.
+- task 3 F1 — `Bun.serve` at `server.ts:395` stated; the symbol `httpServer` is not.
+- task 3 F5 — the route `POST /api/brains/:id/ask` at `ask.ts:78` stated; the
+  regex is not.
+- task 3 F11 — same claim via `discoverBaseUrl` in `common.ts` rather than
+  `discoverHookBaseUrl` in `compiled-entry.ts`.
+- task 6 F3, F6, F7, F8 — install/uninstall/setup/plugin-hook sync behaviour
+  stated in substance without the anchoring identifiers (`installCommand`,
+  `MANIFEST_NAME`, `acquireLifecycleLease`, `SessionStart`).
+
+**No task verdict differs between the strict and generous readings, and none
+differs between the default and suffix citation readings.**
+
+### 12.6 Gate arithmetic
+
+| Task | c1 strict | c1 generous | need | c2 | c3 | Verdict |
+|---|---|---|---|---|---|---|
+| 1 | ≤3 | ≤3 | 13 | PASS | PASS | **FAIL** |
+| 2 | 5 | 7 | 9 | PASS | PASS | **FAIL** |
+| 3 | 6 | 9 | 10 | PASS | PASS | **FAIL** |
+| 4 | ≤2 | ≤2 | 11 | PASS | PASS | **FAIL** |
+| 5 | 3 | 3 | 5 | PASS | PASS | **FAIL** |
+| 6 | 3 | 7 | 8 | PASS | PASS | **FAIL** |
+
+0 of 6 tasks pass; the suite requires 5 of 6.
+
+**`Round-2 gate: FAIL`.** A4b stays unchecked; Wish B does not start.
+
+### 12.7 Against round 1's per-task best
+
+Round 1's column is its best across 16 rounds and four tiers; round 2's is one
+run. The comparison flatters round 1 by construction.
+
+| Task | need | Round-1 best (judged) | Round-2 shot (judged) | Δ generous |
+|---|---|---|---|---|
+| 1 | 13 | ≤7 (`r7-mimo-tune2`) | ≤3 | −4 |
+| 2 | 9 | 6 / **8** (`r15-flash-control`) | 5 / **7** | −1 |
+| 3 | 10 | 7 / **9** (`r1-flash-baseline`) | 6 / **9** | 0 |
+| 4 | 11 | ≤6 (`r6-partial-300s-cap`) | ≤2 | −4 |
+| 5 | 5 | 2 / **3** (`r15-flash-control`) | 3 / **3** | 0 |
+| 6 | 8 | ≤6 (`r8-mimo-tune3`) | 3 / **7** | +1 |
+
+Recomputed round-1 screening ceilings, for a like-for-like column comparison
+(clean runs only, best strict then basename): t1 7/7 `r5-mimo-t0`; t2 8/9
+`r1-flash-baseline`; t3 8/9 `r1-flash-baseline`; t4 6/6 `r6-partial-300s-cap`;
+t5 4/5 `r15-flash-control`; t6 6/6 `r10-kimi-tune1`.
+
+### 12.8 Premium-token accounting (reported, never gated)
+
+| Task | Native premium | rlmx premium | Ratio | khal in/out | khal cost | Wall |
+|---|---|---|---|---|---|---|
+| 1 | 2,943,691 | 3,314 | 888× | 298,509 / 42,250 | $0.05 | 514.9s |
+| 2 | 3,098,197 | 2,512 | 1,233× | 166,728 / 40,080 | $0.03 | 480.8s |
+| 3 | 2,976,188 | 1,622 | 1,835× | 246,914 / 24,437 | $0.04 | 340.4s |
+| 4 | 2,186,864 | 1,846 | 1,185× | 198,872 / 29,128 | $0.03 | 390.8s |
+| 5 | 1,499,747 | 2,831 | 530× | 282,480 / 39,967 | $0.05 | 441.2s |
+| 6 | 3,319,167 | 2,747 | 1,208× | 116,897 / 14,173 | $0.02 | 310.1s |
+| **total** | **16,023,854** | **14,872** | **1,077×** | 1,310,400 / 190,035 | **$0.22** | 2,478s |
+
+### 12.9 Verbatim runs
+
+Answers are capped at 1,500 characters each here; the full text of every run is
+in `parity/runs/r2-shot-gen1-flash/task-<n>.json` under `answer`.
+
+### Round `r2-shot-gen1-flash`
+
+#### task 1 — `/home/namastex/prod/brain`
+
+```text
+$ node run-task.mjs 1 khal/deepseek-v4-flash r2-shot-gen1-flash
+rlmx · agent=explore-r · khal/deepseek-v4-flash · 8 iterations · 298,509 in / 42,250 out · $0.05 · 514.7s · session sess_8f16529ed07b9d78
+```
+
+Returned answer (11517 chars):
+
+```text
+# Brain Codebase Report
+
+## 1. Cloud Models / Providers / Environment
+
+### Gemini Embeddings
+- **File**: `src/lib/embedding.ts`
+- **Model**: `gemini-embedding-2-preview` (constant `DEFAULT_MODEL`, line 28)
+- **Dimensions**: 768 (constant `DEFAULT_DIMS`, line 29)
+- **Task types**: `EmbeddingTaskType` union defined at lines 18-26: `RETRIEVAL_DOCUMENT`, `RETRIEVAL_QUERY`, `SEMANTIC_SIMILARITY`, `CLASSIFICATION`, `CLUSTERING`, `QUESTION_ANSWERING`, `FACT_VERIFICATION`, `CODE_RETRIEVAL_QUERY`
+- **Default task**: `RETRIEVAL_DOCUMENT` (line 137 fallback)
+- **Function**: `export async function embedText()` at line 109
+- **No fallback**: only `GEMINI_API_KEY` / `GOOGLE_API_KEY` checked (lines 94, 118, 133, 206); if none set, embedding is unavailable
+
+### rlmx Default Models (all Google/Gemini — no Claude or GPT defaults)
+- `src/lib/omni/extractor/agent-wire.ts:73` — `DEFAULT_PRESERVATION_PROVIDER = "google"`
+- `src/lib/omni/extractor/agent-wire.ts:74` — `DEFAULT_PRESERVATION_MODEL = "gemini-3.1-flash-lite-preview"`
+- `src/lib/omni/extractor/audit-wire.ts:61` — `DEFAULT_AUDIT_PROVIDER = "google"`
+- `src/lib/omni/extractor/audit-wire.ts:62` — `DEFAULT_AUDIT_MODEL = "gemini-3.1-flash-lite-preview"`
+- rlmx API key injection via `src/lib/ask-pipeline.ts:102-132` (`injectRlmxSettingsApiKeysForBrain`) reads `~/.rlmx/settings.json`
+
+### Environment Variables
+  
+| Variable | Files reading it |
+|----------|-----------------|
+| `GEMINI_API_KEY` | `src/auto-kb/gemini.ts:67`, `src/lib/embedding.ts
+[… 10017 more chars]
+```
+
+Mechanical rubric — citations extracted: 62; criterion 2 (citations resolve): **PASS**; criterion 3 (no fabrication): **PASS**.
+
+#### task 2 — `/home/namastex/workspace/repos/genie`
+
+```text
+$ node run-task.mjs 2 khal/deepseek-v4-flash r2-shot-gen1-flash
+rlmx · agent=explore-r · khal/deepseek-v4-flash · 14 iterations · 166,728 in / 40,080 out · $0.03 · 480.6s · session sess_6518d560a381beec
+```
+
+Returned answer (8088 chars):
+
+```text
+## Defect A — Repository-local codex CLI executable refused
+
+**Root cause:** `validateTrustedExecutablePath` (src/lib/trusted-executable.ts:129) builds a set of forbidden roots — `canonicalCwd` plus every enclosing `.git` ancestor discovered by `resolveEnclosingGitTrustRoots` (line 96). It then filters out any root that is the home directory itself or an ancestor of it (line 142-143), but **a git root that is a descendant of home (e.g., a dotfiles repo at `~/dotfiles`)** is *not* excluded. The error is thrown at line 147 when the candidate executable falls inside a forbidden root:
+
+```ts
+src/lib/trusted-executable.ts:147
+throw new Error(`Refusing repository-local ${name} executable: ${candidate}`);
+```
+
+When running from `~` that is itself a git root (e.g., a dotfiles repo with `.git` at `~`), the root `~` **is** excluded because `isSameOrContainedPath(root, canonicalHome)` is true. So `~/.local/bin/codex` would *not* be refused in that case. The defect described in the question (running from `~` refuses `~/.local/bin/codex`) must involve a different setup — for instance, `~` is not the git root, but a parent of the git root. More commonly, the bug manifests when the git root is a project *under* home (e.g., `/home/user/project`), whose root is excluded, so the executable would *not* be refused. The reported problem may be due to an outdated version or a different root resolution order. However, the code as written does exactly what the comment says: "Real project roots BELOW
+[… 6588 more chars]
+```
+
+Mechanical rubric — citations extracted: 28; criterion 2 (citations resolve): **PASS**; criterion 3 (no fabrication): **PASS**.
+
+#### task 3 — `/home/namastex/prod/brain`
+
+```text
+$ node run-task.mjs 3 khal/deepseek-v4-flash r2-shot-gen1-flash
+rlmx · agent=explore-r · khal/deepseek-v4-flash · 14 iterations · 246,914 in / 24,437 out · $0.04 · 340.1s · session sess_2bb9ce74ae3014a9
+```
+
+Returned answer (4427 chars):
+
+```text
+After thorough investigation, here is the blunt verdict:
+
+## 1. What does `brain serve` start?  
+- **`Bun.serve`** at `src/lib/server.ts:395` with `fetch: handleRequest`.  
+- **Default host:** `"0.0.0.0"` (hardcoded, line 397) — binds all interfaces.  
+- **Default port:** `opts.port ?? 3847` (line 244).  
+- **No configurable env var for host or port** — `BrainServerOptions` has only `port?: number` (line 56), no host field. `BRAIN_HOST` / `BRAIN_PORT` do not exist. The written config endpoint is `127.0.0.1` (line 422), but the actual bind is `0.0.0.0`.  
+
+## 2. HTTP routes exposed  
+
+**Directly in `handleRequest` (`src/lib/server.ts:940-1019`):**  
+- `GET /healthz` (line 966), `GET /readyz` (line 967)  
+- `GET /api/sync/status` (line 970)  
+- `GET /api/review/feed` (line 973), `POST /api/review/classification/:id` (line 976)  
+- `GET /api/brains/:id/schema` (line 980)  
+- `POST /khortex/session/event` (line 991) — gated on `--khortex-memory`  
+- `POST /khortex/session/query` (line 996) — gated; contract stub supports modes `recall|ask|hybrid` (line 1397)  
+- `GET /khortex/healthz` (line 1005) — gated  
+
+**Delegated to bench router (`src/bench/api.ts:661-760`):**  
+- `POST /api/search` (`search.ts:9`) — `url.pathname !== "/api/search" || req.method !== "POST"`  
+- `POST /api/brains/:id/ask` (`ask.ts:78`) — SSE streaming endpoint  
+- `POST /api/khortex/ask` (`khortex-ask.ts:48`) — cross-Brain ask concierge  
+- 25+ other REST endpoints (brains, files, documents, analyze, config,
+[… 2927 more chars]
+```
+
+Mechanical rubric — citations extracted: 19; criterion 2 (citations resolve): **PASS**; criterion 3 (no fabrication): **PASS**.
+
+#### task 4 — `/home/namastex/prod/brain`
+
+```text
+$ node run-task.mjs 4 khal/deepseek-v4-flash r2-shot-gen1-flash
+rlmx · agent=explore-r · khal/deepseek-v4-flash · 4 iterations · 198,872 in / 29,128 out · $0.03 · 390.5s · session sess_226cb1c7187e2141
+```
+
+Returned answer (5674 chars):
+
+```text
+## Ground Truth: Brain's Database Topology
+
+**Brain uses ONE Postgres database PER BRAIN entity**, named `brain_<slug>`.
+
+### How it works
+
+1. **Database name derivation** — `deriveDatabaseName(slug)` at `src/lib/pgserve.ts:89-108` produces `` `brain_${sanitized}` `` (line 106). The slug is lowercased, non-alphanumeric characters replaced with underscores, prefixed with `brain_`, and truncated to 63 characters.
+
+2. **Database creation** — `ensureBrainDatabase(database)` at `src/lib/db.ts:376` connects to the Postgres cluster on the admin DSN, checks `pg_database`, and if missing runs `CREATE DATABASE "${database}"` (line 412). A variant `ensureBrainDatabaseIfOwned` at `src/lib/db.ts:455-462` adds `OWNER "${runtimeRole}"` to grant ownership to a provisioned runtime role.
+
+3. **Connection switching** — `setActiveDatabase(database)` at `src/lib/db.ts:291-301` closes the existing `sql` pool (line 295: `await sql.end({ timeout: 2 })`) and sets `activeDatabase = database` (line 301). `getDb()` at `src/lib/db.ts:595-615` builds a DSN targeting the active database via `buildDsnForDatabase` (line 610), which rewrites the URL path to the target database name (line 162: `url.pathname = \`/\${encodeURIComponent(database)}\``).
+
+4. **Default/fallback** — `resolveDatabase()` at `src/lib/db.ts:579-587` returns `activeDatabase` if set, else the database named in `DATABASE_URL`, else the literal `"brain"` (line 586).
+
+### The brains table (registry, NOT per-brain storage)
+
+Migration `001-brai
+[… 4174 more chars]
+```
+
+Mechanical rubric — citations extracted: 32; criterion 2 (citations resolve): **PASS**; criterion 3 (no fabrication): **PASS**.
+
+#### task 5 — `/home/namastex/workspace/repos/genie`
+
+```text
+$ node run-task.mjs 5 khal/deepseek-v4-flash r2-shot-gen1-flash
+rlmx · agent=explore-r · khal/deepseek-v4-flash · 13 iterations · 282,480 in / 39,967 out · $0.05 · 440.9s · session sess_de6175e7837eaf29
+```
+
+Returned answer (9497 chars):
+
+```text
+# Install/Release Delivery Path — Genie Repository
+
+## 1. `install.sh` (repo root) — Channel Selection & Fetch
+
+- **Channel**: env var `GENIE_CHANNEL`, default `stable` (install.sh:358 — `local channel="${GENIE_CHANNEL:-stable}"`). No flag.
+- **Manifest URL base**: `MANIFEST_BASE` at install.sh:28 — `"https://raw.githubusercontent.com/${REPO}/main/.well-known"`.
+- **Per-channel file**: install.sh:388 — `if [ "$channel" = "stable" ]; then file="latest.json"; else file="${channel}.json"; fi`. Stable → `latest.json`, dev → `dev.json`, homolog → `homolog.json`.
+- **One-liner fetch**: install.sh:14 — `curl -fsSL https://raw.githubusercontent.com/automagik-dev/genie/main/install.sh | bash`.
+
+### 1a. Staging + Extraction (lines 632–660)
+- **Staging creation**: install.sh:635 — `(umask 077; mkdir "$STAGING_DIR")` (private 0700).
+- **Extraction**: install.sh:641 — `tar -xzf "$tarball" -C "$STAGING_DIR"`.
+- **chmod after extraction**: Yes, but only on the staging root dir to relock it to 0700 after tar clobbers mode (install.sh:649 — `chmod 700 "$STAGING_DIR"`). This is a relock of the private staging sandbox, not a chmod of any live binary path. The comment at install.sh:626–628 confirms: *"Its only chmod relocks the private staging root it created to 0700 after extraction (tar clobbers that mode via the archived root entry); it never chmods a live path."*
+
+### 1b. Preflight of `~/.local/bin`
+- **No preflight before download.** `LOCAL_BIN="$HOME/.local/bin"` (install.sh:49) is defined
+[… 7997 more chars]
+```
+
+Mechanical rubric — citations extracted: 47; criterion 2 (citations resolve): **PASS**; criterion 3 (no fabrication): **PASS**.
+
+#### task 6 — `/home/namastex/workspace/repos/genie`
+
+```text
+$ node run-task.mjs 6 khal/deepseek-v4-flash r2-shot-gen1-flash
+rlmx · agent=explore-r · khal/deepseek-v4-flash · 11 iterations · 116,897 in / 14,173 out · $0.02 · 309.9s · session sess_c18ec3d02e0a5ccd
+```
+
+Returned answer (8987 chars):
+
+```text
+
+## Trigger Inventory — Every Caller of the Agent Sync Entrypoints
+
+The agent-sync engine lives in `src/lib/agent-sync.ts` with one public entrypoint — **`runAgentSync`** (defined at line 6927) — which converges Claude and Hermes surfaces. It is never called directly by hooks or session lifecycles. All triggers flow through `runAgentSync` via one of three callers:
+
+### 1. `genie install` — post-curl|bash finishing step
+- **File**: `src/genie-commands/install.ts:362` — `runSync(agentSyncSelection)`
+- The selection is narrowed by `narrowAgentSyncSelection` (line 518-520): passes through for `auto`/`all`/`claude`, returns `null` for `none`/`codex`.
+- The call is gated on Codex integration not having failed (line 361).
+
+### 2. `genie update` — self-update convergence
+- **File**: `src/genie-commands/update.ts:2801` — `runUpdateAgentSync(agentSyncSelection)`, which calls `runAgentSyncSafe` with `strict: true` (line 1761).
+- Also reachable via legacy `--sync-only` path at line 1786.
+- The `runAgentSyncSafe` wrapper (line 2688-2710) formats a summary, handles Codex role refresh, writes `~/.genie/.last-agent-sync` throttle marker on success.
+
+### 3. `runAgentSyncSafe` directly (used by tests only)
+- **Test files**:
+  - `src/lib/agent-sync.test.ts:195` — main test harness
+  - `src/genie-commands/__tests__/update.test.ts:2257` — update test suite
+
+### What does NOT trigger sync (by design):
+- **Hooks subsystem** (`src/hooks/`): zero references to `runAgentSync`, `syncSkill`, or `agent-s
+[… 7487 more chars]
+```
+
+Mechanical rubric — citations extracted: 27; criterion 2 (citations resolve): **PASS**; criterion 3 (no fabrication): **PASS**.
+

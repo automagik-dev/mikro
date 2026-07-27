@@ -10,9 +10,20 @@
  * repos are the user's other checkouts and the gate must not write in them.
  * No `RLMX_AGENTS_DIR` override: the discovery path stays the real one.
  *
- *   node run-task.mjs <taskNumber> <model> <roundLabel> [--tasks-dir <dir>]
+ *   node run-task.mjs <taskNumber> <model> <roundLabel>
+ *        [--tasks-dir <dir>] [--recipe <dir>] [--agent <name>]
+ *        [--out-dir <dir>] [--pin-child-model]
  *
  * Writes the verbatim result to parity/runs/<round>/task-<n>.json.
+ *
+ * **Every flag defaults to what this script did before the flag existed.** An
+ * invocation with none of them drives `examples/agents/explore/` through
+ * `rlmx_explore` against `<wish>/tasks/`, writes to `parity/runs/<round>/`, and
+ * puts no `settings.json` in the scratch HOME — i.e. the frozen gate is
+ * reproduced by the same command line it always used. The flags exist so
+ * round 2's optimizer can drive a *different* recipe over a *different* suite
+ * into a *different* output tree without a second copy of this driver drifting
+ * away from it (round2/run-train-round.mjs is that caller).
  *
  * `--tasks-dir` defaults to the frozen eval suite, `<wish>/tasks`. It exists
  * because round 2 has a second suite — `parity/round2/train-tasks/`, the
@@ -28,9 +39,18 @@
  *     this flag makes the two comparable, and the train tasks carry no native
  *     arm to compare against (see round2/train-tasks/README.md).
  *
- * The recipe under test is still hardcoded to `examples/agents/explore/`.
- * Driving `explore-r` is a separate change and has deliberately not been made
- * here.
+ * `--recipe` is what lets a second recipe be driven at all. `--agent` names the
+ * directory it is installed into, and the tool called is `rlmx_<agent>` — the
+ * MCP server derives the tool name from the agent directory (src/mcp/agents.ts),
+ * so the two cannot be chosen independently.
+ *
+ * `--pin-child-model` writes `~/.rlmx/settings.json` into the scratch HOME
+ * pinning `model.provider` / `model.model` / `model.sub-call-model` to `<model>`.
+ * Since 6ec4822 a recursive child is pinned by `--model` on its own argv
+ * (src/llm.ts:464, src/cli.ts:328-335), so this is belt-and-braces: it only
+ * decides anything if a child is ever spawned without that flag, which is
+ * exactly the silent-empty-answer failure of round 1 (recursion-recon.md §2.2).
+ * It is off by default because the frozen gate ran without it.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -47,22 +67,50 @@ const parityDir = __dirname;
 const wishDir = resolve(parityDir, "..");
 const repo = resolve(wishDir, "..", "..", "..");
 const cli = join(repo, "dist", "src", "cli.js");
-const recipe = join(repo, "examples", "agents", "explore");
 
 const argv = process.argv.slice(2);
-const flagAt = argv.indexOf("--tasks-dir");
-const tasksDirArg = flagAt >= 0 ? argv[flagAt + 1] : null;
-if (flagAt >= 0) {
-  if (!tasksDirArg) {
-    console.error("--tasks-dir requires a directory");
+
+/**
+ * Value flags. Order-independent, each may appear once, and each falls back to
+ * the constant this script used before it was a flag — so the no-flag command
+ * line is unchanged in every observable way.
+ */
+const VALUE_FLAGS = { "--tasks-dir": "directory", "--recipe": "directory", "--agent": "name", "--out-dir": "directory" };
+const flags = {};
+for (;;) {
+  const at = argv.findIndex((a) => a in VALUE_FLAGS);
+  if (at < 0) break;
+  const name = argv[at];
+  const value = argv[at + 1];
+  if (!value || value.startsWith("--")) {
+    console.error(`${name} requires a ${VALUE_FLAGS[name]}`);
     process.exit(2);
   }
-  argv.splice(flagAt, 2);
+  flags[name] = value;
+  argv.splice(at, 2);
 }
+const pinAt = argv.indexOf("--pin-child-model");
+const pinChildModel = pinAt >= 0;
+if (pinAt >= 0) argv.splice(pinAt, 1);
+
 const [taskArg, model, round] = argv;
 if (!taskArg || !model || !round) {
-  console.error("usage: run-task.mjs <taskNumber> <model> <roundLabel> [--tasks-dir <dir>]");
+  console.error(
+    "usage: run-task.mjs <taskNumber> <model> <roundLabel> [--tasks-dir <dir>] " +
+      "[--recipe <dir>] [--agent <name>] [--out-dir <dir>] [--pin-child-model]"
+  );
   process.exit(2);
+}
+
+const tasksDirArg = flags["--tasks-dir"] ?? null;
+const recipe = flags["--recipe"] ? resolve(flags["--recipe"]) : join(repo, "examples", "agents", "explore");
+const agentName = flags["--agent"] ?? "explore";
+const tool = `rlmx_${agentName}`;
+for (const f of ["SYSTEM.md", "agent.yaml"]) {
+  if (!existsSync(join(recipe, f))) {
+    console.error(`recipe ${recipe}: missing ${f}`);
+    process.exit(2);
+  }
 }
 
 const tasksDir = tasksDirArg ? resolve(tasksDirArg) : join(wishDir, "tasks");
@@ -99,12 +147,32 @@ if (!root || !question) {
 
 /** Scratch HOME per round+task: the recipe is installed at its global root. */
 const home = join(tmpdir(), `rlmx-parity-${round}-t${taskArg}`);
-const installed = join(home, ".rlmx", "agents", "explore");
+const installed = join(home, ".rlmx", "agents", agentName);
 mkdirSync(installed, { recursive: true });
 cpSync(join(recipe, "SYSTEM.md"), join(installed, "SYSTEM.md"));
 const yaml = readFileSync(join(recipe, "agent.yaml"), "utf-8");
 const installedYaml = yaml.replace(/^model:.*$/m, `model: ${model}`);
 writeFileSync(join(installed, "agent.yaml"), installedYaml, "utf-8");
+
+/**
+ * Optional child-model pin — see the header. `<provider>/<model>` splits on the
+ * first slash, matching src/config.ts:parseModelRef; a bare model id keeps
+ * whatever provider the child resolves and only pins the ids. No key is
+ * written: KHAL_API_KEY reaches the child through the environment
+ * (src/llm.ts:buildChildEnv passes the whole of process.env).
+ */
+let childModelPin = null;
+if (pinChildModel) {
+  const slash = model.indexOf("/");
+  const provider = slash > 0 ? model.slice(0, slash) : null;
+  const modelId = slash > 0 ? model.slice(slash + 1) : model;
+  childModelPin = {
+    ...(provider ? { "model.provider": provider } : {}),
+    "model.model": modelId,
+    "model.sub-call-model": modelId,
+  };
+  writeFileSync(join(home, ".rlmx", "settings.json"), JSON.stringify(childModelPin, null, 2) + "\n", "utf-8");
+}
 
 /**
  * Provenance the run cannot be re-derived without (added after the gate; rounds
@@ -141,9 +209,21 @@ const provenance = {
   agentYamlSha256: sha(installedYaml),
   rootGit: gitState(root),
   rlmxGit: gitState(repo),
+  // Which recipe ran, under which tool name, with which harness corrections.
+  // The two timeouts are recorded rather than set here: they are environment
+  // corrections the caller owns (round2/run-train-round.mjs exports both), and
+  // a run that silently set its own would hide which wall it was under.
+  // RLMX_REPL_TIMEOUT_MS in particular decides whether a fan-out can finish at
+  // all (recursion-recon.md §4.1) — `null` here means the 30s default.
+  recipeDir: recipe,
+  agent: agentName,
+  tool,
+  childModelPin,
+  replTimeoutMs: process.env.RLMX_REPL_TIMEOUT_MS ?? null,
+  runTimeoutMs: process.env.RLMX_MCP_RUN_TIMEOUT_MS ?? null,
 };
 
-const outDir = join(parityDir, "runs", round);
+const outDir = flags["--out-dir"] ? resolve(flags["--out-dir"]) : join(parityDir, "runs", round);
 mkdirSync(outDir, { recursive: true });
 const outFile = join(outDir, `task-${taskArg}.json`);
 
@@ -163,11 +243,23 @@ if (existsSync(outFile) && process.env.PARITY_OVERWRITE !== "1") {
   process.exit(3);
 }
 
+/**
+ * MCP client clocks. `timeout` is per-progress (it resets on every progress
+ * notification), so it is really "how long may the run go silent". A recursive
+ * fan-out is silent for the whole blocking wave — 205s in the round-2 smoke,
+ * and longer with two tasks contending — so a recursive round raises it via
+ * PARITY_CALL_TIMEOUT_MS. Unset, both numbers are the frozen gate's.
+ */
+const CALL_TIMEOUT_MS = Number(process.env.PARITY_CALL_TIMEOUT_MS ?? 300_000);
+const MAX_TOTAL_TIMEOUT_MS = Number(process.env.PARITY_MAX_TOTAL_TIMEOUT_MS ?? 2_400_000);
+provenance.callTimeoutMs = CALL_TIMEOUT_MS;
+provenance.maxTotalTimeoutMs = MAX_TOTAL_TIMEOUT_MS;
+
 const progress = [];
 const LIVE_OPTS = {
-  timeout: 300_000,
+  timeout: CALL_TIMEOUT_MS,
   resetTimeoutOnProgress: true,
-  maxTotalTimeout: 2_400_000,
+  maxTotalTimeout: MAX_TOTAL_TIMEOUT_MS,
   onprogress: (p) => {
     progress.push(p.message ?? `progress ${p.progress}`);
     process.stderr.write(`[t${taskArg}] ${p.message ?? p.progress}\n`);
@@ -208,12 +300,12 @@ try {
 
   const { tools } = await client.listTools();
   record.toolsListed = tools.map((t) => t.name);
-  if (!tools.some((t) => t.name === "rlmx_explore")) {
-    throw new Error(`rlmx_explore not listed; got ${record.toolsListed.join(", ")}`);
+  if (!tools.some((t) => t.name === tool)) {
+    throw new Error(`${tool} not listed; got ${record.toolsListed.join(", ")}`);
   }
 
   const args = { prompt: question };
-  const res = await client.callTool({ name: "rlmx_explore", arguments: args }, undefined, LIVE_OPTS);
+  const res = await client.callTool({ name: tool, arguments: args }, undefined, LIVE_OPTS);
   const elapsed = Date.now() - started;
   const text = res?.content?.[0]?.text ?? "";
   const split = text.lastIndexOf("\n---\n");

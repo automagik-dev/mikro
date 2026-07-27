@@ -143,6 +143,14 @@ by a fixed rubric against native Explore. Wish B (plugin packaging, shootout,
   stopped there per the design failure branch. No parity model exists
   (decision 5 defines it as the tier that passed). **Wish B
   (`rlmx-microagent-plugin`) does not start.**
+  **Round 2 does not change this.** The pre-registered single shot of the
+  round-2 recursive recipe (gen-1 `02184f35`, `khal/deepseek-v4-flash`, one run
+  per frozen task) scored **0 of 6** — `Round-2 gate: FAIL`
+  ([docs/parity-explore.md](../../../docs/parity-explore.md) → *Round 2 — the
+  frozen-suite shot*; evidence in [evidence-group-4.md §12](evidence-group-4.md)).
+  Criteria 2 and 3 were clean on all six (215/215 citations, 0 fabrications);
+  criterion 1 reached at best 9 of the 10 needed on task 3 under the generous
+  reading. This box flips only on a PASS, so it stays unchecked.
 - [ ] A5: `rlmx mcp --dir <dir>` makes discovery, config, context, and REPL
   cwd agree on `<dir>` (test proves an agent + config in `<dir>` load while
   the process was spawned elsewhere).

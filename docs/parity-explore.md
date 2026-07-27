@@ -10,7 +10,10 @@ about a real repository at the same standard as the premium model that
 originally answered them.** The token win is not in question — it is reported
 below and it is enormous. Quality is the discriminator (design M2, decision 7).
 
-**The gate verdict is at the bottom of this report, stated once, in one line.**
+**Each gate verdict is stated once, in one line.** Round 1's is `Gate: FAIL`
+(*Gate verdict*); round 2's single frozen-suite shot is `Round-2 gate: FAIL`
+(*Round 2 — the frozen-suite shot*, at the bottom). They agree, and round 1's
+line is unchanged by round 2.
 
 ---
 
@@ -708,3 +711,348 @@ failures.
    `provenance.rootGit` and `provenance.rlmxGit`, and snapshots the prompt under
    `parity/prompts/<sha>.md`. A shootout that wants to compare configurations
    needs that provenance; this gate did not have it.
+
+---
+
+## Round 2 — the frozen-suite shot
+
+Round 1 ended `Gate: FAIL` after 16 tuning rounds and the user overrode the stop.
+Round 2 did **not** re-tune against the gate. It built a separate *training*
+suite (`parity/round2/train-tasks/`), evolved a recursive `explore-r` recipe
+against it over four generations, ran a four-model matrix and a two-task
+holdout — and then spent **exactly one shot** on the frozen six. This section is
+that shot, and the shot is the only round-2 number that bears on A4b.
+
+The frozen suite, the rubric and the scoring conventions are **unchanged**: same
+six task files, same 60 required facts, same `parity/score-task.mjs`, same gate
+arithmetic (≥5 of 6). What moved is the recipe — a recursive agent that
+partitions the question across sub-agents instead of reading the tree itself —
+and the two environment corrections that recursion requires.
+
+### The shot rules, pre-registered and immutable
+
+Fixed in writing before the first run, reproduced here verbatim:
+
+> **PRE-REGISTERED SHOT RULES (immutable):** recipe = gens/gen-1/recipe snapshot
+> (SYSTEM.md 02184f35, agent.yaml 20f8e018) installed verbatim — no edits of any
+> kind; model = khal/deepseek-v4-flash for parent and children
+> (`--pin-child-model` semantics as the harness supports post-6ec4822);
+> concurrency 1; RLMX_REPL_TIMEOUT_MS=600000; ONE run per frozen task, in task
+> order 1..6. ONE retry allowed per task ONLY for documented infrastructure
+> death (REPL-timeout wall / connection failure with the error string recorded)
+> — never for content quality; a second infrastructure death counts as the run.
+> No tuning, no prompt reading beyond installing the snapshot, no peeking at
+> scores before all six runs complete.
+>
+> **Scoring:** the round-1 gate scorer `parity/score-task.mjs`, default
+> invocation, both readings (default + `SUFFIX_SHORTHAND=1` to
+> `.score.suffix.json`). Gate math per the wish: a task passes at ≥90% of its
+> required facts with every citation resolving and zero fabrications; the suite
+> passes at ≥5 of 6 tasks. Run `parity/verify-native.mjs` first; any drifted
+> anchor is recorded and the affected facts reported both raw and drift-adjusted
+> (the round-1 convention).
+
+**The retry was never used.** All six runs exited 0 on the first attempt; no
+infrastructure death occurred, so nothing was re-run and no run record was
+overwritten. This is the discipline round 1's audit found missing — seven of its
+runs had been re-run after scoring, leaving score JSONs describing text that no
+longer existed (§11).
+
+### What actually ran
+
+| | |
+|---|---|
+| Round label | `r2-shot-gen1-flash` — records under [`parity/runs/r2-shot-gen1-flash/`](../.genie/wishes/rlmx-explore-offload/parity/runs/r2-shot-gen1-flash/) |
+| Recipe | `parity/round2/optimizer/gens/gen-1/recipe`, installed verbatim |
+| `sha256 SYSTEM.md` | `02184f35…` (27,840 chars) — snapshot at `parity/prompts/02184f35….md` |
+| `sha256 agent.yaml` (installed) | `20f8e018…` — identical to the recipe's, because the recipe already declares `khal/deepseek-v4-flash` and the runner's model rewrite was a no-op |
+| Agent / tool | installed as `explore-r`, called as `rlmx_explore-r` |
+| Model | `khal/deepseek-v4-flash`, parent **and** children (`--pin-child-model` wrote `model.provider`/`model.model`/`model.sub-call-model` into each scratch `HOME`) |
+| Suite recorded per run | `frozen-eval`, `tasksDir` = `<wish>/tasks` |
+| Concurrency | 1 — each task ran to completion before the next started, in order 1..6 |
+| Env | `RLMX_REPL_TIMEOUT_MS=600000`, `RLMX_MCP_RUN_TIMEOUT_MS=900000`, `PARITY_CALL_TIMEOUT_MS=600000`, `PARITY_MAX_TOTAL_TIMEOUT_MS=2400000` — all four recorded in every run record |
+| rlmx HEAD | `6ec4822` |
+| Task-root HEADs | `/home/namastex/prod/brain` `040bb83`; `/home/namastex/workspace/repos/genie` `71dd019` |
+| Window | 2026-07-27 13:35:02Z → 14:16:22Z, 41 min, **$0.22** of khal spend |
+| Runner | [`parity/runs/r2-shot-gen1-flash/shot.sh`](../.genie/wishes/rlmx-explore-offload/parity/runs/r2-shot-gen1-flash/shot.sh) — a serial specialization of `run-round.sh`; the frozen gate's own runner was not edited |
+
+`PARITY_CALL_TIMEOUT_MS=600000` deserves naming rather than burying: it raises
+the MCP client's *go-silent* tolerance from the frozen gate's 300 s. A recursive
+fan-out emits no progress for the whole blocking wave, so at 300 s the harness
+would kill a recursive run for being quiet — scoring the harness, not the model.
+It is the same correction `round2/run-train-round.mjs` applies to every
+generation, and it is disclosed here because it is a difference from round 1's
+command line.
+
+### Checked before spending anything
+
+**Ground truth: verified, zero drift.** `parity/verify-native.mjs` at
+`6ec4822`, immediately before the shot:
+
+```
+task 1: 14/14 fact anchors still resolve with their recorded text
+task 2: 10/10 fact anchors still resolve with their recorded text
+task 3: 11/11 fact anchors still resolve with their recorded text
+task 4: 12/12 fact anchors still resolve with their recorded text
+task 5: 5/5 fact anchors still resolve with their recorded text
+task 6: 8/8 fact anchors still resolve with their recorded text
+
+NATIVE GROUND TRUTH VERIFIED
+```
+
+All 60 anchors resolve with their recorded text. **No anchor drifted, so the raw
+and drift-adjusted readings are the same numbers** — the round-1 convention is
+satisfied with nothing to adjust.
+
+**Train-set leakage: checked, and it does not reach this suite.** gen-4 was
+rejected partly because four *training*-suite anchoring terms sat verbatim in
+its own `SYSTEM.md` while the fact rule is a substring test — a defect gen-1
+inherits (`optimizer/README.md`, *Inherited debt*). All **60** frozen-suite
+anchoring terms were tested against gen-1's `SYSTEM.md`: **0 appear**, including
+the four named ones (`MAX_ATTEMPTS`, `findCmd`, `FETCH_BODY_TIMEOUT_MS`,
+`RECORD_SCHEMA_VERSION`), none of which occurs anywhere in the frozen task files
+either. The number below is clean of the defect that sank gen-4.
+
+### Mechanical results — all six runs, both readings
+
+| Task | need | ok | iters | spawns | wall | cost | answer | citations | c2 | c3 | c2 (suffix) | c3 (suffix) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 13/14 | ✓ | 8 | 4 | 514.9s | $0.05 | 11,517 ch | 62 | PASS | PASS | PASS | PASS |
+| 2 | 9/10 | ✓ | 14 | 3 | 480.8s | $0.03 | 8,088 ch | 28 | PASS | PASS | PASS | PASS |
+| 3 | 10/11 | ✓ | 14 | 4 | 340.4s | $0.04 | 4,427 ch | 19 | PASS | PASS | PASS | PASS |
+| 4 | 11/12 | ✓ | 4 | 4 | 390.8s | $0.03 | 5,674 ch | 32 | PASS | PASS | PASS | PASS |
+| 5 | 5/5 | ✓ | 13 | 4 | 441.2s | $0.05 | 9,497 ch | 47 | PASS | PASS | PASS | PASS |
+| 6 | 8/8 | ✓ | 11 | **0** | 310.1s | $0.02 | 8,987 ch | 27 | PASS | PASS | PASS | PASS |
+
+**Criteria 2 and 3 pass on all six tasks, in both readings: 215 citations, zero
+unresolvable, zero fabricated.** The suffix reading changes nothing — no
+citation in this shot depends on partial-path resolution.
+
+That result is **not new, and should not be reported as progress**. Seven
+round-1 rounds were also 6/6 citation-clean (`r5`, `r6-mimo-tune1`,
+`r6-partial-300s-cap`, `r7`, `r9`, `r10`, `r15`), and `r15-flash-control` did it
+with 260 citations against this shot's 215. Citation hygiene was already solved
+by the last rounds of round 1; the shot reproduces it, and reproducing it on a
+recursive recipe whose children are separate processes is worth knowing, but it
+moves no verdict.
+
+**The fan-out fired on 5 of 6 tasks and did not fire at all on task 6** (0
+spawns, 11 iterations). That is the known `SEEN`-seeding defect the gen-4
+closeout logged for gen-5 (`EVOLUTION.md` → *What survives*), observed here on
+the frozen suite for the first time. Task 6 still produced its best-of-campaign
+generous score, so the miss is recorded, not blamed.
+
+### Criterion 1, judged
+
+Criterion 1 is a claim-level judgement and `score-task.mjs` deliberately does not
+decide it. Screening follows the rule round 1's audit pre-registered for every
+future round — **judge, do not screen, every c2/c3-clean run within 2 facts of
+threshold on either column** — with the two screening columns (facts whose anchor
+path the answer names in full; facts whose anchor basename it names):
+
+| Task | need | strict column | basename column | screened |
+|---|---|---|---|---|
+| 1 | 13 | 3/14 | 3/14 | **screened out** — 10 short |
+| 2 | 9 | 8/10 | 8/10 | judged |
+| 3 | 10 | 6/11 | 8/11 | judged |
+| 4 | 11 | 2/12 | 2/12 | **screened out** — 9 short |
+| 5 | 5 | 4/5 | 4/5 | judged |
+| 6 | 8 | 6/8 | 6/8 | judged |
+
+Tasks 1 and 4 are screened out on the round-1 bound argument: a fact cannot be
+stated by an answer that never mentions the file it is about, and both are far
+outside the judge window (3 against 13, 2 against 11). Every other task was
+judged fact by fact, under both readings — strict (the claim's named subject
+must appear) and generous (claim substance only, added detail not required).
+
+**Task 2 — 5 strict / 7 generous, needs 9. FAIL.**
+
+| Fact | Anchoring subject | Verdict |
+|---|---|---|
+| F1 | `const cwd = options.cwd ?? process.cwd()` (`runtime-integrations.ts`) | **MISS** both — the file is never named |
+| F2 | `codexFailed` | STATED both |
+| F3 | `syncOneSkill` | **MISS** both — never named |
+| F4 | doctor's digest-currency conjunction (`summarizeManagedSkills`) | generous only — the answer states mismatch→stale, not the conjunction |
+| F5 | `__GENIE_LENS_ROOT__` | STATED both |
+| F6 | `stampWorkflowTemplate` | generous only — the answer says `stampWorkflow` at a different line |
+| F7 | `councilStampState` | **MISS** both — never named |
+| F8 | `isInteractive` | STATED both |
+| F9 | `uninstallCommand` | STATED both |
+| F10 | `codexFailed` (A2, sync gated on codex failure) | STATED both |
+
+F1 and F3 are two of the facts round 1 recorded as never stated by any run in
+any round (round 1's never-stated set was F1/F3/F6); F7 was stated by round 1's
+r15-flash-control and r1-flash-baseline but is missed by this shot. (Corrected
+at final review — an earlier revision misattributed F7 to round 1's
+never-stated set.)
+
+**Task 3 — 6 strict / 9 generous, needs 10. FAIL, one short under the most
+permissive reading available.**
+
+| Fact | Anchoring subject | Verdict |
+|---|---|---|
+| F1 | `httpServer` = `Bun.serve` at `server.ts:395` | generous only |
+| F2 | `const port = opts.port ?? 3847;` | STATED both |
+| F3 | `handleRequest` | STATED both |
+| F4 | `POST /api/search` | STATED both |
+| F5 | `/^\/api\/brains\/([^/]+)\/ask$/` | generous only — route stated, regex not |
+| F6 | `const principal = extractPrincipal(req);`, never enforced | STATED both |
+| F7 | `BRAIN_ENDPOINT` is **the one true remote knob** | **MISS both — contradicted.** The answer names `BRAIN_ENDPOINT` and locates it correctly, then calls it "status-only … used only for display". That is a different claim about the same variable, and the two cannot both be true |
+| F8 | `getDb`, everything DSN-direct | STATED both |
+| F9 | `BRAIN_ADMIN_DATABASE_URL` / `readPrimaryDsn` | **MISS** both — `db.ts` never named |
+| F10 | stdio MCP entry point, Postgres-direct | STATED both |
+| F11 | `discoverHookBaseUrl()` — the hook already speaks HTTP to serve | generous only — same claim via `discoverBaseUrl` in `common.ts` |
+
+F7 is the same fact round 1 recorded as "contradicted outright" on its own best
+task-3 run. A different recipe, a different failure of the same fact.
+
+**Task 5 — 3 of 5, both readings, needs 5 (every fact). FAIL.**
+
+F1 (`workflow_call` at `:34`), F2 (the `TARBALL=` line) and F3 (`-C "${STAGE}" .`
+and its `./` root entry) are stated exactly. F4 misses: the answer describes the
+`workflow_run` trigger as firing on CI **completion** and never states the gate's
+`conclusion == 'success'`, `event == 'push'` and `[auto-version]` exclusion —
+"completed" is not "succeeded". F5 misses outright: `sign-attest.yml` and the
+`admit` job appear nowhere in the answer.
+
+**Task 6 — 3 strict / 7 generous, needs 8 (every fact). FAIL.**
+
+Strict: F2 (`~/.genie/.last-agent-sync`), F4 (`runAgentSyncSafe`), F5
+(`CLAUDE_EXCLUDED_SKILLS`). Generous adds F3 (install triggers sync via
+`runSync`), F6 (uninstall removes managed mirrors, never syncs), F7 (setup takes
+an agent-sync lifecycle lease, never syncs) and F8 (plugin hooks never sync) —
+each stated in substance without the anchoring identifier. **F1 misses under
+both readings**: the Hermes `skills.external_dirs` → `$GENIE_HOME/skills`
+mechanism is never stated, and `hermes-skills-config.ts` is never named. Seven of
+eight is the campaign's best generous score on any frozen task, and the task
+requires eight.
+
+### Per task, against round 1's best
+
+Round 1's "best" is its best result on that task **across all 16 rounds and four
+tiers**; round 2's is its single shot. The comparison is therefore
+16-rounds-of-search against one run, and it flatters round 1 by construction.
+
+| Task | need | Round-1 best (judged) | Round-1 round | Round-2 shot (judged) | Δ generous |
+|---|---|---|---|---|---|
+| 1 | 13 | ≤7 of 14 | `r7-mimo-tune2` | ≤3 of 14 | **−4** |
+| 2 | 9 | 6 strict / **8** generous | `r15-flash-control` | 5 strict / **7** generous | **−1** |
+| 3 | 10 | 7 strict / **9** generous | `r1-flash-baseline` | 6 strict / **9** generous | **0** |
+| 4 | 11 | ≤6 of 12 | `r6-partial-300s-cap` | ≤2 of 12 | **−4** |
+| 5 | 5 | 2 strict / **3** generous | `r15-flash-control` | 3 strict / **3** generous | **0** (strict +1) |
+| 6 | 8 | ≤6 of 8 | `r8-mimo-tune3` | 3 strict / **7** generous | **+1** |
+
+**The recursive recipe does not beat the round-1 ceiling.** It ties on tasks 3
+and 5, betters task 6 by one fact, and is materially worse on tasks 1 and 4 —
+where the fan-out returned answers naming 3 and 2 of the required anchor files
+against round 1's 7 and 6. No task moved within reach of its threshold, and the
+closest approach in the whole campaign remains round 1's task 2 at 8 of 10
+generous. This shot's closest is task 3 at 9 of 10 needed 10 — the same margin,
+on a different task, from the other direction.
+
+### Premium-token accounting (reported, never gated)
+
+Same method as round 1: native = the Explore segment's billed assistant turns;
+rlmx = the host-session delta for the one tool call, `(requestChars +
+resultChars) / 4`. Nothing the delegated agent and its children burned on khal
+appears in the rlmx column — it is reported separately.
+
+| Task | Native premium tokens | rlmx premium tokens | Ratio | khal tokens (in/out) | khal cost | Wall |
+|---|---|---|---|---|---|---|
+| 1 | 2,943,691 | 3,314 | **888×** | 298,509 / 42,250 | $0.05 | 514.9s |
+| 2 | 3,098,197 | 2,512 | **1,233×** | 166,728 / 40,080 | $0.03 | 480.8s |
+| 3 | 2,976,188 | 1,622 | **1,835×** | 246,914 / 24,437 | $0.04 | 340.4s |
+| 4 | 2,186,864 | 1,846 | **1,185×** | 198,872 / 29,128 | $0.03 | 390.8s |
+| 5 | 1,499,747 | 2,831 | **530×** | 282,480 / 39,967 | $0.05 | 441.2s |
+| 6 | 3,319,167 | 2,747 | **1,208×** | 116,897 / 14,173 | $0.02 | 310.1s |
+| **total** | **16,023,854** | **14,872** | **1,077×** | 1,310,400 / 190,035 | **$0.22** | 2,478s |
+
+1,077× against round 1's 921×, for 22 cents. The offload economics are, if
+anything, better under recursion — the children's tokens are entirely off the
+premium ledger. It still buys an answer that fails the quality bar, which is why
+this column was never allowed to be the gate.
+
+### Gate arithmetic
+
+Every task requires all three criteria. Criteria 2 and 3 pass on all six.
+Criterion 1 passes on none:
+
+| Task | c1 (strict) | c1 (generous) | need | c2 | c3 | Verdict |
+|---|---|---|---|---|---|---|
+| 1 | ≤3 | ≤3 | 13 | PASS | PASS | **FAIL** |
+| 2 | 5 | 7 | 9 | PASS | PASS | **FAIL** |
+| 3 | 6 | 9 | 10 | PASS | PASS | **FAIL** |
+| 4 | ≤2 | ≤2 | 11 | PASS | PASS | **FAIL** |
+| 5 | 3 | 3 | 5 | PASS | PASS | **FAIL** |
+| 6 | 3 | 7 | 8 | PASS | PASS | **FAIL** |
+
+**0 of 6 tasks pass. The suite requires 5 of 6.** No task verdict differs between
+the strict and generous readings, and none differs between the default and
+suffix citation readings.
+
+Round-2 gate: FAIL
+
+**Consequences.** A4b stays unchecked and **Wish B (`rlmx-microagent-plugin`)
+does not start** — the same design failure branch round 1 landed in
+(WISH.md:70-74). The round-1 verdict line above is unchanged; this section
+states round 2's own line, and the two agree.
+
+### What this shot establishes, and what it does not
+
+- **Establishes:** the recursive `explore-r` recipe, on the model the round-2
+  matrix selected on cost, does not reach ≥90% fact coverage on any of the six
+  mined tasks. Recursion is not the missing lever. The failure is the same one
+  round 1 diagnosed — coverage, not fabrication — and it survives partitioning
+  the question across sub-agents.
+- **Establishes:** the offload economics hold under recursion (1,077×, $0.22),
+  and citation discipline holds across process boundaries (215/215).
+- **Does not establish** that gen-1 is the best available recipe. It is the
+  incumbent selected on a tie, over a four-generation range (`[28, 29, 28, 29]`
+  facts of 34) narrower than the ±3-fact run-to-run noise measured on a single
+  fixed triple. A different generation could plausibly have scored ±3 here.
+- **Does not establish** anything about `khal/deepseek-v4-flash` versus the other
+  matrix arms on accuracy — that comparison was never resolved (see the campaign
+  summary).
+- **Is one run per task.** The round-2 optimizer's own README concedes that one
+  round is not a measurement. This shot is one round, deliberately, because the
+  gate rules were pre-registered as a single shot to prevent selection over
+  repeats. A FAIL from a single shot is a FAIL; a PASS from one would have
+  needed replication before it could be believed.
+- **Untested by this shot**, exactly as after round 1: multi-turn delegation via
+  `session_id`, a khal tier above haiku, and host-side decomposition of a
+  six-part question into six calls.
+
+### The round-2 campaign, in one paragraph
+
+Round 2 built a training suite rather than tuning against the gate: 8 authored
+tasks in `parity/round2/train-tasks/`, of which 6 form the fitness set (34
+facts, 3 live roots) while `1.md`/`2.md` are held out by a harness that refuses
+to read them; four generations of a recursive `explore-r` recipe were run
+against that fitness set, one round each — gen-0 (the shipped recipe) 28/34,
+gen-1 29/34, gen-2 28/34, gen-3 29/34 — and **gen-1 was selected on the explicit
+ground that a tie does not displace an incumbent**, not on a margin, because the
+entire four-generation range is narrower than the ±3-fact run-to-run spread later
+measured on one fixed (recipe, model, suite) triple. A four-model matrix then ran
+gen-1's frozen snapshot once per model, and **its cost ranking is robust and
+large while its accuracy ranking decides nothing**: flash is 8.7× cheaper per
+round than `deepseek-v4-pro`, 13× than `glm-5.2` and 18.8× than `qwen3.7-max`
+(≈10×/19×/19.5× per fact even taking flash at the pessimistic end of its band and
+every rival at its published best), and flash and qwen were the only arms to
+finish all six runs while pro and glm each lost one to the 600 s REPL wall —
+but every arm is n=1, flash's headline 32/34 failed to reproduce (three live
+task-4 replicates scored 3/6, 5/6, 4/6 against the published 6/6, correcting the
+arm to **29–31/34**), and the flash-versus-qwen margin collapses to +1..+3 inside
+a ±3 band, so "flash is the matrix winner" is true on cost and undetermined on
+facts. The holdout — run once, after the recipe and model were chosen, never fed
+back — scored **10/14 (coverage 0.714) against 0.853–0.912 on the fitness set, a
+real drop of 0.14–0.20**, with `runsOk` 2/2, criteria 2 and 3 clean on both runs,
+44/44 citations resolving and the fan-out firing on both. gen-4, an ensemble
+mutation measured as two replicates instead of one round, was **rejected**: four
+training anchoring terms sit verbatim in its own prompt and the fact rule is a
+substring test, so its one positive claim cannot be distinguished from the model
+reading its own instructions; its holdout regressed to 8/14 identically in both
+replicates; and its fitness union tied the pooled parent at 32/34 on the
+identical two residual facts — so `optimizer/current/` was reset to gen-1 and
+that write is, for the first time on this pointer, attributed. 67 recorded
+round-2 run records and $7.46 of khal spend went into choosing what to shoot
+with; the shot itself cost $0.22 and **failed the gate**.
