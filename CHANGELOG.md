@@ -151,6 +151,25 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   about this repo, and mechanically resolves the citations that come back
   against the same tree. Station arm by default (keyless, `RLMX_SMOKE_MODEL`
   overrides); the khal arm runs the shipped model when `KHAL_API_KEY` is set.
+- **`docs/parity-explore.md`** — the parity gate, run and reported. Six mined
+  tasks driven through `rlmx_explore` over the real MCP path and scored against
+  native Explore by a fixed rubric, across the full escalation ladder
+  (`deepseek-v4-flash` → `mimo-v2.5` → `kimi-code` → `claude-haiku`): 15 rounds,
+  90 runs, every tuning change logged. **Verdict `Gate: FAIL`** — 0 of 6 tasks
+  passed on any tier, against a bar of 5 of 6. Citation hygiene was not the
+  problem (the final flash round fabricates nothing across all six tasks); fact
+  coverage was, at best 7 of 10 required facts where 9 were needed. The token
+  side is reported and unambiguous — 366×–2,110× less premium context per task,
+  $0.14 of gateway spend for the suite — and was never allowed to be the gate.
+  Wish B (`rlmx-microagent-plugin`) does not start.
+- **`examples/agents/explore/` tuning** from the gate, kept because each fixed
+  something measurable: the answer is returned as `FINAL("""…""")` written out
+  inline rather than through a variable name (`FINAL(answer)` submits the
+  literal word and silently discards the run); a last-iteration override that
+  answers in plain prose, which is what `src/rlm.ts` actually asks for; a
+  verification block that re-opens every line before citing it; and
+  `budget.max_cost` 0.25 → 2.00, because 0.25 was one model's price and it
+  truncated every run on a pricier one.
 - **`scripts/mine-explore-tasks.mjs`** — builds the explore parity suite out of
   real work rather than invented questions: it reads this host's Claude Code
   transcripts, lifts out read-only question→search→answer segments, and

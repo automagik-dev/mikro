@@ -118,14 +118,31 @@ by a fixed rubric against native Explore. Wish B (plugin packaging, shootout,
   `khal/deepseek-v4-flash · 2,290 in / 33 out · $0.0002`, keyless and
   rejected-key calls both `isError` with the credential named, 472/472 tests
   green ([evidence-group-1.md](evidence-group-1.md)).
-- [ ] A4: Parity gate **executed** on the ≥5-task mined suite and
+- [x] A4: Parity gate **executed** on the ≥5-task mined suite and
   `docs/parity-explore.md` committed with per-task rubric, scores,
   tuning/escalation history, and premium-token accounting (reported, not
-  gated) — required regardless of outcome.
+  gated) — required regardless of outcome. — executed on all 6 mined tasks
+  through the real MCP path, **16 rounds / 96 recorded task-runs** across the
+  full escalation ladder (flash ×3 tuning, mimo ×3, kimi ×1, haiku ×3, plus a
+  flash control and one discarded 300s-capped mimo attempt), $11.43 khal spend
+  — plus 7 unreported re-runs ($0.81) and one post-gate re-check ($0.07), for
+  **104 model invocations and $12.31 in total**; report at
+  [docs/parity-explore.md](../../../docs/parity-explore.md) with both arms
+  scored per task, every round logged with what changed and why, and token
+  accounting stating its method
+  ([evidence-group-4.md](evidence-group-4.md)). The first published totals
+  (15 rounds / 90 runs / $11.00) omitted the discarded round and the re-runs;
+  corrected in the audit pass recorded in
+  [evidence-group-4.md §11](evidence-group-4.md).
 - [ ] A4b: Parity gate **PASSED** — ≥4 of 5 tasks (≥80% for larger suites)
   pass the fixed rubric (≥90% required facts, all citations resolve, zero
   fabrications), passing tier named. If the gate failed, this box stays
-  unchecked and Wish B does not start.
+  unchecked and Wish B does not start. — **stays unchecked: `Gate: FAIL`**
+  ([docs/parity-explore.md](../../../docs/parity-explore.md), verdict line).
+  0 of 6 tasks passed on every tier; the ladder reached `khal/claude-haiku` and
+  stopped there per the design failure branch. No parity model exists
+  (decision 5 defines it as the tier that passed). **Wish B
+  (`rlmx-microagent-plugin`) does not start.**
 - [ ] A5: `rlmx mcp --dir <dir>` makes discovery, config, context, and REPL
   cwd agree on `<dir>` (test proves an agent + config in `<dir>` load while
   the process was spawned elsewhere).
@@ -379,17 +396,53 @@ cd ~/prod/rlmx && npm run build && test "$(ls .genie/wishes/rlmx-explore-offload
 4. Frozen suite handoff note for Wish B (regression + shootout input).
 
 **Acceptance Criteria:**
-- [ ] Gate outcome recorded: PASS (≥4 of 5; ≥80% for larger suites) with
+- [x] Gate outcome recorded: PASS (≥4 of 5; ≥80% for larger suites) with
   the passing tier named, or FAIL with the honest report and Wish B
-  explicitly not started.
-- [ ] Every claim in the report traceable to a logged run (model, tokens,
-  wall-time, cost per attempt).
-- [ ] A4's token accounting present for every task, labeled reported-not-gated.
+  explicitly not started. — **`Gate: FAIL`** recorded on one line
+  ([docs/parity-explore.md](../../../docs/parity-explore.md)); 6-task suite
+  needed ≥5 passes and got 0, on every tier of the ladder. Wish B explicitly
+  not started, and the falsification is scoped rather than overclaimed (three
+  untried experiments named in the verdict section). The suite was not
+  softened: no task dropped, no threshold moved, no fact reinterpreted; the two
+  scoring conventions that were added were forced by the **native** arm and
+  apply to both ([evidence-group-4.md §2](evidence-group-4.md)).
+- [x] Every claim in the report traceable to a logged run (model, tokens,
+  wall-time, cost per attempt). — **failed on first publication, re-established
+  by audit.** Seven matrix rows mixed columns from two different runs (a re-run
+  had silently overwritten a scored run JSON), so those rows described no single
+  actual run. Every run JSON on disk has been re-scored, the matrix regenerated
+  from matched pairs, the discarded round un-hidden, and the overwrite made
+  impossible (`run-task.mjs` now refuses to replace an existing run record). All
+  97 recorded task-runs are in one matrix with model, iterations, wall-time,
+  khal cost and per-criterion verdict ([evidence-group-4.md §3](evidence-group-4.md));
+  each run's returned text, footer, progress and per-citation verdict persisted
+  under `.genie/wishes/rlmx-explore-offload/parity/runs/<round>/`. The 7
+  overwritten runs are **not** recoverable — their surviving score JSONs are
+  kept as `task-N.score.orphaned.json` and the loss is stated rather than
+  papered over ([evidence-group-4.md §11](evidence-group-4.md)).
+- [x] A4's token accounting present for every task, labeled reported-not-gated.
+  — per-task native vs rlmx premium tokens with the method stated (native =
+  input+cacheRead+cacheCreate+output of the recorded Explore segment; rlmx =
+  host-session call delta, request + result chars ÷ 4), 366×–2,110× per task and
+  921× overall, headed "reported, never gated" per decision 7
+  ([docs/parity-explore.md](../../../docs/parity-explore.md), token section).
+
+**Evidence:** [evidence-group-4.md](evidence-group-4.md) — ground truth
+re-verified before scoring, the 97-run matrix, criterion 1 judged fact by fact
+on every run whose upper bound reaches its threshold under **either** reading of
+the bound (no run reaches it on the strict reading; 8 do on the basename
+reading, and all 8 were judged), verbatim returned text for the decisive rounds,
+the validation command with its output, and §11's audit log of what the first
+publication got wrong.
 
 **Validation:**
 ```bash
 cd ~/prod/rlmx && test -f docs/parity-explore.md && grep -qE 'Gate: (PASS|FAIL)' docs/parity-explore.md
 ```
+
+Run verbatim; exit `0` (`grep -q` is silent on success), matching
+`docs/parity-explore.md:572` → `Gate: FAIL`
+([evidence-group-4.md §7](evidence-group-4.md)).
 
 **depends-on:** Group 3
 
