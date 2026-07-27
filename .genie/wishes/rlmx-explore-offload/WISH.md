@@ -511,6 +511,52 @@ _The read-only reviewer returns evidence; the invoking orchestrator appends a ti
 
 ---
 
+## Round-2 prep — what the training suite can and cannot measure
+
+The parity gate FAILed honestly (`docs/parity-explore.md`, Gate: FAIL) and the
+user overrode the stop: round 2 continues with the levers round 1 never used.
+The frozen six (`tasks/{1..6}.md`), the rubric and the scoring conventions are
+**unchanged and eval-only**. Round 2 adds a separate *training* suite,
+`parity/round2/train-tasks/`, for prompt optimization.
+
+**A4b is still the gate, and only the frozen suite can settle it.** The training
+suite is not a second gate and is not comparable to the first. Recorded here so
+that a round-2 summary cannot quietly promote it:
+
+| Measurement | Frozen eval suite | `round2/train-tasks/` |
+|---|---|---|
+| rlmx-arm criterion 1 (fact coverage) | yes | **yes — the only signal it has** |
+| rlmx-arm criteria 2, 3 | yes | **yes** |
+| Native arm under the same rubric | yes | **no** |
+| D6/P3 conservative asymmetry | yes | **no** |
+| Premium-token reduction | yes | **no** |
+
+All 8 training tasks are **authored**, not mined, so none carries a native
+session answer: `score-task.mjs --native` has nothing to read, and there is no
+native token accounting to divide by. The reason is measured, not assumed — with
+the eval suite's four sittings excluded by session, this host's entire
+751-transcript corpus yields **zero** further explore-class candidates at every
+window from 24h to 720h (`train-tasks/train-mining-run.json`, `written: 0`).
+
+Two further constraints on how the suite may be used:
+
+- **The optimizer's fitness set is 6 of the 8 tasks** (`3.md`…`8.md`, 34 facts,
+  3 roots). `1.md` and `2.md` are authored about this repository — the same tree
+  and sitting the round-2 prompt was written in, `1.md` on the identical line
+  set `parity/round2/recursion-recon.md` is built from — so selecting on them
+  would tune a prompt against ground truth its own investigation produced. They
+  are held out as diagnostics, machine-readably
+  (`authored-run.json` → `fitnessSet`, and a row in each task file's header).
+- **Disjointness from the frozen six is by session and by subject.** The miner
+  runs at its default `--disjoint-by session+subject`, excluding all four eval
+  sittings outright; the authored tasks are all in roots no eval task uses. An
+  earlier cut of this suite relaxed the miner to `--disjoint-by subject` and
+  admitted one task from a sitting two eval tasks came from — that amended the
+  acceptance criterion rather than meeting it, and has been reverted.
+  `train-tasks/README.md` records the episode.
+
+---
+
 ## Files to Create/Modify
 
 ```

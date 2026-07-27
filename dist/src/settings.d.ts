@@ -2,7 +2,16 @@
  * Global settings management for rlmx.
  *
  * Stores API keys and defaults in ~/.rlmx/settings.json.
- * Priority: CLI flags > rlmx.yaml > settings.json > hardcoded defaults.
+ *
+ * Priority: CLI flags > settings.json > rlmx.yaml > hardcoded defaults.
+ *
+ * settings.json beats rlmx.yaml, not the other way round: the point of
+ * `rlmx config set model.provider …` is that it takes effect in a checkout that
+ * already has its own `model:` block, so `applySettingsModelOverrides`
+ * (src/cli.ts:33-39) is applied *after* `loadConfig` (src/cli.ts:324-325). This
+ * comment said the reverse until 2026-07-27; the ordering was never what it
+ * claimed, and it matters — pinning a recursive child's model works only
+ * because settings.json outranks the ambient yaml.
  */
 export interface GlobalSettings {
     [key: string]: unknown;

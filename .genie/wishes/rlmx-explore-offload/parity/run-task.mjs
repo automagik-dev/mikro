@@ -10,9 +10,27 @@
  * repos are the user's other checkouts and the gate must not write in them.
  * No `RLMX_AGENTS_DIR` override: the discovery path stays the real one.
  *
- *   node run-task.mjs <taskNumber> <model> <roundLabel>
+ *   node run-task.mjs <taskNumber> <model> <roundLabel> [--tasks-dir <dir>]
  *
  * Writes the verbatim result to parity/runs/<round>/task-<n>.json.
+ *
+ * `--tasks-dir` defaults to the frozen eval suite, `<wish>/tasks`. It exists
+ * because round 2 has a second suite — `parity/round2/train-tasks/`, the
+ * training input the optimizer selects on — and without an argument the runner
+ * could only ever drive the frozen six. Two consequences worth stating:
+ *
+ *   - The round label is the only thing separating one suite's runs from
+ *     another's under `parity/runs/`. Use a label that names the suite, and
+ *     read `record.tasksDir` (recorded on every run) if you have to tell them
+ *     apart after the fact.
+ *   - **Pointing this at the frozen suite is the only way to produce a gate
+ *     number.** A training-suite run is a training-suite run; nothing about
+ *     this flag makes the two comparable, and the train tasks carry no native
+ *     arm to compare against (see round2/train-tasks/README.md).
+ *
+ * The recipe under test is still hardcoded to `examples/agents/explore/`.
+ * Driving `explore-r` is a separate change and has deliberately not been made
+ * here.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -31,20 +49,51 @@ const repo = resolve(wishDir, "..", "..", "..");
 const cli = join(repo, "dist", "src", "cli.js");
 const recipe = join(repo, "examples", "agents", "explore");
 
-const [taskArg, model, round] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const flagAt = argv.indexOf("--tasks-dir");
+const tasksDirArg = flagAt >= 0 ? argv[flagAt + 1] : null;
+if (flagAt >= 0) {
+  if (!tasksDirArg) {
+    console.error("--tasks-dir requires a directory");
+    process.exit(2);
+  }
+  argv.splice(flagAt, 2);
+}
+const [taskArg, model, round] = argv;
 if (!taskArg || !model || !round) {
-  console.error("usage: run-task.mjs <taskNumber> <model> <roundLabel>");
+  console.error("usage: run-task.mjs <taskNumber> <model> <roundLabel> [--tasks-dir <dir>]");
   process.exit(2);
 }
 
-const taskFile = join(wishDir, "tasks", `${taskArg}.md`);
+const tasksDir = tasksDirArg ? resolve(tasksDirArg) : join(wishDir, "tasks");
+const taskFile = join(tasksDir, `${taskArg}.md`);
+if (!existsSync(taskFile)) {
+  console.error(`task ${taskArg}: no such file ${taskFile}`);
+  process.exit(2);
+}
 const taskText = readFileSync(taskFile, "utf-8");
 const root = /\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|/.exec(taskText)?.[1];
-const question = /## Question \(verbatim from the transcript\)\n\n```text\n([\s\S]*?)\n```\n/.exec(
-  taskText
-)?.[1];
+/**
+ * Both suites' question headings, and only those two.
+ *
+ * A mined task's heading says "verbatim from the transcript" because the
+ * question is a line somebody actually typed; an authored training task says
+ * "authored for the training suite" because it is not, and the file refuses to
+ * borrow the mined suite's wording for something that was written. That is a
+ * deliberate distinction (scripts/author-explore-tasks.mjs), so the runner
+ * matches the two forms by name rather than accepting any `## Question (…)` —
+ * a wildcard here would let a third, unaudited provenance through silently.
+ */
+const question =
+  /## Question \((?:verbatim from the transcript|authored for the training suite)\)\n\n```text\n([\s\S]*?)\n```\n/.exec(
+    taskText
+  )?.[1];
 if (!root || !question) {
-  console.error(`task ${taskArg}: could not extract root/question`);
+  console.error(
+    `task ${taskArg}: could not extract root/question from ${taskFile}\n` +
+      `  root:     ${root ? "ok" : "missing `| Task root (the rlmx arm's \\`--dir\\`) | \\`…\\` |` row"}\n` +
+      `  question: ${question ? "ok" : "missing a fenced `## Question (verbatim from the transcript|authored for the training suite)` section"}`
+  );
   process.exit(2);
 }
 
@@ -136,6 +185,11 @@ const transport = new StdioClientTransport({
 const client = new Client({ name: "rlmx-parity", version: "1.0.0" }, { capabilities: {} });
 let record = {
   task: Number(taskArg),
+  // Which suite this run came from. Without it, two suites sharing a round
+  // label are indistinguishable in parity/runs/ — and one of them is the gate.
+  tasksDir,
+  taskFile,
+  suite: tasksDir === join(wishDir, "tasks") ? "frozen-eval" : "other",
   root,
   model,
   round,

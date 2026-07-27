@@ -10,18 +10,52 @@
  * that no longer anchors would mean the ground truth had drifted under the
  * gate, which is the one way a "conservative asymmetry" could become unfair in
  * the other direction.
+ *
+ * Default: the frozen suite, tasks 1..6, exactly as it has always run. With
+ * `--dir <suite>` it checks any other mined suite the same way — a training
+ * suite has to clear the same ground-truth bar as the eval suite, or it is not
+ * the same standard — discovering `<n>.md` rather than assuming six of them.
+ * The default path never enters the discovery branch, so its output is
+ * unchanged whatever else ever lands in the frozen directory.
+ *
+ *   node parity/verify-native.mjs
+ *   node parity/verify-native.mjs --dir parity/round2/train-tasks
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const wishDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const dirArg = process.argv.indexOf("--dir");
+const suiteDir = dirArg >= 0 && process.argv[dirArg + 1] ? resolve(process.argv[dirArg + 1]) : null;
+
+/** Frozen suite: the literal 1..6 it has always used. Otherwise: discovered. */
+let taskNumbers = [1, 2, 3, 4, 5, 6];
+if (suiteDir) {
+  let names;
+  try {
+    names = readdirSync(suiteDir);
+  } catch {
+    console.log(`no such suite directory: ${suiteDir}`);
+    process.exit(1);
+  }
+  taskNumbers = names
+    .filter((n) => /^\d+\.md$/.test(n))
+    .map((n) => parseInt(n, 10))
+    .sort((a, b) => a - b);
+  if (!taskNumbers.length) {
+    console.log(`${suiteDir}: no task files — an empty suite verifies nothing`);
+    process.exit(1);
+  }
+}
+const tasksDir = suiteDir ?? join(wishDir, "tasks");
+
 let allOk = true;
 const rows = [];
 
-for (let n = 1; n <= 6; n++) {
-  const t = readFileSync(join(wishDir, "tasks", `${n}.md`), "utf-8");
+for (const n of taskNumbers) {
+  const t = readFileSync(join(tasksDir, `${n}.md`), "utf-8");
   const root = /\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|/.exec(t)[1];
   const factRe =
     /^- \[ \] \*\*(F\d+)\*\* \((exact|re-anchored)\) `([^`]+)`([^\n]*)\n((?:  [^\n]*\n)+)/gm;

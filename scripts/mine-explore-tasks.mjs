@@ -83,9 +83,107 @@
  * not to the text that gets matched, so a redacted secret can never resolve
  * into a "fact".
  *
+ * ── Mining a second, disjoint suite ───────────────────────────────────────
+ *
+ * A frozen eval suite is only an eval suite while nothing tunes against it. A
+ * training suite therefore has to be *disjoint* from it, and disjointness has to
+ * be enforced by the miner rather than by a promise: the same host, the same
+ * window and the same filter will otherwise re-surface the very segments the
+ * eval suite was cut from. Four opt-in flags do that, and **none of them is on
+ * by default** — a bare `node scripts/mine-explore-tasks.mjs` selects exactly
+ * what it selected when it cut the frozen suite (the record it writes gains the
+ * `argv`/`windowLadder` provenance keys described below, and nothing else):
+ *
+ *   --exclude-sessions a,b,c   drop these session ids outright (or `@file`)
+ *   --exclude-tasks <dir>      read an existing suite's task files for their
+ *                              *exclusion metadata only* — session id, task
+ *                              root, and the set of files its required facts
+ *                              anchor on — and drop both those sessions and any
+ *                              candidate that anchors on the same files in the
+ *                              same root. Question text is never read: the
+ *                              subject test is the anchor-file overlap, which is
+ *                              what "the same subject" actually means for a
+ *                              suite scored on required facts.
+ *   --disjoint-by <mode>       `session+subject` (default) or `subject`. See
+ *                              below — on a host whose whole explore-class yield
+ *                              comes from the sittings the eval suite was cut
+ *                              from, the session gate is not a filter, it is a
+ *                              floor of zero.
+ *   --run-json <name>          write the run record under another name, so a
+ *                              second suite does not overwrite the first's.
+ *
+ * `--min-read-ops <n>` (default 5, the value the frozen suite was cut at) is a
+ * fifth knob and a *screening* one: see `MIN_READ_OPS`. It changes which
+ * segments are worth verifying, never what counts as a fact.
+ *
+ * ── `--disjoint-by subject` ───────────────────────────────────────────────
+ *
+ * The default composes two independent gates: drop the eval suite's *sittings*
+ * outright, then drop any survivor standing on the same files in the same repo.
+ * The first is a proxy for the second and a coarse one: a session is a person
+ * at a keyboard for an afternoon, not a subject. When a host's entire
+ * explore-class yield comes from those same afternoons — measured, not assumed:
+ * every candidate this repo's corpus produces at 24/168/336/720h is inside them
+ * — the session gate does not make the training suite disjoint, it makes it
+ * empty, and it eliminates every candidate *before* the subject test ever runs,
+ * so the disjointness that gets reported is vacuous.
+ *
+ * `--disjoint-by subject` keeps the second gate and drops the first. What it
+ * gives up is stated plainly: a train task may come from a sitting an eval task
+ * also came from. What it keeps is the test that decides whether two tasks are
+ * about the same thing — the anchor-file overlap — now actually exercised, with
+ * both its outcomes recorded in the run JSON (`droppedForSubjectOverlap` and
+ * `keptFromSharedSession`), so the disjointness claim is checkable against both
+ * suites' metadata instead of being true by emptiness. `--exclude-sessions`
+ * still drops what it is given, under either mode.
+ *
+ * **It is a different criterion, not a cheaper way to meet the same one.** If
+ * the thing being satisfied is written as "disjoint *by session*", this mode
+ * does not satisfy it — it replaces it, and that needs saying out loud and
+ * agreeing before the suite is used, not discovering afterwards from a task
+ * header. This wish's round-2 training suite was cut this way once and had to
+ * be re-cut under the default: `.genie/wishes/rlmx-explore-offload/parity/
+ * round2/train-tasks/README.md` records what that cost. When the default
+ * yields nothing, "the corpus is empty" is itself a publishable measurement —
+ * `written: 0` with the excluded sittings named — and authoring the suite is
+ * the honest alternative to relaxing the gate.
+ *
+ * ── `--host-read-idioms` ──────────────────────────────────────────────────
+ *
+ * Also opt-in, and a *false-negative fix*, not a lowered bar. `classifyBash`
+ * decides read vs mutate on a stage's verb; on this host four read idioms fall
+ * through it and cost segments the read ops that make them significant. Counted
+ * over the same 336h window this suite is mined from:
+ *
+ *   - `rtk proxy <verb>` — 615 stages. `rtk` is already a RUNNER, but the raw
+ *     escape hatch is two words, so the verb that gets classified is `proxy`.
+ *   - `sed -n '140,270p' file` — 1045 stages. Paging through a file is the
+ *     host's most common read after `rg`; `sed -i` is already caught as a
+ *     mutation before this point, and a redirecting `sed` by the REDIRECT rule.
+ *   - `export PATH=… && <read>` — 617 stages. `export` is a no-op prefix like
+ *     `cd`, but it is classified as the stage's verb, and the first non-read
+ *     stage ends classification, so it discards the read that follows it.
+ *   - `… >/dev/null` — a discard is not a write. The REDIRECT rule is otherwise
+ *     kept exactly as it is: it is what catches `> file`, and it should.
+ *
+ * Nothing here touches what becomes a *fact*: the verification rules, the
+ * thresholds, and the criterion-2/3 rejection of a task whose own native answer
+ * fails the rubric are identical under the flag. It only changes which segments
+ * are read-heavy enough to be worth verifying.
+ *
  *   node scripts/mine-explore-tasks.mjs
  *   node scripts/mine-explore-tasks.mjs --dry-run
  *   node scripts/mine-explore-tasks.mjs --hours 168 --max-tasks 8
+ *   node scripts/mine-explore-tasks.mjs --hours 336 --host-read-idioms \
+ *     --exclude-tasks .genie/wishes/<wish>/tasks --out <dir> \
+ *     --run-json train-mining-run.json
+ *
+ * Every run records its own `argv` and the `windowLadder` it would climb, so a
+ * record can be reproduced from the record. The widening ladder is a flag
+ * (`--wide-hours`, default `168,336,720`), which means the attempts list alone
+ * does not say what was run: a record that stops at 336h is either a default run
+ * that found its floor or a run whose ladder ended there, and only the argv
+ * tells them apart.
  */
 
 import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -134,9 +232,149 @@ const MAX_PER_SESSION = Number(flag("--max-per-session", "2"));
 const MAX_PER_ROOT = Number(flag("--max-per-root", "3"));
 const DRY_RUN = args.includes("--dry-run");
 const EXPLAIN = args.includes("--explain");
+/** The run record's filename. A second suite must not overwrite the first's. */
+const RUN_JSON = flag("--run-json", "mining-run.json");
+/** See the header: opt-in, off by default, and a false-negative fix only. */
+const HOST_READ_IDIOMS = args.includes("--host-read-idioms");
+
+/**
+ * Disjointness. `--exclude-sessions` takes ids directly or `@path` to a file of
+ * them (one per line, `#` comments allowed); `--exclude-tasks` takes a suite
+ * directory and reads its task files' metadata. Both are empty by default, and
+ * when both are empty the exclusion machinery is inert — no filtering, and no
+ * extra keys in the run record.
+ */
+function sessionList(spec) {
+  if (!spec) return [];
+  const raw = spec.startsWith("@") ? readFileSync(resolve(spec.slice(1)), "utf-8") : spec;
+  return [
+    ...new Set(
+      raw
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter((s) => s && !s.startsWith("#"))
+    ),
+  ];
+}
+const EXCLUDE_SESSIONS = new Set(sessionList(flag("--exclude-sessions", "")));
+const EXCLUDE_TASKS_DIR = flag("--exclude-tasks", "") ? resolve(flag("--exclude-tasks", "")) : null;
+/**
+ * Which gate enforces disjointness from `--exclude-tasks`: both the sitting and
+ * the subject (default), or the subject alone. See the header. Ids passed to
+ * `--exclude-sessions` are dropped under either mode — that flag is an explicit
+ * instruction, not an inference from a suite.
+ */
+const DISJOINT_MODES = new Set(["session+subject", "subject"]);
+const DISJOINT_BY = flag("--disjoint-by", "session+subject");
+if (!DISJOINT_MODES.has(DISJOINT_BY)) {
+  process.stderr.write(`--disjoint-by: expected one of ${[...DISJOINT_MODES].join(", ")}\n`);
+  process.exit(2);
+}
+/**
+ * How much anchor-file overlap counts as "the same subject". A task is defined
+ * by the files its required facts stand on, so two tasks in one repo whose
+ * checklists rest on largely the same files are asking about the same
+ * subsystem, whatever their wording. Measured as containment (shared ÷ smaller
+ * set) rather than Jaccard, so a small checklist that sits entirely inside a
+ * big one is caught rather than diluted.
+ */
+const SUBJECT_OVERLAP = Number(flag("--subject-overlap", "0.34"));
+
+/**
+ * An existing suite's *exclusion metadata*, and nothing else. Three lines per
+ * task file are parsed — the task root, the session id, and the `path:line`
+ * anchors of its required facts — because those are what "already used" means.
+ * The question text and the native answer are deliberately not read: a training
+ * suite mined by a process that ingested the eval suite's questions is not
+ * disjoint from it in the way that matters.
+ */
+function excludedSuite(dir) {
+  const out = { dir, sessions: new Set(), subjects: [], files: [] };
+  let names;
+  try {
+    names = readdirSync(dir).filter((n) => /^\d+\.md$/.test(n));
+  } catch {
+    throw new Error(`--exclude-tasks: cannot read ${dir}`);
+  }
+  if (!names.length) throw new Error(`--exclude-tasks: no task files in ${dir}`);
+  for (const name of names.sort((a, b) => parseInt(a, 10) - parseInt(b, 10))) {
+    const text = readFileSync(join(dir, name), "utf-8");
+    const root = /^\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|$/m.exec(text)?.[1];
+    const session = /^\| Session \| `([^`]+)` \|$/m.exec(text)?.[1];
+    if (!root || !session) throw new Error(`--exclude-tasks: ${name} has no root/session row`);
+    const anchorFiles = new Set();
+    // `- [ ] **F1** (exact) `a/b.ts:12` (also `c/d.ts:3`, `e.ts:9`)` — every
+    // backticked `path:line` on a checklist line, primary and secondary alike.
+    for (const line of text.split("\n")) {
+      if (!/^- \[ \] \*\*F\d+\*\* \((?:exact|re-anchored)\)/.test(line)) continue;
+      for (const [, anchor] of line.matchAll(/`([^`]+?):\d+`/g)) anchorFiles.add(anchor);
+    }
+    out.sessions.add(session);
+    out.subjects.push({ file: name, root, session, anchorFiles });
+    out.files.push(name);
+  }
+  return out;
+}
+
+const excluded = EXCLUDE_TASKS_DIR ? excludedSuite(EXCLUDE_TASKS_DIR) : null;
+if (excluded && DISJOINT_BY === "session+subject") {
+  for (const s of excluded.sessions) EXCLUDE_SESSIONS.add(s);
+}
+/** Suite sittings deliberately left in the pool, for the record to disclose. */
+const SHARED_SESSIONS = new Set(
+  excluded && DISJOINT_BY === "subject" ? [...excluded.sessions].filter((s) => !EXCLUDE_SESSIONS.has(s)) : []
+);
+const EXCLUSIONS_ACTIVE = EXCLUDE_SESSIONS.size > 0 || excluded !== null;
+/**
+ * Why each dropped candidate was dropped — the disjointness audit trail. Under
+ * `--disjoint-by subject` the trail has to carry the *negative* cases too: a
+ * candidate out of a shared sitting that the subject test cleared is the half of
+ * the claim that emptiness would otherwise make unfalsifiable.
+ */
+const exclusionLog = { bySession: [], bySubject: [] };
+
+/**
+ * How much does this candidate stand on the same files, in the same repo, as the
+ * tasks the excluded suite already uses? The strongest overlap it has with any
+ * of them, whether or not it clears the bar — the caller compares against
+ * `SUBJECT_OVERLAP` to decide, and records the number either way, so a suite's
+ * disjointness can be re-derived from the record rather than believed. Session
+ * exclusion catches the same sitting; this catches the same subject, which is
+ * the thing that actually has to be disjoint.
+ */
+function strongestSubjectOverlap(task) {
+  if (!excluded) return null;
+  const ours = new Set(task.facts.flatMap((f) => f.anchors.map((a) => a.replace(/:\d+$/, ""))));
+  if (!ours.size) return null;
+  let strongest = null;
+  for (const other of excluded.subjects) {
+    if (other.root !== task.root) continue;
+    const shared = [...ours].filter((f) => other.anchorFiles.has(f));
+    const overlap = shared.length / Math.min(ours.size, other.anchorFiles.size || 1);
+    if (!strongest || overlap > strongest.overlap) {
+      strongest = {
+        task: other.file,
+        root: other.root,
+        overlap: Number(overlap.toFixed(2)),
+        shared,
+        anchorFiles: ours.size,
+      };
+    }
+  }
+  return strongest;
+}
 
 /** Thresholds that define "significant" — stated here so the bar is auditable. */
-const MIN_READ_OPS = 5;
+/**
+ * How much reading makes a segment worth verifying. A flag, defaulting to the
+ * value the frozen suite was cut at, because "significant" is a *screening*
+ * heuristic and not part of what makes a task checkable: what a task rests on is
+ * its verified facts, and that bar (`--min-facts`, `MIN_VERIFIED_FACTS`) is
+ * unchanged by lowering this one. A training suite mined on a host whose
+ * explore-class yield is thin can trade screening strictness for tasks; an eval
+ * suite should not, and the run record says which was done.
+ */
+const MIN_READ_OPS = Number(flag("--min-read-ops", "5"));
 const MIN_ANSWER_CHARS = 300;
 const MIN_QUESTION_CHARS = 15;
 const MIN_VERIFIED_FACTS = 3;
@@ -284,7 +522,10 @@ const RUNNERS = new Set(["sudo", "timeout", "command", "xargs", "env", "nohup", 
  */
 function classifyBash(command) {
   const cmd = String(command ?? "");
-  if (SED_INPLACE.test(cmd) || REDIRECT.test(cmd)) return "mutate";
+  // A discard is not a write, but `> file` is — so only `/dev/null` is exempt,
+  // and only under the flag. Everything else the REDIRECT rule catches, it keeps.
+  const redirectable = HOST_READ_IDIOMS ? cmd.replace(/>>?\s*\/dev\/null/g, " ") : cmd;
+  if (SED_INPLACE.test(cmd) || REDIRECT.test(redirectable)) return "mutate";
 
   // Split on shell separators, drop `cd <dir>` and env assignments, then look
   // at the verb of each remaining stage.
@@ -297,16 +538,33 @@ function classifyBash(command) {
     const words = stage.split(/\s+/).filter((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
     let verb = words[0];
     let rest = words.slice(1);
+    // `export PATH=…` has had its assignment dropped by the filter above, so it
+    // is a bare no-op prefix: skipping it is what `cd` already gets, and not
+    // skipping it ends classification before the read it precedes.
+    if (HOST_READ_IDIOMS && verb === "export" && rest.length === 0) continue;
     while (verb === "cd" || RUNNERS.has(verb)) {
       if (verb === "cd") {
         verb = undefined;
         break;
       }
+      // `rtk proxy <verb>`: the raw escape hatch is two words, so unwrapping
+      // `rtk` alone leaves `proxy` as the verb that gets classified.
+      const unwrapProxy = HOST_READ_IDIOMS && verb === "rtk" && rest[0] === "proxy";
       verb = rest[0];
       rest = rest.slice(1);
+      if (unwrapProxy) {
+        verb = rest[0];
+        rest = rest.slice(1);
+      }
     }
     if (!verb) continue;
     const base = verb.replace(/^.*\//, "");
+    // `sed -i` was already a mutation above and `sed … > file` a REDIRECT one;
+    // what is left pages through a file, which is this host's commonest read.
+    if (HOST_READ_IDIOMS && base === "sed") {
+      sawRead = true;
+      continue;
+    }
     if (MUTATING.test(base)) return "mutate";
     if (base === "git" && MUTATING_GIT.test(stage)) return "mutate";
     if (MUTATING_PKG.test(`${base} ${rest[0] ?? ""}`)) return "mutate";
@@ -1406,13 +1664,41 @@ async function mine(hours) {
   const tasks = [];
   const rejected = {};
   const nearMisses = [];
+  // Each widening attempt re-scans from scratch, so the audit trail is the
+  // final attempt's, not the union of every attempt's.
+  exclusionLog.bySession = [];
+  exclusionLog.bySubject = [];
+  const seenExcluded = new Map();
   for (const file of files) {
     for (const seg of await segmentsOf(file)) {
       const startedMs = Date.parse(seg.startedAt ?? "");
       if (!Number.isFinite(startedMs) || startedMs < sinceMs) continue;
+      // Session exclusion happens before evaluation, not after selection: an
+      // excluded sitting should not even be verified, let alone ranked.
+      if (EXCLUDE_SESSIONS.has(seg.sessionId)) {
+        rejected["excluded session"] = (rejected["excluded session"] ?? 0) + 1;
+        seenExcluded.set(seg.sessionId, (seenExcluded.get(seg.sessionId) ?? 0) + 1);
+        continue;
+      }
       const verdict = evaluate(seg);
-      if (verdict.task) tasks.push(verdict.task);
-      else {
+      if (verdict.task) {
+        const overlap = strongestSubjectOverlap(verdict.task);
+        if (overlap && overlap.overlap >= SUBJECT_OVERLAP) {
+          rejected["excluded subject (same files, same repo)"] =
+            (rejected["excluded subject (same files, same repo)"] ?? 0) + 1;
+          exclusionLog.bySubject.push({
+            session: verdict.task.sessionId,
+            askedAt: verdict.task.startedAt,
+            root: verdict.task.root,
+            clashesWith: overlap.task,
+            anchorFileOverlap: overlap.overlap,
+            sharedFiles: overlap.shared.slice(0, 8),
+          });
+          continue;
+        }
+        verdict.task.subjectOverlap = overlap;
+        tasks.push(verdict.task);
+      } else {
         rejected[verdict.reject] = (rejected[verdict.reject] ?? 0) + 1;
         // A segment that got as far as fact extraction is the interesting kind
         // of rejection: it says where the bar actually bit.
@@ -1420,6 +1706,9 @@ async function mine(hours) {
       }
     }
   }
+  exclusionLog.bySession = [...seenExcluded]
+    .map(([session, segments]) => ({ session, segmentsDropped: segments }))
+    .sort((a, b) => b.segmentsDropped - a.segmentsDropped);
   tasks.sort((a, b) => b.score - a.score);
   return { hours, files: files.length, tasks, rejected, nearMisses };
 }
@@ -1511,6 +1800,29 @@ const meta = {
     : `past ${hours}h`,
 };
 
+if (EXCLUSIONS_ACTIVE) {
+  process.stdout.write(
+    `# mine-explore-tasks: disjointness on (--disjoint-by ${DISJOINT_BY}) — ` +
+      `${EXCLUDE_SESSIONS.size} excluded session(s)` +
+      `${excluded ? `, subjects from ${excluded.files.length} task file(s) in ${excluded.dir}` : ""}\n`
+  );
+  if (SHARED_SESSIONS.size) {
+    process.stdout.write(
+      `#  — ${SHARED_SESSIONS.size} suite sitting(s) left in the pool; the anchor-file ` +
+        "subject test is the only disjointness gate\n"
+    );
+  }
+  for (const s of exclusionLog.bySession) {
+    process.stdout.write(`#  — excluded session ${s.session} (${s.segmentsDropped} segment(s) dropped)\n`);
+  }
+  for (const s of exclusionLog.bySubject) {
+    process.stdout.write(
+      `#  — excluded subject: ${s.root.replace(homedir(), "~")} overlaps ${s.clashesWith} ` +
+        `at ${Math.round(s.anchorFileOverlap * 100)}% of its anchor files\n`
+    );
+  }
+}
+
 process.stdout.write(
   `# mine-explore-tasks: scanned ${files} transcript(s) over ${hours}h → ` +
     `${tasks.length} explore-class task(s), writing ${selected.length} from ` +
@@ -1542,11 +1854,70 @@ selected.forEach((task, i) => {
   writeFileSync(join(OUT_DIR, `${i + 1}.md`), renderTask(task, i + 1, meta), "utf-8");
 });
 
+/**
+ * Disclosure block, present only when this run was mined under an opt-in flag.
+ * A default run's record is byte-for-byte the shape it always had; a run that
+ * excluded a suite or widened the read classifier says so, in the record, next
+ * to the suite it produced.
+ */
+const provenance = {};
+if (EXCLUSIONS_ACTIVE) {
+  provenance.disjointFrom = {
+    mode: DISJOINT_BY,
+    excludeTasksDir: excluded ? excluded.dir : null,
+    excludedTaskFiles: excluded ? excluded.files : [],
+    excludedSessions: [...EXCLUDE_SESSIONS].sort(),
+    subjectTest: excluded
+      ? `a candidate is dropped when ≥${SUBJECT_OVERLAP * 100}% of the files its required ` +
+        "facts anchor on are also anchor files of an excluded task in the same root"
+      : "not applied (no --exclude-tasks)",
+    sessionsSeenAndDropped: exclusionLog.bySession,
+    droppedForSubjectOverlap: exclusionLog.bySubject,
+    // The negative half of the same test. Under `--disjoint-by subject` the
+    // excluded suite's sittings stay in the pool, so every written task carries
+    // its strongest measured overlap against that suite — a number a reader can
+    // recompute from both suites' checklists, rather than a claim resting on an
+    // empty result set.
+    sharedSessionsNotExcluded: [...SHARED_SESSIONS].sort(),
+    keptFromSharedSession: selected
+      .map((task, i) => ({
+        file: `${i + 1}.md`,
+        root: task.root,
+        session: task.sessionId,
+        fromSharedSession: SHARED_SESSIONS.has(task.sessionId),
+        anchorFiles: task.subjectOverlap?.anchorFiles ?? null,
+        strongestOverlapWith: task.subjectOverlap?.task ?? null,
+        anchorFileOverlap: task.subjectOverlap?.overlap ?? null,
+        sharedFiles: task.subjectOverlap?.shared?.slice(0, 8) ?? [],
+      }))
+      .filter((row) => row.strongestOverlapWith !== null),
+  };
+}
+if (HOST_READ_IDIOMS) {
+  provenance.hostReadIdioms = {
+    enabled: true,
+    changes: [
+      "`rtk proxy <verb>` unwrapped to <verb> (the two-word raw escape hatch)",
+      "`sed` without -i and without a redirect counted as a read (paging a file)",
+      "bare `export` skipped as a no-op stage prefix, like `cd`",
+      "`>/dev/null` not counted as a redirect (a discard is not a write)",
+    ],
+    unchanged:
+      "fact verification, all thresholds, and the criterion-2/3 rejection of a " +
+      "task whose own native answer fails the rubric",
+  };
+}
+
 writeFileSync(
-  join(OUT_DIR, "mining-run.json"),
+  join(OUT_DIR, RUN_JSON),
   `${JSON.stringify(
     {
       minedAt: meta.minedAt,
+      // The record's own reproduction command. `windowAttempts` alone cannot be
+      // read backwards into a command: the ladder is a flag, so a run that
+      // stopped at 336h either found its floor or ran out of rungs.
+      argv: args,
+      windowLadder: [HOURS, ...WIDE_HOURS.filter((h) => h > HOURS)],
       windowHours: hours,
       windowAttempts: attempts,
       widenedBecause: widened
@@ -1556,6 +1927,7 @@ writeFileSync(
       transcriptsScanned: files,
       candidatesFound: tasks.length,
       written: selected.length,
+      ...provenance,
       diversity: {
         sessions: suite.sessions,
         repos: suite.roots,
@@ -1599,5 +1971,13 @@ writeFileSync(
   "utf-8"
 );
 
-process.stdout.write(`# mine-explore-tasks: wrote ${selected.length} task file(s) to ${OUT_DIR}\n`);
+process.stdout.write(
+  `# mine-explore-tasks: wrote ${selected.length} task file(s) and ${RUN_JSON} to ${OUT_DIR}\n`
+);
+if (selected.length < MIN_TASKS) {
+  process.stdout.write(
+    `# mine-explore-tasks: ${selected.length} of the ${MIN_TASKS}-task floor — the run record says what was ` +
+      "scanned and what was excluded; exit 1\n"
+  );
+}
 process.exit(selected.length >= MIN_TASKS ? 0 : 1);

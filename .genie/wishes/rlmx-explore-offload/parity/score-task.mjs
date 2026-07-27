@@ -14,7 +14,20 @@
  * anchor file and whether it carries the term the fact was anchored on. The
  * scorer reads those signals plus the answer and decides.
  *
- *   node score-task.mjs <runJsonPath|--native> <taskNumber>
+ *   node score-task.mjs <runJsonPath|--native> <taskNumber> [--tasks-dir <dir>]
+ *
+ * `--tasks-dir` defaults to the frozen eval suite, `<wish>/tasks`, so behaviour
+ * without the flag is unchanged. **Nothing about the rubric or the conventions
+ * moves with it** — this argument only says which task file the checklist and
+ * root are read from.
+ *
+ * It was added with the guard below rather than on its own. `run-task.mjs` grew
+ * a `--tasks-dir` so round 2's training suite could be driven at all; the
+ * moment that existed, a training run could be handed to a scorer that reads
+ * `<wish>/tasks/<n>.md` unconditionally, and would then be scored against the
+ * *frozen eval task of the same number* — a wrong number that looks exactly
+ * like a right one. So a run JSON that records its own `tasksDir` must agree
+ * with the directory being scored, and the scorer refuses when it does not.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -24,13 +37,52 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const wishDir = resolve(__dirname, "..");
 
-const [source, taskArg] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const tdAt = argv.indexOf("--tasks-dir");
+const tasksDirArg = tdAt >= 0 ? argv[tdAt + 1] : null;
+if (tdAt >= 0) {
+  if (!tasksDirArg) {
+    console.error("--tasks-dir requires a directory");
+    process.exit(2);
+  }
+  argv.splice(tdAt, 2);
+}
+const [source, taskArg] = argv;
 if (!source || !taskArg) {
-  console.error("usage: score-task.mjs <runJsonPath|--native> <taskNumber>");
+  console.error("usage: score-task.mjs <runJsonPath|--native> <taskNumber> [--tasks-dir <dir>]");
   process.exit(2);
 }
 
-const taskFile = join(wishDir, "tasks", `${taskArg}.md`);
+const tasksDir = tasksDirArg ? resolve(tasksDirArg) : join(wishDir, "tasks");
+const taskFile = join(tasksDir, `${taskArg}.md`);
+if (!existsSync(taskFile)) {
+  console.error(`task ${taskArg}: no such file ${taskFile}`);
+  process.exit(2);
+}
+
+/**
+ * A run records the suite it came from; refuse to score it against another.
+ * Silently scoring a training run against the frozen eval task of the same
+ * number produces a plausible-looking number for a comparison nobody made.
+ * Runs recorded before `run-task.mjs` carried `tasksDir` have no such field and
+ * are scored as before.
+ */
+if (source !== "--native") {
+  const runPath = isAbsolute(source) ? source : resolve(source);
+  if (existsSync(runPath)) {
+    const recorded = JSON.parse(readFileSync(runPath, "utf-8"))?.tasksDir;
+    if (recorded && resolve(recorded) !== tasksDir) {
+      console.error(
+        `suite mismatch: ${runPath}\n` +
+          `  the run was produced from ${recorded}\n` +
+          `  but this scorer was pointed at ${tasksDir}\n` +
+          `  pass --tasks-dir ${recorded} — scoring a run against another suite's task file is a wrong number, not a comparison.`
+      );
+      process.exit(2);
+    }
+  }
+}
+
 const taskText = readFileSync(taskFile, "utf-8");
 const root = /\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|/.exec(taskText)[1];
 
