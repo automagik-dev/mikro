@@ -176,7 +176,7 @@ and drive with a canned `IterationDriver`. See
 
 ## Production reference — `khal-os/brain`
 
-The `examples/brain-triage/` directory in this repo demonstrates the
+The `examples/agents/brain-triage/` directory in this repo demonstrates the
 Python-plugin pattern in minimal form. For a full production
 implementation of the pattern across three bridged agents, see
 `khal-os/brain`:

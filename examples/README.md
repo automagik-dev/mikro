@@ -1,6 +1,21 @@
 # rlmx Examples
 
-Example `rlmx.yaml` configurations for different use cases.
+Two different kinds of thing live here, and they install in different places.
+
+**[`agents/`](agents/) — `agent.yaml` microagent recipes.** Every microagent
+this repo ships is in that one tree: `explore`, `explore-r`, `codebase-qa`,
+`changelog`, `log-triage`, `hello-world`, `research-agent`, `brain-triage`.
+Copy one into a discovery root (`<project>/.rlmx/agents/<name>/` or
+`~/.rlmx/agents/<name>/`) and `rlmx mcp` exposes it as an `rlmx_<name>` tool.
+Start at [`agents/README.md`](agents/README.md).
+
+**Everything below — `rlmx.yaml` configurations** for different use cases.
+These configure a whole `rlmx "query" --context …` run; they are not
+microagents and do not belong in a discovery root.
+
+> `codebase-qa` exists in both senses, and they are different artifacts:
+> [`codebase-qa/`](codebase-qa/) is the config below,
+> [`agents/codebase-qa/`](agents/codebase-qa/) is the microagent.
 
 ## Tauri Docs
 

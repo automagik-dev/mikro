@@ -6,7 +6,7 @@ import { createToolRegistry, loadAgentSpec, loadPluginTools, runAgent, } from ".
 // tests/ compiles to dist/tests/. From there the examples/ root sits
 // two levels up; resolve once here for every test in this file.
 const testDir = dirname(fileURLToPath(import.meta.url));
-const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "hello-world");
+const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "agents", "hello-world");
 async function drain(stream) {
     const out = [];
     for await (const ev of stream)

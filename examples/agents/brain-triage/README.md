@@ -6,7 +6,7 @@ into the SDK's tool registry, with the same folder shape brain's
 real agents use.
 
 ```
-examples/brain-triage/
+examples/agents/brain-triage/
 ├── agent.yaml           # tools: [search_corpus], shape: single-step
 ├── SYSTEM.md            # role + output schema hint
 ├── tools/
@@ -29,7 +29,7 @@ json.dump(result, sys.stdout)   # { query, hits: [...] }
 Run it standalone to verify (requires `python3`):
 
 ```bash
-echo '{"query":"carol divorcio", "limit":2}' | python3 examples/brain-triage/tools/search_corpus.py
+echo '{"query":"carol divorcio", "limit":2}' | python3 examples/agents/brain-triage/tools/search_corpus.py
 ```
 
 ## Wiring — hermetic
@@ -38,7 +38,7 @@ echo '{"query":"carol divorcio", "limit":2}' | python3 examples/brain-triage/too
 import { join } from "node:path";
 import { sdk } from "@automagik/rlmx";
 
-const dir = join(import.meta.dir, "..", "examples", "brain-triage");
+const dir = join(import.meta.dir, "..", "examples", "agents", "brain-triage");
 const spec = await sdk.loadAgentSpec(dir);
 
 const registry = sdk.createToolRegistry();

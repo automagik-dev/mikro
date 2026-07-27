@@ -4,7 +4,7 @@ The absolute minimum rlmx agent: one TS tool, one iteration, one
 greeting. Proof-of-life for the SDK plumbing.
 
 ```
-examples/hello-world/
+examples/agents/hello-world/
 ├── agent.yaml           # declares the `greet` tool
 ├── SYSTEM.md            # system prompt pointer
 ├── tools/
@@ -18,7 +18,7 @@ examples/hello-world/
 import { join } from "node:path";
 import { sdk } from "@automagik/rlmx";
 
-const here = join(import.meta.dir, "..", "examples", "hello-world");
+const here = join(import.meta.dir, "..", "examples", "agents", "hello-world");
 
 const spec = await sdk.loadAgentSpec(here);
 const registry = sdk.createToolRegistry();

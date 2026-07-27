@@ -117,6 +117,26 @@ release is the git commit on `main`. See `docs/release-contract.md`.
     answers "Unknown tool" while its orphaned sessions are evicted.
   - `rlmx_query` participates fully (prompt, session_id, resume) and keeps its
     `model` override.
+- **`.proposed` is now a reserved agent-directory suffix, and discovery skips
+  it silently.** `discoverAgents` ignores any directory under an agent root
+  whose name ends `.proposed`, matched **case-insensitively** (`X.Proposed` is
+  skipped like `x.proposed`). This changes discovery for **every** `rlmx mcp`
+  user, not only plugin users.
+  - The skip is applied before the spec is parsed and before the tool list is
+    built, and `tools/call` dispatches from that same scan, so a draft is
+    **neither listed nor callable** — calling it by its would-be name answers
+    `Unknown tool: rlmx_<name>_proposed`. Renaming the directory publishes it
+    on the next request, live, with no reconnect; renaming it back withdraws
+    it just as fast.
+  - It exists so `/rlmx:microagent-create` can write a draft agent to disk
+    without that agent becoming callable. The rename is the approval step, and
+    it only means something if an un-renamed draft can do nothing at all.
+  - **The cost, stated because the error surface is silence:** an agent you
+    legitimately wanted to name `foo.proposed` loads fine on its own and simply
+    never appears — no warning, no log line. If an agent you wrote is missing
+    from `tools/list`, check its directory name for the suffix first. Reserved
+    in every casing. Documented in `docs/agent-yaml-schema.md`,
+    `plugins/claude-code/README.md`, and the skill.
 - **`rlmx mcp --dir <path>`** chdirs to a validated directory before starting,
   making agent discovery, `loadConfig`, relative `context` paths, and the REPL's
   working directory agree on one root instead of on wherever the host happened
@@ -177,6 +197,111 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   is content-anchored, so a claim whose code moved is re-anchored to where it
   lives today and one whose symbols are gone is excluded from scoring. Every
   verbatim excerpt is redacted for credentials on the way out.
+
+### plugin
+
+- **`plugins/claude-code/`** — rlmx as a Claude Code plugin. One copy-paste
+  installs it from a clone, with no npm in the path:
+
+  ```bash
+  claude plugin marketplace add ~/.rlmx/rlmx && claude plugin install rlmx@rlmx
+  ```
+
+  The clone is the marketplace (`.claude-plugin/marketplace.json` at the
+  repository root, plugin entry `./plugins/claude-code`), which is why no
+  second repository and no registry is involved.
+  - The bundled MCP registration is `rlmx mcp --dir ${CLAUDE_PROJECT_DIR}`, so
+    the server's working directory is the project you have open rather than
+    whatever directory the host spawned it from. Agent discovery, `loadConfig`,
+    relative `context` arguments and the REPL cwd then all agree on one root
+    (`src/cli.ts:1039-1054`). A workspace with `.rlmx/agents/explore-r/` gets
+    `rlmx_explore-r` without a per-project `claude mcp add`.
+  - Plugin tools are namespaced `mcp__plugin_rlmx_rlmx__<tool>`, distinct from
+    a bare `claude mcp add rlmx` registration's `mcp__rlmx__<tool>`. Both can
+    coexist.
+  - `rlmx` must be on `PATH`: installed plugins are copied into
+    `~/.claude/plugins/cache` and cannot reference files outside their own
+    directory, so the plugin cannot point at a `dist/` inside the clone it
+    shipped from. `scripts/install.sh` linking `~/.local/bin/rlmx` is what
+    makes it resolve.
+  - **Two bundled skills, both with content.** Neither loads until its trigger
+    fires, so an idle session pays only for their two description lines.
+    - **`/rlmx:offload-guidance`** — a routing rule. An explore-class question
+      about a repository not already in context goes to `rlmx_explore-r`
+      *before* Grep/Glob/Read and before an Explore subagent; its citations are
+      leads to verify, not findings. Carries the three escalation triggers
+      taken from measured failure modes rather than invented heuristics —
+      citations that do not resolve, an errored or timed-out run, and work
+      where completeness outranks cost — plus the call shape and `session_id`
+      resume.
+    - **`/rlmx:microagent-create`** — propose-only. Streams this host's
+      last-24h Claude Code transcripts through a bundled scanner
+      (`scan-transcripts.mjs`, which labels MEASURED usage-block counts apart
+      from ~ESTIMATED character-derived ones and never blurs them), ranks
+      recurring work into offload families by the context each returns, picks
+      at most one candidate against five stated rules — proposing nothing when
+      none clears them — and writes a draft `agent.yaml` + `SYSTEM.md` +
+      `EVIDENCE.md` into `.rlmx/agents/<name>.proposed/`. Then it stops and
+      hands the user the `mv`. It cannot activate anything; see the
+      `.proposed` reserved suffix under **MCP**.
+  - Positioning is unchanged by this entry: the explore parity gate's
+    `Gate: FAIL` stands. The plugin ships `explore-r` as a **first-pass**
+    explorer under the design's Amendment 2026-07-27, and
+    `plugins/claude-code/README.md` carries the report's own scoping —
+    out-of-sample coverage 0.714 against 0.853–0.912 in-sample, zero fabricated
+    citations **in the frozen configuration only** (earlier rounds fabricated),
+    and 1,077× aggregate premium-token reduction for $0.22 in that same frozen
+    configuration — not round 1's 921×/$0.14, which is a different, non-shipping
+    configuration. No parity claim is made anywhere in the plugin.
+
+### docs
+
+- **`docs/worker-models.md`** — which model to run a microagent on, with the
+  round-2 evidence consolidated into one table and each number's scope attached
+  to it. The default stays **`khal/deepseek-v4-flash`**, and the page says why
+  in the only terms the evidence supports: it is 8.7×–18.8× cheaper per round
+  than every arm measured and it finished every run, **not** that it was
+  measured as the most accurate — flash's published 32/34 failed to reproduce
+  (three live task-4 replicates scored 3/6, 5/6, 4/6 against 6/6) and the arm is
+  corrected to **29–31/34**, which puts its margin over `qwen3.7-max` at +1..+3,
+  inside the ±3-fact run-to-run spread measured on flash itself. Carries per-arm
+  catalog pricing, UTC run dates, the n=1 noise caveat, and the standing
+  scoping: out-of-sample coverage **0.714** against **0.853–0.912** in-sample,
+  zero fabricated citations **in the frozen configuration only** (earlier rounds
+  fabricated), **1,077×** premium-token reduction for **$0.22** in that same
+  configuration, four generations evaluated and a fifth rejected, and the
+  recursion product fixes at commit **`6ec4822`**.
+- **A `station/<model>` arm on the training suite, n = 2, marked
+  not-rank-comparable.** Records under
+  `parity/round2/optimizer/station-arm/`, run with the same recipe, suite and
+  scorer as the four khal arms, `--concurrency 1` because one local gateway
+  cannot host two tasks' worth of streams. Two replicates buy feasibility, a $0
+  cost figure and a replicate spread on one model — **not** a rank against the
+  n=1 cloud arms, and the row says so. It ran on `station/qwen3.5-2b-FLM`
+  because that was **the only station model that would serve on this host that
+  day**: five larger candidates were tried first and every one failed to load,
+  one of them wedging the gateway's loader for ~31 minutes. A 2 B model is
+  below the capability floor this recipe was written for, so the arm's coverage
+  number is a floor for the station provider and not an estimate of it — the
+  arm's README and the docs page both say so, and the run is re-runnable
+  against a larger model with one flag.
+- **`examples/agents/` is now the single microagent recipe tree.** The flat
+  `examples/hello-world/`, `examples/research-agent/` and
+  `examples/brain-triage/` entries moved under it (their tests moved with
+  them), so one tree holds every `agent.yaml` recipe and `examples/` holds only
+  `rlmx.yaml` configuration examples. New
+  [`examples/agents/README.md`](examples/agents/README.md) indexes them with
+  what gates each one — including the three that nothing gates.
+- **Three legacy agents archived as recipes** — `changelog`, `codebase-qa` and
+  `log-triage`, copied byte-for-byte out of this host's `~/.rlmx/agents/`
+  (sha256 in each README) and verified to load through `loadAgentSpec` by
+  `tests/examples-agents-recipes.test.ts`, which also pins every recipe in the
+  tree to load. **`codebase-qa` is kept deliberately**: "`explore-r` replaces
+  it" is positioning, not a result — the explore gate scored 0 of 6 tasks
+  against a bar of 5 of 6 in both rounds, and no run anywhere in this
+  repository compares the two. The **host-side removal is a documented user
+  step and this change never performs it**; nothing in rlmx deletes a file from
+  your home directory.
 
 ## [0.260725.1] — 2026-07-25
 

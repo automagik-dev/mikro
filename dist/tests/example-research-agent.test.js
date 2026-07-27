@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createToolRegistry, loadAgentSpec, loadPluginTools, parseValidateMd, registerRtkTool, runAgent, } from "../src/sdk/index.js";
 const testDir = dirname(fileURLToPath(import.meta.url));
-const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "research-agent");
+const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "agents", "research-agent");
 async function drain(stream) {
     const out = [];
     for await (const ev of stream)

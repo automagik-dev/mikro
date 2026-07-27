@@ -9,7 +9,7 @@ Multi-tool agent that demonstrates the full Wish B feature set:
 - **Session checkpointing** persists history across iterations.
 
 ```
-examples/research-agent/
+examples/agents/research-agent/
 ├── agent.yaml           # tools: [fetch-url, rtk]
 ├── SYSTEM.md            # agent role + instructions
 ├── VALIDATE.md          # JSON schema fence the validator enforces
@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { sdk } from "@automagik/rlmx";
 
-const dir = join(import.meta.dir, "..", "examples", "research-agent");
+const dir = join(import.meta.dir, "..", "examples", "agents", "research-agent");
 const spec = await sdk.loadAgentSpec(dir);
 
 const registry = sdk.createToolRegistry();
