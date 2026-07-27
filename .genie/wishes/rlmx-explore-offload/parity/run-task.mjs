@@ -54,7 +54,8 @@ const installed = join(home, ".rlmx", "agents", "explore");
 mkdirSync(installed, { recursive: true });
 cpSync(join(recipe, "SYSTEM.md"), join(installed, "SYSTEM.md"));
 const yaml = readFileSync(join(recipe, "agent.yaml"), "utf-8");
-writeFileSync(join(installed, "agent.yaml"), yaml.replace(/^model:.*$/m, `model: ${model}`), "utf-8");
+const installedYaml = yaml.replace(/^model:.*$/m, `model: ${model}`);
+writeFileSync(join(installed, "agent.yaml"), installedYaml, "utf-8");
 
 /**
  * Provenance the run cannot be re-derived without (added after the gate; rounds
@@ -87,7 +88,8 @@ const provenance = {
   promptSha256: promptDigest,
   promptChars: systemText.length,
   promptSnapshot: `parity/prompts/${promptDigest}.md`,
-  agentYamlSha256: sha(yaml),
+  // Digest of the installed (model-rewritten) agent.yaml — the file that ran.
+  agentYamlSha256: sha(installedYaml),
   rootGit: gitState(root),
   rlmxGit: gitState(repo),
 };

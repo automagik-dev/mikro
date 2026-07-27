@@ -32,9 +32,20 @@ for n in "${tasks[@]}"; do
   pids+=($!)
   while [ "$(jobs -rp | wc -l)" -ge "${PARITY_CONCURRENCY:-3}" ]; do sleep 5; done
 done
-wait
+# Bare `wait` exits 0 whatever the children did, so a round of timeouts, expired
+# credentials or failed tasks read as a clean round. Wait on each collected pid
+# instead and aggregate: a round is only successful if every task was.
+failed=()
+for i in "${!pids[@]}"; do
+  if ! wait "${pids[$i]}"; then failed+=("${tasks[$i]}"); fi
+done
 
 echo "== round $round ($model) =="
 for n in "${tasks[@]}"; do
   tail -2 "$logs/task-$n.log" | head -1
 done
+
+if [ ${#failed[@]} -gt 0 ]; then
+  echo "round $round FAILED: task(s) ${failed[*]} (logs in $logs)" >&2
+  exit 1
+fi

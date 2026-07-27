@@ -57,9 +57,14 @@ export interface AgentScan {
  * drift apart. The first refresh only seeds the baseline — it never reports a
  * change, or every connect would emit a spurious `list_changed`.
  *
- * `changed` is computed and the baseline updated in the same synchronous step,
- * so two concurrent requests that both observe a new agent still report the
- * change exactly once.
+ * Refreshes are serialized through a promise chain: a refresh does not call
+ * `scan` until every earlier refresh has finished updating the baseline. That
+ * is the actual guarantee — not merely that the diff and the baseline update
+ * share a synchronous step, but that scans cannot complete out of order. Two
+ * concurrent requests observing one new agent therefore report the change
+ * exactly once, and a scan that started earlier can never overwrite the
+ * baseline with its older tool set (which would report a live agent as
+ * `removed`, evict its sessions, and then re-announce it on the next refresh).
  */
 export declare function createAgentRegistry(scan: () => Promise<readonly Microagent[]>): {
     refresh: () => Promise<AgentScan>;

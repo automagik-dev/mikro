@@ -254,6 +254,53 @@ describe("createAgentRegistry", () => {
         const [a, b] = await Promise.all([registry.refresh(), registry.refresh()]);
         assert.equal([a.changed, b.changed].filter(Boolean).length, 1, "two requests racing on one change must emit list_changed once");
     });
+    /**
+     * Out-of-order scan completion. Two refreshes race; the later-started scan's
+     * continuation runs first. Unserialized, the earlier scan then overwrites the
+     * baseline with its older tool set: a live agent is reported `removed` (its
+     * sessions get evicted) and re-announced as added on the next refresh. Driven
+     * deterministically here — `scan` hands out deferreds and the driver resolves
+     * the newest pending one first, so nothing depends on timing.
+     */
+    it("never reports a false removal when scans complete out of order", async () => {
+        const triage = fakeAgent("triage");
+        const explore = fakeAgent("explore");
+        // Per scan call, in call order: the seed, then a stale [triage] alongside
+        // the fresh [triage, explore] that must win, then the settled set.
+        const byCall = [[triage], [triage], [triage, explore], [triage, explore]];
+        let calls = 0;
+        const pending = [];
+        const registry = createAgentRegistry(() => new Promise((resolve) => {
+            const value = byCall[Math.min(calls++, byCall.length - 1)];
+            pending.push(() => resolve(value));
+        }));
+        /** Settle `p`, releasing pending scans newest-first (i.e. out of order). */
+        async function drive(p) {
+            let done = false;
+            const tracked = p.then((v) => {
+                done = true;
+                return v;
+            }, (e) => {
+                done = true;
+                throw e;
+            });
+            for (let i = 0; !done; i++) {
+                assert.ok(i < 100, "refresh never settled");
+                await new Promise((r) => setImmediate(r));
+                pending.pop()?.();
+            }
+            return tracked;
+        }
+        await drive(registry.refresh());
+        const [a, b] = await drive(Promise.all([registry.refresh(), registry.refresh()]));
+        const after = await drive(registry.refresh());
+        for (const scan of [a, b, after]) {
+            assert.deepEqual(scan.removed, [], "a live agent must never be reported removed");
+        }
+        assert.equal([a, b].filter((s) => s.changed).length, 1, "the added agent must be reported exactly once");
+        assert.equal(after.changed, false, "no duplicate re-announcement on the next refresh");
+        assert.ok(after.byToolName.has("rlmx_explore"), "the newest scan must win the baseline");
+    });
 });
 /**
  * Session seam. Sessions are advisory — losing one costs a fresh start, never

@@ -178,30 +178,42 @@ function buildToolList(agents) {
  * drift apart. The first refresh only seeds the baseline — it never reports a
  * change, or every connect would emit a spurious `list_changed`.
  *
- * `changed` is computed and the baseline updated in the same synchronous step,
- * so two concurrent requests that both observe a new agent still report the
- * change exactly once.
+ * Refreshes are serialized through a promise chain: a refresh does not call
+ * `scan` until every earlier refresh has finished updating the baseline. That
+ * is the actual guarantee — not merely that the diff and the baseline update
+ * share a synchronous step, but that scans cannot complete out of order. Two
+ * concurrent requests observing one new agent therefore report the change
+ * exactly once, and a scan that started earlier can never overwrite the
+ * baseline with its older tool set (which would report a live agent as
+ * `removed`, evict its sessions, and then re-announce it on the next refresh).
  */
 export function createAgentRegistry(scan) {
     let previous;
+    /** Tail of the serialization chain; never rejects, so one failure can't wedge it. */
+    let queue = Promise.resolve();
+    async function scanAndApply() {
+        const agents = await scan();
+        const byToolName = new Map(agents.map((a) => [a.toolName, a]));
+        const current = new Set(byToolName.keys());
+        const baseline = previous;
+        previous = current;
+        if (!baseline) {
+            return { agents, byToolName, changed: false, removed: [] };
+        }
+        const removed = [...baseline].filter((name) => !current.has(name));
+        const added = [...current].filter((name) => !baseline.has(name));
+        return {
+            agents,
+            byToolName,
+            changed: removed.length > 0 || added.length > 0,
+            removed,
+        };
+    }
     return {
-        async refresh() {
-            const agents = await scan();
-            const byToolName = new Map(agents.map((a) => [a.toolName, a]));
-            const current = new Set(byToolName.keys());
-            const baseline = previous;
-            previous = current;
-            if (!baseline) {
-                return { agents, byToolName, changed: false, removed: [] };
-            }
-            const removed = [...baseline].filter((name) => !current.has(name));
-            const added = [...current].filter((name) => !baseline.has(name));
-            return {
-                agents,
-                byToolName,
-                changed: removed.length > 0 || added.length > 0,
-                removed,
-            };
+        refresh() {
+            const next = queue.then(scanAndApply);
+            queue = next.then(() => undefined, () => undefined);
+            return next;
         },
     };
 }
