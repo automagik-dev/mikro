@@ -26,11 +26,14 @@ covers the program; it pours as two sequenced wishes:
 
 - **Wish A — `rlmx-explore-offload`**: khal provider, MCP live refresh
   (list *and* call path), the `explore` microagent, the explore parity loop.
-  Ships when the parity gate passes.
+  Ships when the parity gate passes. *(Historical: the gate FAILED twice —
+  round 1 loop-shaped, round 2 recursive + GEPA-optimized + pre-registered
+  shot; see Amendment 2026-07-27. Wish A's engineering shipped in PR #119.)*
 - **Wish B — `rlmx-microagent-plugin`**: Claude Code plugin packaging,
   offload-guidance skill + routing criterion, `/microagent-create`
   (propose-only), the khal model shootout, legacy-agent archival.
-  Depends on Wish A.
+  Depends on Wish A. *(Reframed by Amendment 2026-07-27: first-pass +
+  escalate positioning replaces the parity-gate dependence.)*
 
 ## Scope
 
@@ -164,7 +167,9 @@ covers the program; it pours as two sequenced wishes:
     (flash → mimo-v2.5 → kimi-code → claude-haiku) and continue; if the
     suite cannot pass even on claude-haiku, stop, report the parity result
     honestly, and Wish B does not start — the thesis is falsified for the
-    explore class rather than shipped anyway.
+    explore class rather than shipped anyway. *(Historical: this branch
+    executed — twice. Wish B now proceeds under Amendment 2026-07-27's
+    first-pass reframe, by user decision, not because the gate passed.)*
   - **Token accounting (reported, not gated):** premium-tokens-per-task =
     native arm: total input+cacheRead+output of the Explore subagent's
     turns from its transcript; rlmx arm: the main session's delta for the
@@ -182,14 +187,18 @@ covers the program; it pours as two sequenced wishes:
   transcripts + token-optimizer session data, writes a draft `agent.yaml` +
   `SYSTEM.md` + an evidence file (token burn that motivates the agent), and
   stops for user approval. Creates nothing unapproved.
-- **khal model shootout** on the frozen mined suite extended to **≥10 real
+- **khal model shootout** *(SUPERSEDED by Amendment 2026-07-27 — no parity
+  model exists to key off, and no new frozen-suite runs happen; the
+  amended B2 replaces this item: round-2 matrix evidence + a station-local
+  arm at n=2 + a consolidated table with noise caveats.)* Original text:
+  on the frozen mined suite extended to **≥10 real
   tasks** (the ≥5 parity tasks plus additional mined explore/triage-class
   tasks): 6 khal arms (deepseek-v4-flash, mimo-v2.5, minimax-m3, kimi-code,
   glm-5.2, claude-haiku as quality reference) + station local as arm 0.
   Score correctness (same rubric), wall-time, and cost per task. The winner
-  becomes the plugin's default worker model. **If the winner differs from
+  becomes the plugin's default worker model. If the winner differs from
   the parity model, the parity suite is re-run once on the winner before it
-  becomes default** (resolves the tune-vs-choose circularity, M9); if the
+  becomes default (resolves the tune-vs-choose circularity, M9); if the
   winner fails that re-run, the parity-proven model stays default and the
   result is recorded in the shootout table.
 - **Legacy agent archival (unconditional):** all three ad-hoc globals move
@@ -209,15 +218,20 @@ covers the program; it pours as two sequenced wishes:
   here is a separate lightweight bench whose only output is the plugin's
   default worker model.
 - review-lite / git-historian microagents — first `/microagent-create`
-  proposal candidates *after* explore reaches parity, not built here.
+  proposal candidates once explore ships in its first-pass role
+  (*originally "after explore reaches parity" — that condition is
+  permanently unsatisfiable per Amendment 2026-07-27; B4's candidate
+  expectation is unchanged*), not built here.
 - Replacing genie: the plugin offloads worker lanes; genie stays orchestrator.
 - LiteLLM management-API integration (virtual keys, team routing) — later.
 - fs-watcher-based agent discovery — re-scan-on-request suffices.
 
 ## Approach
 
-**Plugin-in-repo, explore-first, parity-gated, two wishes.** Wish A builds the
-thinnest vertical slice that proves the offload thesis end to end: khal
+**Plugin-in-repo, explore-first, parity-gated, two wishes.** *(Historical:
+the parity gate ran and failed twice; "proves" below became "measured
+honestly" — see Amendment 2026-07-27.)* Wish A builds the
+thinnest vertical slice that tests the offload thesis end to end: khal
 provider → live refresh (list + call) → one excellent workspace microagent →
 measured parity against native Explore on real mined tasks. Wish B packages
 it for adoption: plugin, routing guidance (with its own measured criterion),
@@ -323,15 +337,66 @@ harness consumes the MCP tool surface. Each is independently testable.
   longer contains them; `changelog` + `log-triage` live on as documented
   recipes under `examples/agents/`; `explore` covers `codebase-qa`'s role.
 
+## Amendment 2026-07-27 — Wish B reframe (post-gate, user decision)
+
+Wish A shipped (PR #119) but its parity gate **FAILED twice**: round 1
+(loop-shaped explore, 16 rounds, 4 model tiers, 0/6) and round 2 (recursive
+`explore-r` after 3 recursion product-bug fixes, 5-generation GEPA-style
+prompt optimization on a sealed train/eval split, model matrix, and a
+pre-registered adversarially re-scored frozen shot — 0/6 at the ≥90% bar,
+yet 215/215 citations resolving, 0 fabrications, 1,077× premium-token
+reduction at $0.22). Full record: `docs/parity-explore.md`.
+
+The user's decision (2026-07-27, after both falsifications): **Wish B
+proceeds with first-pass + escalate positioning.** Consequences, replacing
+the original gate-dependence:
+
+- **Positioning:** `explore-r` ships as the *cheap first pass*. In its
+  **frozen final configuration** it cites nothing it cannot resolve —
+  215/215 citations, zero fabrications, across the six-task shot (earlier
+  campaign rounds fabricated heavily; the verification block is what fixed
+  it, which is itself part of the story). Coverage, scoped as the report
+  scopes it: **0.714 out-of-sample** (the sealed holdout, run once, never
+  fed back), 0.853–0.912 in-sample on the fitness set, and on the frozen
+  deep-parity tasks round 1 measured "a third to three-quarters" with
+  round 2's shot at 0/6 against the ≥90% bar — all at ~1000× fewer premium
+  tokens. The offload-guidance skill teaches exactly this: route
+  explore-class questions to rlmx first; escalate to native when
+  completeness matters or the answer lacks citations. The launch story is
+  the honest benchmark arc, not a parity claim.
+- **"Parity model" (D5/P1):** no tier passed the gate, so the term is
+  retired; the default worker model is the **cost-robust matrix winner**
+  `khal/deepseek-v4-flash` — tied within run-to-run noise with
+  deepseek-v4-pro, glm-5.2, and qwen3.7-max on coverage (that comparison
+  was never resolved at n=1 arms), decisively cheaper at 1/9th–1/19th
+  their cost. The cost ranking is the robust finding.
+- **B2 (shootout) is amended:** the original 7-arm × ≥10-task shootout is
+  replaced by (a) the completed round-2 matrix + campaign evidence, plus
+  (b) one missing arm — station local — run on the train suite with n=2
+  replicates, and (c) a consolidated worker-model table committed to docs
+  with the noise caveats carried over. No new frozen-suite runs. What n=2
+  buys for station is feasibility, cost, and a local noise estimate —
+  **not rank**: the campaign measured ±3-fact run-to-run spread on a fixed
+  configuration, so station's row is explicitly not rank-comparable to the
+  n=1 khal arms, and the table must say so.
+- **B3's escalation case is now evidence-grounded:** the planted
+  low-confidence trigger uses the real failure signature from the campaign
+  (answer lacking citations, or a lost run's error answer), not a synthetic
+  one.
+- **A4b stays unchecked forever** (historical record of the falsified
+  parity thesis); Wish B's dependence is on Wish A's *shipped engineering*,
+  which is real, not on the gate.
+- B1, B4, B5 are unchanged.
+
 ## Next Step
 
-After an independent design review returns SHIP, persist the evidence below and verify its content digest before running `wish` (Wish A first).
+After an independent design review returns SHIP, persist the evidence below and verify its content digest before running `wish` (Wish B next, under the 2026-07-27 amendment).
 
 <!-- genie-design-review:start -->
 ## Design Review Evidence
 
 - **Verdict:** SHIP
-- **Reviewed content SHA-256:** `94b73f45d8791ea55f9206a194011d2eed16a96e9a86981f9c43adeb43dae3c2`
-- **Reviewer:** genie:reviewer/rcp-05
-- **Reviewed at:** 2026-07-26T18:41:08.000Z
+- **Reviewed content SHA-256:** `445cb27dc573f6ddf0571d37a93beabc26b21a6b14a345ce252adcab5dc137bc`
+- **Reviewer:** genie:reviewer/rcp-07
+- **Reviewed at:** 2026-07-27T15:55:03.000Z
 <!-- genie-design-review:end -->
