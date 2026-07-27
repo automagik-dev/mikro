@@ -15,12 +15,36 @@
  *   3. <cwd>/.rlmx/agents/<name>/agent.yaml (project)
  *
  * `RLMX_AGENTS_DIR` (colon-separated) replaces the defaults entirely.
+ *
+ * One name is reserved: a directory whose name ends `.proposed` is a draft
+ * awaiting human approval and is skipped everywhere — see `PROPOSED_SUFFIX`.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseModelRef } from "../config.js";
 import { loadAgentSpec, resolveAgentPath } from "../sdk/agent-spec.js";
+/**
+ * Reserved directory suffix for propose-only drafts.
+ *
+ * `/microagent-create` writes a candidate agent it mined from transcripts into
+ * `.rlmx/agents/<name>.proposed/` and stops there. Activation is a rename, and
+ * the rename is the user's — that is the whole approval step, so it only means
+ * something if an un-renamed draft can do nothing at all.
+ */
+export const PROPOSED_SUFFIX = ".proposed";
+/**
+ * True when a directory name is a propose-only draft rather than an agent.
+ *
+ * Matched case-insensitively on purpose. The comparison decides whether an
+ * unapproved agent can execute, so it fails toward *not* running: `X.Proposed`
+ * is skipped like `x.proposed`. The cost of that choice is that `.proposed` is
+ * reserved in every casing — documented in the plugin skill and in the wish's
+ * risk table, because the skip's error surface is silence by design.
+ */
+export function isProposedDir(name) {
+    return name.toLowerCase().endsWith(PROPOSED_SUFFIX);
+}
 /**
  * MCP tool names must match `^[a-zA-Z0-9_-]{1,128}$`. Directory names are
  * looser than that, so fold anything else to `_`.
@@ -119,6 +143,16 @@ export async function discoverAgents(cwd) {
         }
         for (const entry of entries) {
             if (!entry.isDirectory())
+                continue;
+            // The propose-only boundary. Skipping here — before the spec is even
+            // read — keeps a draft out of BOTH answers at once: `tools/call`
+            // dispatches from `byToolName`, which is built from this same list
+            // (src/mcp/server.ts:252, src/mcp/server.ts:771), so "not listed" and
+            // "not callable" cannot drift apart. Without it a perfectly valid
+            // `x.proposed/agent.yaml` becomes the live tool `rlmx_x_proposed` on the
+            // very next request, since every request re-scans: an agent nobody
+            // approved would be executable with no user action at all.
+            if (isProposedDir(entry.name))
                 continue;
             const agent = await loadOne(join(root, entry.name), entry.name);
             if (agent)
