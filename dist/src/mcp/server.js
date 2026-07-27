@@ -42,7 +42,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema, } from "@modelcontextprotocol/sdk/types.js";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { loadConfig } from "../config.js";
+import { applyModelRef, loadConfig } from "../config.js";
 import { loadContext } from "../context.js";
 import { rlmLoop } from "../rlm.js";
 import { createEmitter } from "../sdk/emitter.js";
@@ -367,14 +367,23 @@ export function agentMaxIterations(agent) {
         return explicit;
     return agent.spec.shape === "single-step" ? 1 : undefined;
 }
-/** Apply an agent's `agent.yaml` to the ambient config for one run. */
-function applyAgent(config, agent) {
+/**
+ * Apply an agent's `agent.yaml` to the ambient config for one run.
+ *
+ * An agent's `model:` re-pins the sub-call model too. Spreading `config.model`
+ * alone kept the *ambient* `rlmx.yaml`'s `sub-call-model` while replacing
+ * provider and model, so an agent declaring `khal/deepseek-v4-flash` under a
+ * root whose yaml says `sub-call-model: gemini-3.1-flash-lite-preview`
+ * composed `provider: khal` with a Google model id, and every bare
+ * `llm_query(p)` came back `Unknown model "gemini-3.1-flash-lite-preview" for
+ * provider "khal"`. `agent.yaml` has no sub-call-model key of its own, so the
+ * agent's model is the only sensible default.
+ */
+export function applyAgent(config, agent) {
     const next = { ...config };
-    if (agent.spec.model) {
-        const parsed = splitModel(agent.spec.model);
-        if (parsed) {
-            next.model = { ...config.model, provider: parsed.provider, model: parsed.model };
-        }
+    // Unchanged from before: a model string with no provider prefix is ignored.
+    if (agent.spec.model && splitModel(agent.spec.model)) {
+        next.model = applyModelRef(config.model, agent.spec.model);
     }
     if (agent.system) {
         next.system = agent.system;
@@ -385,13 +394,9 @@ function applyAgent(config, agent) {
     return next;
 }
 function applyModelOverride(config, model) {
-    const parsed = splitModel(model);
-    if (!parsed)
+    if (!splitModel(model))
         return config;
-    return {
-        ...config,
-        model: { ...config.model, provider: parsed.provider, model: parsed.model },
-    };
+    return { ...config, model: applyModelRef(config.model, model) };
 }
 function formatCost(cost) {
     if (cost <= 0)

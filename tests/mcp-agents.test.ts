@@ -26,10 +26,12 @@ import { join } from "node:path";
 import { discoverAgents, splitModel, toToolName, type Microagent } from "../src/mcp/agents.js";
 import {
   agentMaxIterations,
+  applyAgent,
   buildResumeQuery,
   createAgentRegistry,
   McpSessionStore,
 } from "../src/mcp/server.js";
+import type { RlmxConfig } from "../src/config.js";
 
 const MCP_TOOL_NAME = /^[a-zA-Z0-9_-]{1,128}$/;
 
@@ -233,6 +235,71 @@ describe("agentMaxIterations", () => {
   it("lets an explicit budget.max_iterations win over the shape default", () => {
     assert.equal(agentMaxIterations(asAgent("single-step", 5)), 5);
     assert.equal(agentMaxIterations(asAgent("loop", 6)), 6);
+  });
+});
+
+/**
+ * An agent's `model:` must carry the sub-call model with it.
+ *
+ * The regression: `applyAgent` spread the ambient `config.model` and replaced
+ * only provider + model, so an agent on `khal/deepseek-v4-flash` under a root
+ * whose rlmx.yaml sets `sub-call-model: gemini-3.1-flash-lite-preview` ran
+ * with `provider: khal` and a Google sub-call id. A bare `llm_query(p)` inside
+ * the agent then died with `Unknown model "gemini-3.1-flash-lite-preview" for
+ * provider "khal"` — and, because the REPL turns handler throws into ordinary
+ * result strings, silently.
+ */
+describe("applyAgent model inheritance", () => {
+  const ambient = (): RlmxConfig =>
+    ({
+      model: {
+        provider: "google",
+        model: "gemini-3.1-flash-lite-preview",
+        subCallModel: "gemini-3.1-flash-lite-preview",
+      },
+      budget: { maxCost: null, maxTokens: null, maxDepth: null },
+    }) as unknown as RlmxConfig;
+
+  const agentWith = (spec: Record<string, unknown>) =>
+    ({
+      name: "explore-r",
+      toolName: "rlmx_explore-r",
+      dir: "/tmp/explore-r",
+      summary: "explore-r",
+      spec: { dir: "/tmp/explore-r", schemaVersion: 1, toolsApi: 1, shape: "recurse", tools: [], extras: {}, ...spec },
+    }) as unknown as Microagent;
+
+  it("re-pins the sub-call model to the agent's own model", () => {
+    const next = applyAgent(ambient(), agentWith({ model: "khal/deepseek-v4-flash" }));
+    assert.deepEqual(next.model, {
+      provider: "khal",
+      model: "deepseek-v4-flash",
+      subCallModel: "deepseek-v4-flash",
+    });
+  });
+
+  it("does not leave a cross-provider sub-call model behind", () => {
+    const next = applyAgent(ambient(), agentWith({ model: "khal/deepseek-v4-flash" }));
+    assert.notEqual(next.model.subCallModel, "gemini-3.1-flash-lite-preview");
+  });
+
+  it("leaves the ambient model untouched when the agent declares none", () => {
+    const config = ambient();
+    const next = applyAgent(config, agentWith({}));
+    assert.deepEqual(next.model, config.model);
+  });
+
+  it("does not mutate the ambient config in place", () => {
+    const config = ambient();
+    applyAgent(config, agentWith({ model: "khal/deepseek-v4-flash" }));
+    assert.equal(config.model.provider, "google");
+    assert.equal(config.model.subCallModel, "gemini-3.1-flash-lite-preview");
+  });
+
+  it("ignores a model string with no provider prefix, as before", () => {
+    const config = ambient();
+    const next = applyAgent(config, agentWith({ model: "deepseek-v4-flash" }));
+    assert.deepEqual(next.model, config.model);
   });
 });
 

@@ -48,7 +48,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { loadConfig, type RlmxConfig } from "../config.js";
+import { applyModelRef, loadConfig, type RlmxConfig } from "../config.js";
 import { loadContext } from "../context.js";
 import { rlmLoop } from "../rlm.js";
 import { createEmitter } from "../sdk/emitter.js";
@@ -477,15 +477,24 @@ export function agentMaxIterations(agent: Microagent): number | undefined {
   return agent.spec.shape === "single-step" ? 1 : undefined;
 }
 
-/** Apply an agent's `agent.yaml` to the ambient config for one run. */
-function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
+/**
+ * Apply an agent's `agent.yaml` to the ambient config for one run.
+ *
+ * An agent's `model:` re-pins the sub-call model too. Spreading `config.model`
+ * alone kept the *ambient* `rlmx.yaml`'s `sub-call-model` while replacing
+ * provider and model, so an agent declaring `khal/deepseek-v4-flash` under a
+ * root whose yaml says `sub-call-model: gemini-3.1-flash-lite-preview`
+ * composed `provider: khal` with a Google model id, and every bare
+ * `llm_query(p)` came back `Unknown model "gemini-3.1-flash-lite-preview" for
+ * provider "khal"`. `agent.yaml` has no sub-call-model key of its own, so the
+ * agent's model is the only sensible default.
+ */
+export function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
   const next: RlmxConfig = { ...config };
 
-  if (agent.spec.model) {
-    const parsed = splitModel(agent.spec.model);
-    if (parsed) {
-      next.model = { ...config.model, provider: parsed.provider, model: parsed.model };
-    }
+  // Unchanged from before: a model string with no provider prefix is ignored.
+  if (agent.spec.model && splitModel(agent.spec.model)) {
+    next.model = applyModelRef(config.model, agent.spec.model);
   }
 
   if (agent.system) {
@@ -500,12 +509,8 @@ function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
 }
 
 function applyModelOverride(config: RlmxConfig, model: string): RlmxConfig {
-  const parsed = splitModel(model);
-  if (!parsed) return config;
-  return {
-    ...config,
-    model: { ...config.model, provider: parsed.provider, model: parsed.model },
-  };
+  if (!splitModel(model)) return config;
+  return { ...config, model: applyModelRef(config.model, model) };
 }
 
 function formatCost(cost: number): string {

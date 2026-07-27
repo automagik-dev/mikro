@@ -107,6 +107,13 @@ export const RLMX_CLI_SCHEMA = {
             appliesTo: ["query", "batch"],
         },
         {
+            name: "--model",
+            type: "string",
+            default: null,
+            description: 'Model for this run: "provider/model", or a bare model id on the configured provider. Outranks settings.json and rlmx.yaml, and re-pins the sub-call model. Recursive children receive it automatically.',
+            appliesTo: ["query"],
+        },
+        {
             name: "--ext",
             type: "list",
             default: null,

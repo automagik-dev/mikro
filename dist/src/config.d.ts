@@ -102,6 +102,26 @@ export interface RlmxConfig {
 export declare const DEFAULT_STORAGE_CONFIG: StorageConfig;
 export declare const DEFAULT_RTK_CONFIG: RtkConfig;
 /**
+ * Split a `"<provider>/<model>"` reference into its parts.
+ *
+ * Returns null when the string carries no usable provider prefix, in which
+ * case the caller should keep the ambient configured provider and treat the
+ * whole string as a model id.
+ */
+export declare function parseModelRef(value: string): {
+    provider: string;
+    model: string;
+} | null;
+/**
+ * Apply a model reference onto a `ModelConfig`, returning a new config.
+ *
+ * The sub-call model is re-pinned to the referenced model id as well. Without
+ * that, a caller that switches provider (an agent's `model:`, or `--model`)
+ * keeps the *previous* provider's `sub-call-model`, and the first bare
+ * `llm_query()` dies with `Unknown model "<inherited>" for provider "<new>"`.
+ */
+export declare function applyModelRef(model: ModelConfig, ref: string): ModelConfig;
+/**
  * Parse TOOLS.md format:
  *   ## tool_name
  *   ```python

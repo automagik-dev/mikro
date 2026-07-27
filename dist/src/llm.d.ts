@@ -115,6 +115,8 @@ export interface RlmChildResult {
 }
 export interface RlmChildInvocationOptions {
     output?: "json";
+    /** `provider/model` (or bare model id) forwarded to the child as --model. */
+    model?: string;
     maxIterations?: number;
     timeout?: number;
     maxDepth?: number;
@@ -130,6 +132,27 @@ export declare function buildRlmChildArgs(prompt: string, options?: RlmChildInvo
 export declare function buildChildEnv(env: NodeJS.ProcessEnv, parentRunId: string, correlationId: string): NodeJS.ProcessEnv;
 /** Parse stdout from a child rlmx --output json --stats run. */
 export declare function parseRlmChildOutput(stdout: string): RlmChildResult;
+/** Last `maxChars` of a child's stderr, whitespace-collapsed, for error text. */
+export declare function stderrTail(stderr: string, maxChars?: number): string;
+/**
+ * Classify a finished child rlmx process into the answer the REPL caller sees.
+ *
+ * A child that cannot reach a model — wrong provider, missing key, empty
+ * completion — still exits 0 and still prints `{"answer":""}`. Handing that
+ * back as an ordinary result made a dead sub-call indistinguishable from a
+ * real one: three recursive spawns in the round-1 parity sweep died this way
+ * and nothing in the run recorded it. A zero exit with no answer is therefore
+ * reported as an explicit `Error:` string, which is the same shape the REPL
+ * already uses for handler throws and which the model can react to.
+ *
+ * Exit-code semantics of the child CLI itself are untouched — this is purely
+ * how the parent reads the result.
+ */
+export declare function classifyRlmChildResult(code: number | null, stdout: string, stderr: string): {
+    result: RlmChildResult;
+    isError: boolean;
+    errorMessage?: string;
+};
 /**
  * Spawn a child rlmx process for rlm_query() recursive sub-calls.
  * The child inherits the parent's cwd (and thus .md configs).
@@ -173,6 +196,19 @@ export declare function rlmQueryBatched(prompts: string[], cwd: string, signal?:
         errorMessage?: string;
     }) => void;
 }): Promise<RlmChildResult[]>;
+/**
+ * Resolve the `provider/model` a recursive child should run on.
+ *
+ * `rlm_query(p, model="X")` used to be a silent no-op: the Python side put the
+ * kwarg on the wire and the handler never read it. It is honoured the same way
+ * `llm_query` honours its own `model=` — the provider comes from the parent's
+ * config, only the model id is swappable.
+ *
+ * With no kwarg the child is pinned to the parent's *primary* model rather
+ * than its sub-call model: a child is a full rlmx run, not a single
+ * completion, and the sub-call model is chosen to be a cheap one-shot.
+ */
+export declare function resolveChildModelRef(config: RlmxConfig, requestedModel?: string): string;
 /**
  * Handle an LLM IPC request from the Python REPL.
  * Routes to the appropriate handler based on request_type.

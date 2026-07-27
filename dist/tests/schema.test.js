@@ -11,6 +11,15 @@ describe("RLMX_CLI_SCHEMA", () => {
             assert.equal(typeof flags.get(name)?.description, "string");
         }
     });
+    // --model is how a parent pins a recursive child (buildRlmChildArgs emits
+    // it), so it is part of the documented surface, not an internal flag.
+    it("documents --model as a query flag", () => {
+        const flag = RLMX_CLI_SCHEMA.flags.find((f) => f.name === "--model");
+        assert.ok(flag, "--model missing from schema flags");
+        assert.equal(flag.type, "string");
+        assert.ok(flag.appliesTo?.includes("query"));
+        assert.ok(flag.description.length > 0);
+    });
     it("describes the JSON output object as JSON Schema", () => {
         assert.equal(RLMX_CLI_SCHEMA.output.type, "object");
         assert.ok(RLMX_CLI_SCHEMA.output.properties.answer);

@@ -37,6 +37,7 @@
  * `output: "json"` to keep it off its stream-mode stdout path — the same
  * contract `src/acp/agent.ts` follows.
  */
+import { type RlmxConfig } from "../config.js";
 import { type Microagent } from "./agents.js";
 /** One re-scan: what to advertise, what to dispatch on, and what changed. */
 export interface AgentScan {
@@ -152,6 +153,19 @@ export declare function buildResumeQuery(turns: readonly SessionTurn[], prompt: 
  * always wins over the shape default.
  */
 export declare function agentMaxIterations(agent: Microagent): number | undefined;
+/**
+ * Apply an agent's `agent.yaml` to the ambient config for one run.
+ *
+ * An agent's `model:` re-pins the sub-call model too. Spreading `config.model`
+ * alone kept the *ambient* `rlmx.yaml`'s `sub-call-model` while replacing
+ * provider and model, so an agent declaring `khal/deepseek-v4-flash` under a
+ * root whose yaml says `sub-call-model: gemini-3.1-flash-lite-preview`
+ * composed `provider: khal` with a Google model id, and every bare
+ * `llm_query(p)` came back `Unknown model "gemini-3.1-flash-lite-preview" for
+ * provider "khal"`. `agent.yaml` has no sub-call-model key of its own, so the
+ * agent's model is the only sensible default.
+ */
+export declare function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig;
 /**
  * Run the MCP server on stdio until the client disconnects.
  *
