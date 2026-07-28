@@ -122,6 +122,30 @@ const spec = await sdk.loadAgentSpec("/path/to/agent");
 // spec.extras.brain === { reader_inline_media: true, pending_writes_whitelist: [...] }
 ```
 
+## Reserved directory suffix: `.proposed`
+
+A directory whose name ends **`.proposed`** (matched case-insensitively) is a
+*draft* awaiting human approval, and `rlmx mcp` discovery skips it outright —
+see `isProposedDir` in `src/mcp/agents.ts`. Because `tools/call` dispatches from
+the same scan that builds `tools/list`, a draft is **neither listed nor
+callable**; calling it by its would-be tool name answers
+`Unknown tool: rlmx_<name>_proposed`.
+
+This is the propose-only boundary behind `/rlmx:microagent-create`, which writes
+candidate agents into `.rlmx/agents/<name>.proposed/` and stops. Activation is a
+rename performed by the user:
+
+```bash
+mv .rlmx/agents/<name>.proposed .rlmx/agents/<name>
+```
+
+The tool appears on the next request — live refresh, no reconnect — and renaming
+back withdraws it.
+
+**So do not name a real agent `<something>.proposed`.** It would load fine via
+`loadAgentSpec` and never appear as a tool, and the skip is silent by design:
+there is no warning to notice.
+
 ## Errors the parser raises
 
 | condition | error |

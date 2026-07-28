@@ -12,7 +12,7 @@ import {
 } from "../src/sdk/index.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
-const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "brain-triage");
+const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "agents", "brain-triage");
 
 function pythonAvailable(): boolean {
 	try {

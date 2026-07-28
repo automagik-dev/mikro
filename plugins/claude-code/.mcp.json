@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rlmx": {
+      "command": "rlmx",
+      "args": ["mcp", "--dir", "${CLAUDE_PROJECT_DIR}"]
+    }
+  }
+}

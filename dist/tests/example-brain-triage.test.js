@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createToolRegistry, loadAgentSpec, loadPythonPlugins, runAgent, } from "../src/sdk/index.js";
 const testDir = dirname(fileURLToPath(import.meta.url));
-const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "brain-triage");
+const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "agents", "brain-triage");
 function pythonAvailable() {
     try {
         execFileSync("python3", ["--version"], { stdio: "ignore" });

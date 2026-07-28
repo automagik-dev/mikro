@@ -101,26 +101,26 @@ reduction — never the parity claim.
 
 ## Success Criteria
 
-- [ ] B1: Plugin installs from the rlmx repo in one documented command; a
+- [x] B1: Plugin installs from the rlmx repo in one documented command; a
   fresh Claude Code session in a workspace with `.rlmx/agents/explore-r/`
   sees `rlmx_explore-r` via the plugin's own MCP registration (which passes
   `--dir`).
-- [ ] B3: Routing eval passes — ≥4 of 5 scripted exploration prompts route
+- [x] B3: Routing eval passes — ≥4 of 5 scripted exploration prompts route
   to `rlmx_explore-r`; the planted escalation case (real failure signature)
   triggers a native re-run.
-- [ ] B4: `/microagent-create` produces a draft agent.yaml + SYSTEM.md +
+- [x] B4: `/microagent-create` produces a draft agent.yaml + SYSTEM.md +
   evidence file for ≥1 candidate from real transcripts into a `.proposed/`
   dir; discovery never lists it; activation-by-rename works.
-- [ ] B2 (amended): station arm n=2 recorded on the train suite;
+- [x] B2 (amended): station arm n=2 recorded on the train suite;
   consolidated worker-model table committed to docs with run dates,
   per-arm pricing, noise caveats, and station marked not-rank-comparable.
-- [ ] B5: all three legacy agents preserved as loadable recipes under
+- [x] B5: all three legacy agents preserved as loadable recipes under
   `examples/agents/` (the single recipe tree, flat entries migrated); the
   host-side removal is a documented user step this wish never performs.
-- [ ] Every user-facing number in plugin/skill/docs text traces to
+- [x] Every user-facing number in plugin/skill/docs text traces to
   `docs/parity-explore.md` or git with the report's own scoping (spot-check
   criterion for the reviewer).
-- [ ] Full gate green: `npm run check`, `npm run build`, `npm test`,
+- [x] Full gate green: `npm run check`, `npm run build`, `npm test`,
   `node scripts/smoke-mcp.mjs`, `npm audit --omit=dev` 0 vulnerabilities.
 
 ## Execution Strategy
@@ -330,6 +330,23 @@ cd ~/prod/rlmx && test -f docs/worker-models.md && ls examples/agents/ | grep -q
 ## Review Results
 
 _The read-only reviewer returns evidence; the invoking orchestrator appends a timestamped block here after plan, execution, and PR reviews._
+
+### Execution review — COMPLETE (2026-07-27/28)
+
+All four groups adversarially verified PASS by non-author opus/max agents
+(workflows wf_3e5dad7a + wf_53de75c1): G1 plugin skeleton (install proven
+live, format researched from live docs), G4 bench + archival (station n=2
+recorded, worker-models table numbers recomputed from records, all three
+legacy recipes load, host untouched), G2 guidance + routing eval (5/5
+pre-registered prompts routed, planted case escalated, counts re-derived
+from raw transcripts; one auth-killed verifier re-run cleanly), G3
+/microagent-create (.proposed skip rule proven live: not listed, not
+callable, rename activates; dogfood proposal git-historian with audited
+burn numbers). Nine evidence-precision gaps fixed post-verification
+(false provenance claim, discarded-run numbers, citation-reading split
+4/2/1, retry disclosure, prompt-identity fidelity limit, writer-invariant
+wording, self-reported annotations, census framing). Final gate: 526
+tests / 121 suites green, smoke-mcp PASS, audit 0.
 
 ### Plan review — SHIP (2026-07-27)
 
