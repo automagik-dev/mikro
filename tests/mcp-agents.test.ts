@@ -16,14 +16,24 @@
  *   6. The session seam: TTL expiry, LRU eviction, per-tool orphan eviction,
  *      turn-history bounding, and the resume fold — all the parts a live smoke
  *      cannot force deterministically.
+ *   7. The propose-only boundary: a `<name>.proposed/` draft is neither listed
+ *      nor callable, and the rename that approves it takes effect on the next
+ *      refresh without a reconnect.
  */
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverAgents, splitModel, toToolName, type Microagent } from "../src/mcp/agents.js";
+import {
+  discoverAgents,
+  isProposedDir,
+  splitModel,
+  toToolName,
+  PROPOSED_SUFFIX,
+  type Microagent,
+} from "../src/mcp/agents.js";
 import {
   agentMaxIterations,
   applyAgent,
@@ -195,6 +205,137 @@ describe("discoverAgents", () => {
       triage.summary,
       "Project triage agent that classifies inbound issues."
     );
+  });
+});
+
+describe("isProposedDir", () => {
+  it("matches the reserved suffix in any casing", () => {
+    for (const name of ["x.proposed", "review-lite.PROPOSED", "a.Proposed", PROPOSED_SUFFIX]) {
+      assert.equal(isProposedDir(name), true, `${name} must be treated as a draft`);
+    }
+  });
+
+  it("does not swallow ordinary agent names", () => {
+    // The suffix is reserved, not the word: `proposed` and `.proposed-v2` are
+    // real agents and must stay discoverable.
+    for (const name of ["proposed", "proposals", "x.proposed-v2", "x-proposed", "explore-r"]) {
+      assert.equal(isProposedDir(name), false, `${name} must remain a real agent`);
+    }
+  });
+});
+
+/**
+ * The propose-only boundary (wish `rlmx-microagent-plugin`, decision 3).
+ *
+ * `/microagent-create` mines transcripts and writes a *draft* agent it must
+ * not be able to run. Approval is the user renaming the directory, which only
+ * means something if the un-renamed draft is inert — so the two halves of
+ * "inert" are pinned separately here: absent from the advertised list, and
+ * absent from the map `tools/call` dispatches through
+ * (`src/mcp/server.ts:771`).
+ *
+ * The fixture is a *valid* agent — deliberately. A draft that failed to load
+ * would be skipped by `loadOne` for the wrong reason and this whole suite
+ * would pass vacuously, so the control below renames that same directory and
+ * requires it to appear.
+ */
+describe("discoverAgents — .proposed drafts", () => {
+  let tmp: string;
+  let root: string;
+  const prevEnv = process.env.RLMX_AGENTS_DIR;
+
+  /** A complete, loadable agent — the kind `/microagent-create` writes. */
+  const DRAFT_YAML =
+    "schema_version: 1\ntools_api: 1\nshape: loop\nmodel: khal/deepseek-v4-flash\n" +
+    "description: Draft mined from transcripts; awaiting approval.\nsystem: SYSTEM.md\n";
+
+  before(() => {
+    tmp = mkdtempSync(join(tmpdir(), "rlmx-proposed-"));
+    root = join(tmp, "agents");
+    mkdirSync(root, { recursive: true });
+
+    writeAgent(root, "review-lite.proposed", DRAFT_YAML, "# review-lite\n\nDrafted.\n");
+    // An approved agent alongside it: the skip must be surgical, not a
+    // blanket refusal to discover anything in a root that holds a draft.
+    writeAgent(
+      root,
+      "explore-r",
+      "schema_version: 1\nshape: recurse\ndescription: Approved explorer.\n"
+    );
+
+    process.env.RLMX_AGENTS_DIR = root;
+  });
+
+  after(() => {
+    if (prevEnv === undefined) delete process.env.RLMX_AGENTS_DIR;
+    else process.env.RLMX_AGENTS_DIR = prevEnv;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("does not list a valid draft, and still lists its approved neighbour", async () => {
+    const agents = await discoverAgents(tmp);
+    assert.deepEqual(
+      agents.map((a) => a.name),
+      ["explore-r"],
+      "a .proposed draft must not appear in the tool list"
+    );
+    assert.ok(
+      !agents.some((a) => a.toolName === "rlmx_review-lite_proposed"),
+      "the leak this rule closes is the draft surfacing as rlmx_<name>_proposed"
+    );
+  });
+
+  it("does not make a valid draft callable", async () => {
+    // `byToolName` IS the dispatch lookup: server.ts:771 answers tools/call
+    // from it, so absence here is what "not callable" means mechanically.
+    const registry = createAgentRegistry(() => discoverAgents(tmp));
+    const scan = await registry.refresh();
+    assert.equal(
+      scan.byToolName.has("rlmx_review-lite_proposed"),
+      false,
+      "an unapproved draft must not be dispatchable"
+    );
+    assert.equal(scan.byToolName.size, scan.agents.length);
+    assert.ok(scan.byToolName.has("rlmx_explore-r"), "the approved agent stays callable");
+  });
+
+  it("activates the draft on rename, live, without a reconnect", async () => {
+    // One registry, never re-created — the same object a connected server
+    // holds for the life of the connection (src/mcp/server.ts:704).
+    const registry = createAgentRegistry(() => discoverAgents(tmp));
+    const asDraft = await registry.refresh();
+    assert.equal(asDraft.byToolName.has("rlmx_review-lite"), false);
+
+    // The approval step, and the only one: a rename performed by the user.
+    renameSync(join(root, "review-lite.proposed"), join(root, "review-lite"));
+
+    const approved = await registry.refresh();
+    assert.ok(
+      approved.agents.some((a) => a.name === "review-lite"),
+      "renaming a draft must publish it"
+    );
+    assert.ok(
+      approved.byToolName.has("rlmx_review-lite"),
+      "and must make it callable on that same scan"
+    );
+    assert.equal(
+      approved.changed,
+      true,
+      "the set changed, so the server emits tools/list_changed rather than waiting for a reconnect"
+    );
+    assert.equal(
+      approved.byToolName.get("rlmx_review-lite")?.spec.model,
+      "khal/deepseek-v4-flash",
+      "the approved agent is the very file that was drafted"
+    );
+
+    // Restore the fixture so this suite's tests stay order-independent.
+    renameSync(join(root, "review-lite"), join(root, "review-lite.proposed"));
+  });
+
+  it("keeps the draft inert again once the rename is undone", async () => {
+    const agents = await discoverAgents(tmp);
+    assert.deepEqual(agents.map((a) => a.name), ["explore-r"]);
   });
 });
 

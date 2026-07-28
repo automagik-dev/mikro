@@ -75,6 +75,18 @@ That's it. Claude Code now has an `rlmx_query` tool, plus **one tool per
 microagent** you've defined — `rlmx_triage`, `rlmx_test_writer`, and so on — so
 the model delegates to them by name.
 
+**Claude Code users: there is a plugin.** It registers the same server with
+`--dir` pointed at the project you have open, so agent discovery and the REPL
+cwd agree with your project root instead of wherever the host spawned the
+process:
+
+```bash
+claude plugin marketplace add ~/.rlmx/rlmx && claude plugin install rlmx@rlmx
+```
+
+Details, limits and honest positioning:
+[`plugins/claude-code/README.md`](plugins/claude-code/README.md).
+
 A microagent is an `agent.yaml` folder ([schema](docs/agent-yaml-schema.md))
 in any of:
 
@@ -91,10 +103,15 @@ two, and `.rlmx/agents/` wins when the same name exists in both. Project agents
 shadow global ones with the same name, and `RLMX_AGENTS_DIR` (colon-separated)
 replaces every root.
 
-A ready-made one to copy: [`examples/agents/explore/`](examples/agents/explore/)
-— answers a question about the repo it runs in with `file:line` citations.
-Install it as `<project>/.rlmx/agents/explore/` and Claude Code gets an
-`rlmx_explore` tool.
+Ready-made ones to copy live in **[`examples/agents/`](examples/agents/)** —
+the single recipe tree ([index](examples/agents/README.md)). Start with
+[`explore/`](examples/agents/explore/): it answers a question about the repo it
+runs in with `file:line` citations. Install it as
+`<project>/.rlmx/agents/explore/` and Claude Code gets an `rlmx_explore` tool.
+Also there: `codebase-qa`, `changelog` and `log-triage` (small, local-model,
+ungated), and `explore-r` (recursive). Which worker model to run them on, and
+what the evidence does and does not establish:
+[`docs/worker-models.md`](docs/worker-models.md).
 
 ```yaml
 # ~/.rlmx/agents/triage/agent.yaml
@@ -166,7 +183,9 @@ Deeper dives:
 - [`docs/events.md`](docs/events.md) — the 12-event catalogue + emitter contract.
 - [`docs/tool-authoring.md`](docs/tool-authoring.md) — TS/MJS + Python plugin recipes, RTK integration.
 - [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) — `agent.yaml` field reference.
-- [`examples/`](examples/) — three runnable example agents (hello-world / research-agent / brain-triage) with smoke tests, plus [`examples/agents/`](examples/agents/) for `.rlmx/agents/`-shaped recipes like `explore`.
+- [`examples/agents/`](examples/agents/README.md) — **the** microagent recipe tree: `explore`, `explore-r`, `codebase-qa`, `changelog`, `log-triage`, plus the three runnable SDK walk-throughs with tests (hello-world / research-agent / brain-triage).
+- [`examples/`](examples/) — `rlmx.yaml` configuration examples (tauri-docs, paper-review, cag-*, gemini-*), which are not microagents.
+- [`docs/worker-models.md`](docs/worker-models.md) — which model to run a microagent on: the round-2 evidence, per-arm price and run date, and what each arm's `n` does and does not establish.
 
 ## Live event stream (`rlmLoop({ emitter })`)
 

@@ -15,6 +15,9 @@
  *   3. <cwd>/.rlmx/agents/<name>/agent.yaml (project)
  *
  * `RLMX_AGENTS_DIR` (colon-separated) replaces the defaults entirely.
+ *
+ * One name is reserved: a directory whose name ends `.proposed` is a draft
+ * awaiting human approval and is skipped everywhere — see `PROPOSED_SUFFIX`.
  */
 import { type AgentSpec } from "../sdk/agent-spec.js";
 /** A discovered microagent, ready to be exposed as one MCP tool. */
@@ -31,6 +34,25 @@ export interface Microagent {
     /** First non-empty line of the system prompt — used as the tool description. */
     readonly summary: string;
 }
+/**
+ * Reserved directory suffix for propose-only drafts.
+ *
+ * `/microagent-create` writes a candidate agent it mined from transcripts into
+ * `.rlmx/agents/<name>.proposed/` and stops there. Activation is a rename, and
+ * the rename is the user's — that is the whole approval step, so it only means
+ * something if an un-renamed draft can do nothing at all.
+ */
+export declare const PROPOSED_SUFFIX = ".proposed";
+/**
+ * True when a directory name is a propose-only draft rather than an agent.
+ *
+ * Matched case-insensitively on purpose. The comparison decides whether an
+ * unapproved agent can execute, so it fails toward *not* running: `X.Proposed`
+ * is skipped like `x.proposed`. The cost of that choice is that `.proposed` is
+ * reserved in every casing — documented in the plugin skill and in the wish's
+ * risk table, because the skip's error surface is silence by design.
+ */
+export declare function isProposedDir(name: string): boolean;
 /**
  * MCP tool names must match `^[a-zA-Z0-9_-]{1,128}$`. Directory names are
  * looser than that, so fold anything else to `_`.

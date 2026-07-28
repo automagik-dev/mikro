@@ -16,7 +16,7 @@ import {
 } from "../src/sdk/index.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
-const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "research-agent");
+const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "agents", "research-agent");
 
 async function drain(
 	stream: AsyncIterable<AgentEvent>,

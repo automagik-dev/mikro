@@ -16,6 +16,9 @@
  *   6. The session seam: TTL expiry, LRU eviction, per-tool orphan eviction,
  *      turn-history bounding, and the resume fold — all the parts a live smoke
  *      cannot force deterministically.
+ *   7. The propose-only boundary: a `<name>.proposed/` draft is neither listed
+ *      nor callable, and the rename that approves it takes effect on the next
+ *      refresh without a reconnect.
  */
 export {};
 //# sourceMappingURL=mcp-agents.test.d.ts.map
