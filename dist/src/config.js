@@ -65,6 +65,43 @@ function validatePositiveBudget(value, field) {
         throw new Error(`Invalid ${field}: must be a positive number or null, got ${value}.`);
     }
 }
+// ─── Model References ────────────────────────────────────
+/**
+ * Split a `"<provider>/<model>"` reference into its parts.
+ *
+ * Returns null when the string carries no usable provider prefix, in which
+ * case the caller should keep the ambient configured provider and treat the
+ * whole string as a model id.
+ */
+export function parseModelRef(value) {
+    const idx = value.indexOf("/");
+    if (idx <= 0 || idx === value.length - 1)
+        return null;
+    return { provider: value.slice(0, idx), model: value.slice(idx + 1) };
+}
+/**
+ * Apply a model reference onto a `ModelConfig`, returning a new config.
+ *
+ * The sub-call model is re-pinned to the referenced model id as well. Without
+ * that, a caller that switches provider (an agent's `model:`, or `--model`)
+ * keeps the *previous* provider's `sub-call-model`, and the first bare
+ * `llm_query()` dies with `Unknown model "<inherited>" for provider "<new>"`.
+ */
+export function applyModelRef(model, ref) {
+    const trimmed = ref.trim();
+    if (!trimmed)
+        return model;
+    const parsed = parseModelRef(trimmed);
+    if (!parsed) {
+        return { ...model, model: trimmed, subCallModel: trimmed };
+    }
+    return {
+        ...model,
+        provider: parsed.provider,
+        model: parsed.model,
+        subCallModel: parsed.model,
+    };
+}
 // ─── Tools.md Parsing ────────────────────────────────────
 /**
  * Parse TOOLS.md format:

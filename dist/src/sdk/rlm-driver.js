@@ -60,6 +60,7 @@
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ensureStationModels, registerStationProvider, STATION_PROVIDER_ID, } from "../station-provider.js";
+import { ensureKhalModels, registerKhalProvider, KHAL_PROVIDER_ID, } from "../khal-provider.js";
 import { llmCompleteSimple } from "../llm.js";
 const DEFAULT_RETRY_FORMATTER = (hint) => `# Retry hint from the validator\n\n${hint}\n\n`;
 const DEFAULT_MAX_TOOL_ITERATIONS = 16;
@@ -102,6 +103,8 @@ const piModels = builtinModels();
 // Register the local Lemonade gateway as a first-class `station/<model>`
 // provider at this resolution site (mirrored in src/llm.ts).
 registerStationProvider(piModels);
+// Same for the khal LiteLLM gateway (`khal/<model>`).
+registerKhalProvider(piModels);
 /**
  * Resolve a pi-ai Model using the same fallback strategy as llm.ts
  * (try exact id, then strip date suffix). Kept in-sync with `llm.ts`
@@ -239,6 +242,12 @@ function buildToolDispatchDriver(config, toolsCfg) {
             // gateway-only model ids resolve here too (mirrors src/llm.ts).
             if (modelCfg.provider === STATION_PROVIDER_ID) {
                 await ensureStationModels(piModels);
+            }
+            // khal's catalog is entirely dynamic, and the hook throws naming
+            // KHAL_API_KEY when the key is missing — before any model lookup, so
+            // a keyless run never reads as "unknown model" (mirrors src/llm.ts).
+            if (modelCfg.provider === KHAL_PROVIDER_ID) {
+                await ensureKhalModels(piModels);
             }
             const model = resolvePiModel(modelCfg.provider, modelCfg.model);
             const opts = { signal };

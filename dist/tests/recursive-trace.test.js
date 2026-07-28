@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createUsage, mergeUsage, usageDelta, parseRlmChildOutput, buildRlmChildArgs, buildChildEnv } from "../src/llm.js";
+import { createUsage, mergeUsage, usageDelta, parseRlmChildOutput, buildRlmChildArgs, buildChildEnv, classifyRlmChildResult, resolveChildModelRef, stderrTail } from "../src/llm.js";
 import { buildStats } from "../src/output.js";
 import { LangfuseTraceRecorder } from "../src/langfuse.js";
 describe("recursive RLM tracing helpers", () => {
@@ -141,6 +141,121 @@ describe("recursive RLM tracing helpers", () => {
         assert.equal(generationUpdate.body.costDetails.total, 0.42);
         assert.equal(generationUpdate.body.metadata.duration_ms, 123);
         assert.equal(generationUpdate.body.metadata.total_cost, 0.42);
+    });
+});
+/**
+ * `rlm_query(p, model="X")` used to be a silent no-op — the Python bridge put
+ * the kwarg on the wire (`python/llm_bridge.py:32-33`) and the Node handler
+ * never read `request.model`. Worse, with no `--model` on the child argv the
+ * child re-derived its model from whatever config sat at its cwd and inherited
+ * HOME, so a parent's model pin was lost entirely on every recursive spawn.
+ */
+describe("recursive child model pinning", () => {
+    it("emits --model on the child argv when the parent resolved one", () => {
+        const args = buildRlmChildArgs("subproblem", {
+            output: "json",
+            model: "khal/deepseek-v4-flash",
+            stats: true,
+            maxIterations: 4,
+            noSession: true,
+        });
+        assert.deepEqual(args, [
+            "subproblem",
+            "--output", "json",
+            "--stats",
+            "--model", "khal/deepseek-v4-flash",
+            "--max-iterations", "4",
+            "--no-session",
+        ]);
+    });
+    it("omits --model when no model was resolved", () => {
+        const args = buildRlmChildArgs("subproblem", { output: "json" });
+        assert.equal(args.includes("--model"), false);
+    });
+    const config = (provider, model, subCallModel) => ({ model: { provider, model, subCallModel } });
+    it("defaults the child to the parent's primary model, not its sub-call model", () => {
+        assert.equal(resolveChildModelRef(config("khal", "deepseek-v4-flash", "deepseek-v4-mini")), "khal/deepseek-v4-flash");
+    });
+    it("honours the model= kwarg, keeping the parent's provider", () => {
+        assert.equal(resolveChildModelRef(config("khal", "deepseek-v4-flash"), "deepseek-v4-pro"), "khal/deepseek-v4-pro");
+    });
+    it("falls back to the parent's model for an empty kwarg", () => {
+        assert.equal(resolveChildModelRef(config("khal", "deepseek-v4-flash"), ""), "khal/deepseek-v4-flash");
+    });
+    it("does not double-prefix a kwarg that already names the provider", () => {
+        assert.equal(resolveChildModelRef(config("khal", "deepseek-v4-flash"), "khal/deepseek-v4-pro"), "khal/deepseek-v4-pro");
+    });
+});
+/**
+ * The silent-failure bug. A child that cannot reach a model still exits 0 and
+ * still prints `{"answer":""}` — round 1's three recursive spawns all died
+ * this way and were handed back to the REPL as ordinary empty results. The
+ * parent must classify that as an explicit error the model can react to.
+ */
+describe("classifyRlmChildResult", () => {
+    const ok = JSON.stringify({
+        answer: "child verdict",
+        usage: { inputTokens: 11, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0.01, llmCalls: 1 },
+        stats: { run_id: "child-run-123" },
+    });
+    it("passes a real answer through untouched, with usage intact", () => {
+        const { result, isError } = classifyRlmChildResult(0, ok, "");
+        assert.equal(isError, false);
+        assert.equal(result.answer, "child verdict");
+        assert.equal(result.runId, "child-run-123");
+        assert.equal(result.usage?.totalCost, 0.01);
+    });
+    it("turns a zero-exit empty answer into an explicit rlm_query failure", () => {
+        const stdout = JSON.stringify({
+            answer: "",
+            model: "google/gemini-3.1-flash-lite-preview",
+            usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 1 },
+        });
+        const stderr = "rlmx [iter 0]: WARNING — LLM returned empty response. Possible context size limit.";
+        const { result, isError, errorMessage } = classifyRlmChildResult(0, stdout, stderr);
+        assert.equal(isError, true);
+        assert.ok(result.answer.startsWith("Error: rlm_query failed:"), result.answer);
+        assert.ok(result.answer.includes("empty answer"), result.answer);
+        assert.ok(result.answer.includes("LLM returned empty response"), result.answer);
+        assert.equal(errorMessage, result.answer);
+        // Usage is still reported so the parent's cost accounting stays honest.
+        assert.equal(result.usage?.llmCalls, 1);
+    });
+    it("treats a whitespace-only answer as a failure too", () => {
+        const { isError } = classifyRlmChildResult(0, JSON.stringify({ answer: "  \n " }), "");
+        assert.equal(isError, true);
+    });
+    it("flags a zero exit with unparseable stdout", () => {
+        const { result, isError } = classifyRlmChildResult(0, "", "Traceback: boom");
+        assert.equal(isError, true);
+        assert.ok(result.answer.startsWith("Error: rlm_query failed:"), result.answer);
+        assert.ok(result.answer.includes("Traceback: boom"), result.answer);
+    });
+    it("keeps the existing non-zero-exit message shape", () => {
+        const { result, isError, errorMessage } = classifyRlmChildResult(1, "", "boom");
+        assert.equal(isError, true);
+        assert.equal(result.answer, "Error: child rlmx exited with code 1. boom");
+        assert.equal(errorMessage, result.answer);
+    });
+    it("collapses and tail-truncates a long stderr instead of dumping it", () => {
+        const stderr = `${"x".repeat(1000)}\n\n   the last thing that went wrong`;
+        const { result } = classifyRlmChildResult(0, JSON.stringify({ answer: "" }), stderr);
+        assert.ok(result.answer.includes("the last thing that went wrong"), result.answer);
+        assert.ok(result.answer.length < 600, `error string too long: ${result.answer.length}`);
+        assert.equal(result.answer.includes("\n"), false);
+    });
+});
+describe("stderrTail", () => {
+    it("returns an empty string for empty stderr", () => {
+        assert.equal(stderrTail(""), "");
+        assert.equal(stderrTail("   \n\t "), "");
+    });
+    it("returns short stderr verbatim, whitespace-collapsed", () => {
+        assert.equal(stderrTail("  boom\n  bang  "), "boom bang");
+    });
+    it("keeps the tail, marked with an ellipsis", () => {
+        const out = stderrTail("abcdefghij", 4);
+        assert.equal(out, "…ghij");
     });
 });
 //# sourceMappingURL=recursive-trace.test.js.map

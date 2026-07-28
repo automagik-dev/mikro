@@ -65,6 +65,11 @@ import {
 	registerStationProvider,
 	STATION_PROVIDER_ID,
 } from "../station-provider.js";
+import {
+	ensureKhalModels,
+	registerKhalProvider,
+	KHAL_PROVIDER_ID,
+} from "../khal-provider.js";
 import type {
 	AssistantMessage as PiAssistantMessage,
 	Context as PiContext,
@@ -205,6 +210,8 @@ const piModels = builtinModels();
 // Register the local Lemonade gateway as a first-class `station/<model>`
 // provider at this resolution site (mirrored in src/llm.ts).
 registerStationProvider(piModels);
+// Same for the khal LiteLLM gateway (`khal/<model>`).
+registerKhalProvider(piModels);
 
 /**
  * Resolve a pi-ai Model using the same fallback strategy as llm.ts
@@ -355,6 +362,12 @@ function buildToolDispatchDriver(
 			// gateway-only model ids resolve here too (mirrors src/llm.ts).
 			if (modelCfg.provider === STATION_PROVIDER_ID) {
 				await ensureStationModels(piModels);
+			}
+			// khal's catalog is entirely dynamic, and the hook throws naming
+			// KHAL_API_KEY when the key is missing — before any model lookup, so
+			// a keyless run never reads as "unknown model" (mirrors src/llm.ts).
+			if (modelCfg.provider === KHAL_PROVIDER_ID) {
+				await ensureKhalModels(piModels);
 			}
 			const model = resolvePiModel(modelCfg.provider, modelCfg.model);
 			const opts: PiSimpleStreamOptions = { signal };

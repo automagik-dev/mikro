@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, parseToolsMd } from "../src/config.js";
+import { applyModelRef, loadConfig, parseModelRef, parseToolsMd } from "../src/config.js";
 /** Helper: create .rlmx/ dir with rlmx.yaml content */
 async function makeConfig(dir, yamlContent) {
     const rlmxDir = join(dir, ".rlmx");
@@ -137,6 +137,49 @@ describe("parseToolsMd", () => {
         assert.equal(tools[0].name, "greet");
         assert.ok(tools[0].code.includes("def greet"));
         assert.equal(tools[1].name, "farewell");
+    });
+});
+describe("parseModelRef", () => {
+    it("splits on the first slash only", () => {
+        assert.deepEqual(parseModelRef("khal/deepseek-v4-flash"), { provider: "khal", model: "deepseek-v4-flash" });
+        assert.deepEqual(parseModelRef("openrouter/meta/llama-4"), { provider: "openrouter", model: "meta/llama-4" });
+    });
+    it("returns null when there is no usable provider prefix", () => {
+        assert.equal(parseModelRef("deepseek-v4-flash"), null);
+        assert.equal(parseModelRef("/leading"), null);
+        assert.equal(parseModelRef("trailing/"), null);
+        assert.equal(parseModelRef(""), null);
+    });
+});
+/**
+ * Every model switch re-pins the sub-call model. Keeping the previous
+ * provider's `sub-call-model` is what made a bare `llm_query()` fail with
+ * `Unknown model "<inherited>" for provider "<new>"`.
+ */
+describe("applyModelRef", () => {
+    const base = { provider: "google", model: "gemini-3.1-flash-lite-preview", subCallModel: "gemini-3.1-flash-lite-preview" };
+    it("switches provider, model and sub-call model together", () => {
+        assert.deepEqual(applyModelRef(base, "khal/deepseek-v4-flash"), {
+            provider: "khal",
+            model: "deepseek-v4-flash",
+            subCallModel: "deepseek-v4-flash",
+        });
+    });
+    it("keeps the configured provider for a bare model id", () => {
+        assert.deepEqual(applyModelRef(base, "gemini-3.1-pro"), {
+            provider: "google",
+            model: "gemini-3.1-pro",
+            subCallModel: "gemini-3.1-pro",
+        });
+    });
+    it("trims surrounding whitespace and ignores an empty reference", () => {
+        assert.equal(applyModelRef(base, "  khal/deepseek-v4-flash  ").model, "deepseek-v4-flash");
+        assert.deepEqual(applyModelRef(base, "   "), base);
+    });
+    it("returns a new object rather than mutating the input", () => {
+        const input = { ...base };
+        applyModelRef(input, "khal/deepseek-v4-flash");
+        assert.deepEqual(input, base);
     });
 });
 //# sourceMappingURL=config.test.js.map

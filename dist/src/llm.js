@@ -6,6 +6,7 @@
  */
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ensureStationModels, registerStationProvider, STATION_PROVIDER_ID, } from "./station-provider.js";
+import { ensureKhalModels, registerKhalProvider, KHAL_PROVIDER_ID, } from "./khal-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
@@ -19,6 +20,8 @@ const models = builtinModels();
 // Register the local Lemonade gateway as a first-class `station/<model>`
 // provider at this resolution site (mirrored in src/sdk/rlm-driver.ts).
 registerStationProvider(models);
+// Same for the khal LiteLLM gateway (`khal/<model>`).
+registerKhalProvider(models);
 /** Create a fresh usage tracker. */
 export function createUsage() {
     return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 0, reasoningTokens: 0 };
@@ -123,6 +126,12 @@ export async function llmComplete(messages, modelConfig, options) {
     // the static baseline. Apply the overlay before resolving so those resolve.
     if (modelConfig.provider === STATION_PROVIDER_ID) {
         await ensureStationModels(models);
+    }
+    // khal's catalog is *entirely* dynamic, so the same hook runs first here —
+    // and throws naming KHAL_API_KEY when the key is missing, so a keyless run
+    // never degrades into a misleading "unknown model" from an empty catalog.
+    if (modelConfig.provider === KHAL_PROVIDER_ID) {
+        await ensureKhalModels(models);
     }
     const model = resolveModel(modelConfig.provider, modelConfig.model);
     const startTime = Date.now();
@@ -289,6 +298,10 @@ export function buildRlmChildArgs(prompt, options = {}) {
     const args = [prompt, "--output", options.output ?? "json"];
     if (options.stats)
         args.push("--stats");
+    // Without --model the child re-derives its model from its own cwd config and
+    // inherited HOME, which is how a parent's model pin used to be lost entirely.
+    if (options.model)
+        args.push("--model", options.model);
     if (options.maxIterations !== undefined)
         args.push("--max-iterations", String(options.maxIterations));
     if (options.timeout !== undefined)
@@ -329,6 +342,45 @@ export function parseRlmChildOutput(stdout) {
     catch {
         return { answer: stdout.trim() || "Error: empty response from child rlmx" };
     }
+}
+/** Last `maxChars` of a child's stderr, whitespace-collapsed, for error text. */
+export function stderrTail(stderr, maxChars = 400) {
+    const collapsed = stderr.replace(/\s+/g, " ").trim();
+    if (collapsed.length <= maxChars)
+        return collapsed;
+    return `…${collapsed.slice(-maxChars)}`;
+}
+/**
+ * Classify a finished child rlmx process into the answer the REPL caller sees.
+ *
+ * A child that cannot reach a model — wrong provider, missing key, empty
+ * completion — still exits 0 and still prints `{"answer":""}`. Handing that
+ * back as an ordinary result made a dead sub-call indistinguishable from a
+ * real one: three recursive spawns in the round-1 parity sweep died this way
+ * and nothing in the run recorded it. A zero exit with no answer is therefore
+ * reported as an explicit `Error:` string, which is the same shape the REPL
+ * already uses for handler throws and which the model can react to.
+ *
+ * Exit-code semantics of the child CLI itself are untouched — this is purely
+ * how the parent reads the result.
+ */
+export function classifyRlmChildResult(code, stdout, stderr) {
+    if (code !== 0) {
+        const errorMessage = `Error: child rlmx exited with code ${code}. ${stderr}`.trim();
+        return { result: { answer: errorMessage }, isError: true, errorMessage };
+    }
+    const parsed = parseRlmChildOutput(stdout);
+    const tail = stderrTail(stderr);
+    const suffix = tail ? ` — ${tail}` : "";
+    if (parsed.raw === undefined) {
+        const errorMessage = `Error: rlm_query failed: child rlmx exited 0 without parseable JSON output${suffix}`;
+        return { result: { ...parsed, answer: errorMessage }, isError: true, errorMessage };
+    }
+    if (parsed.answer.trim() === "") {
+        const errorMessage = `Error: rlm_query failed: child rlmx exited 0 with an empty answer${suffix}`;
+        return { result: { ...parsed, answer: errorMessage }, isError: true, errorMessage };
+    }
+    return { result: parsed, isError: false };
 }
 function isUsageStats(value) {
     const v = value;
@@ -415,25 +467,7 @@ export async function rlmQuery(prompt, cwd, signal, options = {}) {
         });
         child.on("close", (code) => {
             const durationMs = Date.now() - startMs;
-            if (code !== 0) {
-                const errorMessage = `Error: child rlmx exited with code ${code}. ${stderr}`.trim();
-                const result = { answer: errorMessage };
-                options.logger?.childEnd({
-                    child_correlation_id: correlationId,
-                    child_run_id: null,
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    cost: 0,
-                    llm_calls: 0,
-                    time_ms: durationMs,
-                    is_error: true,
-                    error_message: errorMessage,
-                });
-                options.onChildEnd?.({ spanId, correlationId, depth, result, durationMs, isError: true, errorMessage });
-                resolve(result);
-                return;
-            }
-            const result = parseRlmChildOutput(stdout);
+            const { result, isError, errorMessage } = classifyRlmChildResult(code, stdout, stderr);
             options.logger?.childEnd({
                 child_correlation_id: correlationId,
                 child_run_id: result.runId ?? null,
@@ -442,8 +476,16 @@ export async function rlmQuery(prompt, cwd, signal, options = {}) {
                 cost: result.usage?.totalCost ?? 0,
                 llm_calls: result.usage?.llmCalls ?? 0,
                 time_ms: durationMs,
+                ...(isError ? { is_error: true, error_message: errorMessage } : {}),
             });
-            options.onChildEnd?.({ spanId, correlationId, depth, result, durationMs });
+            options.onChildEnd?.({
+                spanId,
+                correlationId,
+                depth,
+                result,
+                durationMs,
+                ...(isError ? { isError: true, errorMessage } : {}),
+            });
             resolve(result);
         });
         child.on("error", (err) => {
@@ -482,6 +524,21 @@ export async function rlmQueryBatched(prompts, cwd, signal, options = {}) {
     return results;
 }
 /**
+ * Resolve the `provider/model` a recursive child should run on.
+ *
+ * `rlm_query(p, model="X")` used to be a silent no-op: the Python side put the
+ * kwarg on the wire and the handler never read it. It is honoured the same way
+ * `llm_query` honours its own `model=` — the provider comes from the parent's
+ * config, only the model id is swappable.
+ *
+ * With no kwarg the child is pinned to the parent's *primary* model rather
+ * than its sub-call model: a child is a full rlmx run, not a single
+ * completion, and the sub-call model is chosen to be a cheap one-shot.
+ */
+export function resolveChildModelRef(config, requestedModel) {
+    return formatModelRef(config.model.provider, requestedModel || config.model.model);
+}
+/**
  * Handle an LLM IPC request from the Python REPL.
  * Routes to the appropriate handler based on request_type.
  * When geminiCounts is provided, increments Gemini-specific call counters.
@@ -505,7 +562,7 @@ export async function handleLLMRequest(request, config, usage, signal, geminiCou
             return resp.results;
         }
         case "rlm_query": {
-            const result = await rlmQuery(request.prompts[0], config.configDir, signal, recursiveOptions);
+            const result = await rlmQuery(request.prompts[0], config.configDir, signal, { ...recursiveOptions, model: resolveChildModelRef(config, request.model) });
             if (result.usage) {
                 mergeUsage(usage, result.usage);
                 if (childUsage)
@@ -514,7 +571,7 @@ export async function handleLLMRequest(request, config, usage, signal, geminiCou
             return [result.answer];
         }
         case "rlm_query_batched": {
-            const results = await rlmQueryBatched(request.prompts, config.configDir, signal, recursiveOptions);
+            const results = await rlmQueryBatched(request.prompts, config.configDir, signal, { ...recursiveOptions, model: resolveChildModelRef(config, request.model) });
             for (const result of results) {
                 if (result.usage) {
                     mergeUsage(usage, result.usage);

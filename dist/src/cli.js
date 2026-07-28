@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { execFileSync } from "node:child_process";
-import { loadConfig } from "./config.js";
+import { applyModelRef, loadConfig } from "./config.js";
 import { isValidThinkingLevel, checkFutureFlags } from "./gemini.js";
 import { scaffold, needsScaffold } from "./scaffold.js";
 import { loadContext, loadContextFromStdin } from "./context.js";
@@ -60,7 +60,7 @@ Usage:
   rlmx doctor                    Health check: providers, RTK, config
   rlmx update [--force]          Fetch latest main commit for a git install
   rlmx acp                       Run as a stdio ACP agent (EXPERIMENTAL)
-  rlmx mcp                       Run as a stdio MCP server (agents as tools)
+  rlmx mcp [--dir <path>]        Run as a stdio MCP server (agents as tools)
 
 Options:
   --context <path>        Path to context (directory or file)
@@ -68,7 +68,7 @@ Options:
   --verbose               Show iteration progress on stderr
   --max-iterations <n>    Maximum RLM iterations (default: 30)
   --timeout <ms>          Timeout in milliseconds (default: 300000)
-  --dir <path>            Directory for init command (default: cwd)
+  --dir <path>            Working directory for init and mcp (default: cwd)
   --help, -h              Show this help message
   --version, -v           Show version
   --schema                Output machine-readable CLI schema JSON
@@ -79,6 +79,7 @@ Options:
   --max-cost <n>          Maximum USD spend per run
   --max-tokens <n>        Maximum total tokens per run
   --max-depth <n>         Maximum recursive rlm_query depth
+  --model <ref>           Model for this run: "provider/model" or a bare model id
   --ext <list>            File extensions for context dirs (comma-separated)
   --thinking <level>      Thinking level: minimal, low, medium, high (Gemini 3)
   --cache                 Enable cache mode (full context in system prompt for provider caching)
@@ -132,6 +133,7 @@ function parseCliArgs(args) {
             "max-cost": { type: "string" },
             "max-tokens": { type: "string" },
             "max-depth": { type: "string" },
+            model: { type: "string" },
             ext: { type: "string" },
             thinking: { type: "string" },
             cache: { type: "boolean", default: false },
@@ -149,7 +151,7 @@ function parseCliArgs(args) {
             query: null, command: "schema", context: null, output: "text",
             verbose: false, maxIterations: 30, timeout: 300000, dir: process.cwd(),
             stats: false, log: null, tools: null, maxCost: null, maxTokens: null,
-            maxDepth: null, ext: null, thinking: null, cache: false, estimate: false,
+            maxDepth: null, model: null, ext: null, thinking: null, cache: false, estimate: false,
             batchFile: null, parallel: 1, batchApi: false, noSession: false, template: "default",
         };
     }
@@ -158,7 +160,7 @@ function parseCliArgs(args) {
             query: null, command: "help", context: null, output: "text",
             verbose: false, maxIterations: 30, timeout: 300000, dir: process.cwd(),
             stats: false, log: null, tools: null, maxCost: null, maxTokens: null,
-            maxDepth: null, ext: null, thinking: null, cache: false, estimate: false,
+            maxDepth: null, model: null, ext: null, thinking: null, cache: false, estimate: false,
             batchFile: null, parallel: 1, batchApi: false, noSession: false, template: "default",
         };
     }
@@ -167,7 +169,7 @@ function parseCliArgs(args) {
             query: null, command: "version", context: null, output: "text",
             verbose: false, maxIterations: 30, timeout: 300000, dir: process.cwd(),
             stats: false, log: null, tools: null, maxCost: null, maxTokens: null,
-            maxDepth: null, ext: null, thinking: null, cache: false, estimate: false,
+            maxDepth: null, model: null, ext: null, thinking: null, cache: false, estimate: false,
             batchFile: null, parallel: 1, batchApi: false, noSession: false, template: "default",
         };
     }
@@ -222,6 +224,7 @@ function parseCliArgs(args) {
         maxCost: values["max-cost"] ? parseFloat(values["max-cost"]) : null,
         maxTokens: values["max-tokens"] ? parseInt(values["max-tokens"], 10) : null,
         maxDepth: values["max-depth"] ? parseInt(values["max-depth"], 10) : null,
+        model: values.model || null,
         ext,
         thinking: thinkingRaw || null,
         cache: values.cache,
@@ -278,6 +281,13 @@ async function runQuery(opts) {
     // Load config
     const config = await loadConfig(configDir);
     applySettingsModelOverrides(config);
+    // --model outranks settings.json and rlmx.yaml. This is also how a parent
+    // pins a recursive child: buildRlmChildArgs emits --model on the child argv,
+    // so rlm_query() no longer depends on the child re-deriving a model from
+    // whatever config happens to sit at its cwd or in its inherited HOME.
+    if (opts.model) {
+        config.model = applyModelRef(config.model, opts.model);
+    }
     // Apply CLI overrides to config
     if (opts.thinking) {
         config.gemini.thinkingLevel = opts.thinking;
@@ -897,6 +907,17 @@ async function main() {
             break;
         }
         case "mcp": {
+            // `--dir` is the server's cwd contract. An MCP host spawns the server
+            // from its own directory, and agent discovery, loadConfig, relative
+            // `context` arguments and the REPL cwd must all agree on one root —
+            // so chdir once, up front, and let every downstream default follow.
+            const target = resolve(opts.dir);
+            const { existsSync, statSync } = await import("node:fs");
+            if (!existsSync(target) || !statSync(target).isDirectory()) {
+                console.error(`Error: --dir must be an existing directory (got "${opts.dir}")`);
+                process.exit(1);
+            }
+            process.chdir(target);
             const { runMcp } = await import("./mcp/server.js");
             await runMcp();
             break;

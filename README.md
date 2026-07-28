@@ -79,13 +79,22 @@ A microagent is an `agent.yaml` folder ([schema](docs/agent-yaml-schema.md))
 in any of:
 
 ```
-~/.rlmx/agents/<name>/      # global
-<project>/.agents/<name>/   # project
-<project>/.rlmx/agents/<name>/
+~/.rlmx/agents/<name>/         # global
+<project>/.rlmx/agents/<name>/ # project — the convention
+<project>/.agents/<name>/      # project — supported alias
 ```
 
-Project agents shadow global ones with the same name. `RLMX_AGENTS_DIR`
-(colon-separated) replaces those roots.
+`<project>/.rlmx/agents/` is the convention: everything rlmx owns in a
+repository lives under one `.rlmx/` directory next to `rlmx.yaml`. `.agents/`
+is scanned too and stays supported — an agent folder is portable between the
+two, and `.rlmx/agents/` wins when the same name exists in both. Project agents
+shadow global ones with the same name, and `RLMX_AGENTS_DIR` (colon-separated)
+replaces every root.
+
+A ready-made one to copy: [`examples/agents/explore/`](examples/agents/explore/)
+— answers a question about the repo it runs in with `file:line` citations.
+Install it as `<project>/.rlmx/agents/explore/` and Claude Code gets an
+`rlmx_explore` tool.
 
 ```yaml
 # ~/.rlmx/agents/triage/agent.yaml
@@ -95,6 +104,13 @@ model: station/Qwen3.6-35B-A3B-MTP-GGUF   # local — $0 marginal cost
 description: Classifies inbound issues and proposes a label + owner.
 system: SYSTEM.md
 ```
+
+> **Choosing `shape`.** rlmx externalizes context into the Python REPL — the
+> model has to *run code* to read it. So `shape: single-step` gives it one pass
+> and it answers **before ever opening your file**. Use `single-step` only when
+> the whole input fits in the prompt; use `loop` with a `budget.max_iterations`
+> whenever the agent takes `context`. Symptom of getting this wrong: a
+> confident answer and a suspiciously small input-token count in the footer.
 
 Each result ends with what it cost, so the offload is visible rather than
 assumed:
@@ -107,7 +123,8 @@ Long runs emit `notifications/progress` per iteration, which keeps conforming
 clients from timing out mid-delegation. `RLMX_MCP_RUN_TIMEOUT_MS` lifts rlmx's
 own wall-clock cap.
 
-Gate: `node scripts/smoke-mcp.mjs`.
+Gates: `node scripts/smoke-mcp.mjs` (protocol) and `node scripts/smoke-explore.mjs`
+(the `explore` recipe end to end, citations resolved against this checkout).
 
 > Not to be confused with `rlmx acp` below. In ACP the *client* is an editor and
 > the *agent* is the AI tool — Claude Code and Codex are agents themselves, so
@@ -149,7 +166,7 @@ Deeper dives:
 - [`docs/events.md`](docs/events.md) — the 12-event catalogue + emitter contract.
 - [`docs/tool-authoring.md`](docs/tool-authoring.md) — TS/MJS + Python plugin recipes, RTK integration.
 - [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) — `agent.yaml` field reference.
-- [`examples/`](examples/) — three runnable example agents (hello-world / research-agent / brain-triage) with smoke tests.
+- [`examples/`](examples/) — three runnable example agents (hello-world / research-agent / brain-triage) with smoke tests, plus [`examples/agents/`](examples/agents/) for `.rlmx/agents/`-shaped recipes like `explore`.
 
 ## Live event stream (`rlmLoop({ emitter })`)
 

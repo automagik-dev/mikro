@@ -21,6 +21,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parseModelRef } from "../config.js";
 import { loadAgentSpec, resolveAgentPath, type AgentSpec } from "../sdk/agent-spec.js";
 
 /** A discovered microagent, ready to be exposed as one MCP tool. */
@@ -162,7 +163,5 @@ export async function discoverAgents(cwd: string): Promise<Microagent[]> {
 export function splitModel(
   value: string
 ): { provider: string; model: string } | null {
-  const idx = value.indexOf("/");
-  if (idx <= 0 || idx === value.length - 1) return null;
-  return { provider: value.slice(0, idx), model: value.slice(idx + 1) };
+  return parseModelRef(value);
 }

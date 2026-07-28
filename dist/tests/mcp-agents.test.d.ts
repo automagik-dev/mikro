@@ -11,6 +11,11 @@
  *   3. A broken agent.yaml is skipped rather than taking down the server.
  *   4. Descriptions are never empty — an empty description makes an agent
  *      effectively invisible to the host model.
+ *   5. The live-refresh seam: a re-scan rebuilds the advertised list and the
+ *      call lookup together, and reports a set change exactly once.
+ *   6. The session seam: TTL expiry, LRU eviction, per-tool orphan eviction,
+ *      turn-history bounding, and the resume fold — all the parts a live smoke
+ *      cannot force deterministically.
  */
 export {};
 //# sourceMappingURL=mcp-agents.test.d.ts.map
