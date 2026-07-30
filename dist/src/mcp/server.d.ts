@@ -37,8 +37,21 @@
  * `output: "json"` to keep it off its stream-mode stdout path — the same
  * contract `src/acp/agent.ts` follows.
  */
+import { type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { type RlmxConfig } from "../config.js";
 import { type Microagent } from "./agents.js";
+/**
+ * Output contract. Declaring it is what makes `structuredContent` a stated
+ * promise rather than an undocumented extra a client may drop — but it cuts
+ * the other way too: once an `outputSchema` exists, `structuredContent` is a
+ * channel a conforming client may read *instead of* `content` (the reference
+ * client outright rejects a non-error result that omits it). So the answer
+ * itself has to be part of the promise. A schema naming only `session_id`
+ * describes a result whose entire payload the host is free to discard —
+ * offloaded work that ran, cost money, and returned nothing the model can see.
+ */
+export declare function toolOutputSchema(): Tool["outputSchema"];
+export declare function buildToolList(agents: readonly Microagent[]): Tool[];
 /** One re-scan: what to advertise, what to dispatch on, and what changed. */
 export interface AgentScan {
     readonly agents: readonly Microagent[];
@@ -166,6 +179,43 @@ export declare function agentMaxIterations(agent: Microagent): number | undefine
  * agent's model is the only sensible default.
  */
 export declare function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig;
+/**
+ * Result of a call that never reached a session: bad arguments, unknown tool,
+ * unusable `session_id`. No `structuredContent`, because there is no session id
+ * to put in it and the declared schema requires one — legal precisely because
+ * these are all `isError`, and the schema binds only non-error results.
+ */
+export declare function textResult(text: string, isError?: boolean): CallToolResult;
+/**
+ * Result of a call that reached a session, success or failure alike. Declaring
+ * `outputSchema` obliges a non-error result to carry `structuredContent`; an
+ * error carries it too, so a caller can retry on the same session.
+ *
+ * `answer` is the *same string* as the text block, byte for byte, rather than
+ * the bare answer with the footer stripped. Two reasons: a host that reads the
+ * structured channel and ignores `content` must still see the token/cost
+ * footer, or the offload stops being visible in the transcript — the property
+ * this server exists to preserve; and one string mirrored into both channels
+ * cannot drift, where two derived strings eventually do.
+ */
+export declare function sessionResult(text: string, sessionId: string, isError?: boolean): CallToolResult;
+/**
+ * Did `rlmLoop` hand back a failure instead of an answer?
+ *
+ * Only rlmLoop's `throw` path reaches the catch in the call handler. Its two
+ * non-throwing failures — the consecutive-empty-response abort and the
+ * wall-clock timeout — *return* normally with their reason as an `Error: …`
+ * answer (`src/rlm.ts`). Reported as a success, the host model reads "Error:
+ * aborted after 3 consecutive empty LLM responses" as the delegated agent's
+ * report. `src/cli.ts` already treats that same shape as a failed run (exit 1
+ * on `empty_responses`); this is the MCP equivalent.
+ *
+ * The answer prefix is the discriminator, deliberately not `budgetHit`, which
+ * is wrong in both directions: a timeout that spent no budget leaves it null,
+ * while a genuine `max-cost`/`max-tokens`/`max-depth` hit forces a real final
+ * answer — a shorter report, not a failure — which must stay `isError: false`.
+ */
+export declare function isFailedAnswer(answer: string): boolean;
 /**
  * Run the MCP server on stdio until the client disconnects.
  *

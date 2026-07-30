@@ -87,19 +87,31 @@ const CONTEXT_PROPERTY = {
         "server's working directory. Equivalent to the CLI's --context.",
 };
 /**
- * Minimal output contract. Declaring it is what makes `structuredContent` a
- * stated promise rather than an undocumented extra a client may drop.
+ * Output contract. Declaring it is what makes `structuredContent` a stated
+ * promise rather than an undocumented extra a client may drop — but it cuts
+ * the other way too: once an `outputSchema` exists, `structuredContent` is a
+ * channel a conforming client may read *instead of* `content` (the reference
+ * client outright rejects a non-error result that omits it). So the answer
+ * itself has to be part of the promise. A schema naming only `session_id`
+ * describes a result whose entire payload the host is free to discard —
+ * offloaded work that ran, cost money, and returned nothing the model can see.
  */
-function toolOutputSchema() {
+export function toolOutputSchema() {
     return {
         type: "object",
         properties: {
+            answer: {
+                type: "string",
+                description: "The agent's final report, identical to the text block — the answer " +
+                    "followed by the token/cost footer. On a failed call this is the " +
+                    "error message instead of a report.",
+            },
             session_id: {
                 type: "string",
                 description: "Pass this back as `session_id` to continue this session.",
             },
         },
-        required: ["session_id"],
+        required: ["answer", "session_id"],
     };
 }
 function agentToolSchema() {
@@ -150,7 +162,7 @@ const GENERIC_DESCRIPTION = "Launch a general-purpose rlmx agent to handle a sel
     "report, and cannot ask follow-up questions mid-run. The result carries " +
     "the tokens and cost it used plus a session_id; pass that session_id back " +
     "to this tool to continue the conversation.";
-function buildToolList(agents) {
+export function buildToolList(agents) {
     const tools = [
         {
             name: GENERIC_TOOL,
@@ -418,7 +430,13 @@ function formatFooter(label, config, result, elapsedMs, sessionId) {
         `· ${formatCost(result.usage.totalCost)} · ${seconds}s${budget}` +
         ` · session ${sessionId}`);
 }
-function textResult(text, isError = false) {
+/**
+ * Result of a call that never reached a session: bad arguments, unknown tool,
+ * unusable `session_id`. No `structuredContent`, because there is no session id
+ * to put in it and the declared schema requires one — legal precisely because
+ * these are all `isError`, and the schema binds only non-error results.
+ */
+export function textResult(text, isError = false) {
     return { content: [{ type: "text", text }], isError };
 }
 /** Trimmed string argument; "" when absent, blank, or not a string. */
@@ -429,11 +447,18 @@ function readArg(value) {
  * Result of a call that reached a session, success or failure alike. Declaring
  * `outputSchema` obliges a non-error result to carry `structuredContent`; an
  * error carries it too, so a caller can retry on the same session.
+ *
+ * `answer` is the *same string* as the text block, byte for byte, rather than
+ * the bare answer with the footer stripped. Two reasons: a host that reads the
+ * structured channel and ignores `content` must still see the token/cost
+ * footer, or the offload stops being visible in the transcript — the property
+ * this server exists to preserve; and one string mirrored into both channels
+ * cannot drift, where two derived strings eventually do.
  */
-function sessionResult(text, sessionId, isError = false) {
+export function sessionResult(text, sessionId, isError = false) {
     return {
         content: [{ type: "text", text }],
-        structuredContent: { session_id: sessionId },
+        structuredContent: { answer: text, session_id: sessionId },
         isError,
     };
 }
@@ -445,6 +470,25 @@ function sessionResult(text, sessionId, isError = false) {
 function runTimeout() {
     const ms = Number(process.env.RLMX_MCP_RUN_TIMEOUT_MS);
     return Number.isFinite(ms) && ms > 0 ? { timeout: ms } : {};
+}
+/**
+ * Did `rlmLoop` hand back a failure instead of an answer?
+ *
+ * Only rlmLoop's `throw` path reaches the catch in the call handler. Its two
+ * non-throwing failures — the consecutive-empty-response abort and the
+ * wall-clock timeout — *return* normally with their reason as an `Error: …`
+ * answer (`src/rlm.ts`). Reported as a success, the host model reads "Error:
+ * aborted after 3 consecutive empty LLM responses" as the delegated agent's
+ * report. `src/cli.ts` already treats that same shape as a failed run (exit 1
+ * on `empty_responses`); this is the MCP equivalent.
+ *
+ * The answer prefix is the discriminator, deliberately not `budgetHit`, which
+ * is wrong in both directions: a timeout that spent no budget leaves it null,
+ * while a genuine `max-cost`/`max-tokens`/`max-depth` hit forces a real final
+ * answer — a shorter report, not a failure — which must stay `isError: false`.
+ */
+export function isFailedAnswer(answer) {
+    return answer.startsWith("Error: ");
 }
 /**
  * Run one turn. `query` is already the resume-folded prompt; `prompt` is the
@@ -527,7 +571,11 @@ async function runTurn(config, label, query, sessionId, contextPath, cwd, progre
             ...runTimeout(),
         });
         const footer = formatFooter(label, config, result, Date.now() - started, sessionId);
-        return { answer: result.answer, text: `${result.answer}\n\n---\n${footer}` };
+        return {
+            answer: result.answer,
+            text: `${result.answer}\n\n---\n${footer}`,
+            failed: isFailedAnswer(result.answer),
+        };
     }
     finally {
         if (heartbeat)
@@ -665,8 +713,10 @@ export async function runMcp(cwd = process.cwd()) {
                 const config = override ? applyModelOverride(baseConfig, override) : baseConfig;
                 outcome = await runTurn(config, "query", query, session.id, contextPath, cwd, progress);
             }
+            // The turn is recorded either way: an aborted turn is still history the
+            // follow-up may need to reference, and the caller was told it happened.
             sessions.record(session, { prompt, answer: outcome.answer });
-            return sessionResult(outcome.text, session.id);
+            return sessionResult(outcome.text, session.id, outcome.failed);
         }
         catch (err) {
             // A failing run must fail only this tool call, never the server process.

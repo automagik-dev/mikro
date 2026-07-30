@@ -105,10 +105,21 @@ release is the git commit on `main`. See `docs/release-contract.md`.
     `anyOf`, which MCP hosts surface to models inconsistently.
   - Descriptions read as spawn instructions (what it is, that it runs to
     completion and cannot ask follow-up questions, what comes back).
-  - Every result carries `session_id` in `structuredContent` — backed by a
-    declared `{session_id: string}` `outputSchema` so it is a contract rather
-    than an undocumented extra — and echoes it in the prose footer for hosts
-    that render only text.
+  - Every result carries `answer` **and** `session_id` in `structuredContent` —
+    backed by a declared `{answer: string, session_id: string}` `outputSchema`
+    so both are a contract rather than an undocumented extra — and echoes the
+    session id in the prose footer for hosts that render only text. `answer` is
+    the text block byte for byte, footer included: declaring an `outputSchema`
+    also permits a client to read `structuredContent` *instead of* `content`, so
+    the answer has to be in it or the whole delegated run is invisible to that
+    host. A failed call puts its error message in `answer`.
+  - A run that fails **without throwing** is now reported as `isError`. rlmx's
+    two designed aborts — three consecutive empty LLM responses, and the
+    wall-clock timeout — return their reason as an `Error: …` answer rather than
+    raising, so they used to arrive as successful results and the host model
+    read the abort reason as the agent's report. A genuine
+    `max-cost`/`max-tokens`/`max-depth` budget hit still forces a real final
+    answer and stays a success — shorter, not failed.
   - Passing that `session_id` back **continues the conversation**: the
     session's bounded turn history is replayed into the new prompt, the same
     mechanism `rlmx acp` uses. Each call still runs a fresh `rlmLoop` with a
