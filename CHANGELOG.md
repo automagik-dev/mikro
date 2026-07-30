@@ -5,11 +5,17 @@ All notable changes to rlmx are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 rlmx uses **calendar versioning**, not semantic versioning. Versions are
-`0.YYMMDD.N` — a fixed `0` prefix, the UTC date of the build, and a 1-based
-daily build counter (see `scripts/version.mjs`). A version number therefore
+`0.YYMMDD.N` — a fixed `0` prefix, the UTC date of the build, and a per-UTC-day
+release counter (see `scripts/version.mjs`). A version number therefore
 tells you *when* a build was cut, not what compatibility it promises. Breaking
 changes are called out under a `### Changed` or `### Removed` heading in the
 entry for the release that contains them.
+
+Every merge into `main` cuts a release, and the per-release notes are generated
+from conventional commits by `Release Metadata` (see `cliff.toml`). This file
+stays hand-curated as the narrative record of *notable* changes, so it
+intentionally covers fewer versions than the tag list; the `## [Unreleased]`
+section accumulates until it is promoted under a released version heading.
 
 Note that npm is an **SDK-only** distribution channel; the canonical CLI
 release is the git commit on `main`. See `docs/release-contract.md`.
@@ -99,10 +105,27 @@ release is the git commit on `main`. See `docs/release-contract.md`.
     `anyOf`, which MCP hosts surface to models inconsistently.
   - Descriptions read as spawn instructions (what it is, that it runs to
     completion and cannot ask follow-up questions, what comes back).
-  - Every result carries `session_id` in `structuredContent` — backed by a
-    declared `{session_id: string}` `outputSchema` so it is a contract rather
-    than an undocumented extra — and echoes it in the prose footer for hosts
-    that render only text.
+  - Every result carries `answer` **and** `session_id` in `structuredContent` —
+    backed by a declared `{answer: string, session_id: string}` `outputSchema`
+    so both are a contract rather than an undocumented extra — and echoes the
+    session id in the prose footer for hosts that render only text. `answer` is
+    the text block byte for byte, footer included: declaring an `outputSchema`
+    also permits a client to read `structuredContent` *instead of* `content`, so
+    the answer has to be in it or the whole delegated run is invisible to that
+    host. A failed call puts its error message in `answer`.
+  - A run that fails **without throwing** is now reported as `isError`. rlmx's
+    two designed aborts — three consecutive empty LLM responses, and the
+    wall-clock timeout — return their reason as the answer rather than raising,
+    so they used to arrive as successful results and the host model read the
+    abort reason as the agent's report. Each is matched by its own exact signal
+    — the abort by `budgetHit === "empty_responses"` (the same field `src/cli.ts`
+    keys its exit code off, now one shared constant in `src/rlm.ts`), the
+    timeout by its verbatim answer — and deliberately **not** by testing the
+    answer for an `Error:` prefix: `answer` is the model's own text, and a
+    report that quotes the failing line out of a log starts that way as a matter
+    of course (that is the shipped `log-triage` recipe's whole job). A genuine
+    `max-cost`/`max-tokens`/`max-depth` budget hit still forces a real final
+    answer and stays a success — shorter, not failed.
   - Passing that `session_id` back **continues the conversation**: the
     session's bounded turn history is replayed into the new prompt, the same
     mechanism `rlmx acp` uses. Each call still runs a fresh `rlmLoop` with a
@@ -150,6 +173,41 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   a resume round-trip, and the unknown-session / session-busy / cross-tool
   errors. Live turns run against the local station gateway — keyless, same
   convention as `smoke-acp.mjs`; `--no-live` gates the protocol surface alone.
+- **Optional `thinking:` in `agent.yaml`** — `minimal` | `low` | `medium` |
+  `high`, so an agent pins its own reasoning effort instead of inheriting the
+  ambient `gemini.thinking-level`. Validated at parse time, which is discovery
+  time under `rlmx mcp`, with a named error listing the legal values; unknown
+  levels no longer land silently on `extras`. `applyAgent` writes the one field
+  `--thinking` already writes (`config.gemini.thinkingLevel` →
+  `llmComplete({ thinkingLevel })` → pi/ai `reasoning`), so there is no second
+  per-agent channel to keep in sync.
+  - On a **cloud** model this is a **correctness fix, not tuning**: pi/ai
+    explicitly *disables* reasoning when no level is passed, so a microagent on
+    Google / OpenAI / Anthropic had been running with reasoning off and had no
+    way to ask for it. Verified by capturing built request payloads (no
+    network) — `high` becomes `thinkingConfig.thinkingLevel: HIGH` on Google,
+    `reasoning.effort: "high"` on OpenAI Responses, and
+    `thinking.budget_tokens: 16384` on Anthropic. The knob is **not**
+    Google-only despite the `gemini.` config prefix.
+  - **`station/` models are the exception, and there reasoning-off is
+    deliberate.** They declare `supportsReasoningEffort: false`, so no
+    `reasoning_effort` is sent and the levels do not grade — the only thing a
+    declared level changes is `chat_template_kwargs.enable_thinking`, which
+    pi/ai derives from *whether* a level was requested. Off is the QA'd
+    baseline that makes `Qwen3.6-35B-A3B-MTP-GGUF` answer at all; on, it
+    streams into `reasoning_content`, never emits a `content` delta, and three
+    such turns abort the run (see `src/station-provider.ts`). So `thinking:` is
+    a footgun on local Qwen GGUF models and every shipped `station/` recipe
+    omits it. Documented in `README.md` and
+    `docs/agent-yaml-schema.md#station-models-leave-thinking-unset`.
+  - The level is a request, not a guarantee: pi/ai clamps to the levels the
+    resolved model declares and searches *upward* first, so `minimal` on a model
+    with a higher floor comes back raised.
+  - `rlmx mcp` now emits one stderr line per unloadable agent directory (deduped;
+    a directory with no `agent.yaml` stays silent). Discovery previously caught
+    and discarded every parse error, so a typo'd value presented as the agent
+    silently vanishing from `tools/list` with nothing to debug. Broken agents are
+    still skipped rather than taking down the server.
 
 ### explore microagent
 

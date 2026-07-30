@@ -7,7 +7,7 @@ import { applyModelRef, loadConfig } from "./config.js";
 import { isValidThinkingLevel, checkFutureFlags } from "./gemini.js";
 import { scaffold, needsScaffold } from "./scaffold.js";
 import { loadContext, loadContextFromStdin } from "./context.js";
-import { rlmLoop } from "./rlm.js";
+import { EMPTY_RESPONSES_BUDGET_HIT, rlmLoop } from "./rlm.js";
 import { outputResult, buildStats, emitStats } from "./output.js";
 import { createLogger } from "./logger.js";
 import { checkPythonVersion } from "./detect.js";
@@ -446,7 +446,7 @@ async function runQuery(opts) {
         }
     }
     // Exit with non-zero code on empty response abort (issue #14)
-    if (result.budgetHit === "empty_responses") {
+    if (result.budgetHit === EMPTY_RESPONSES_BUDGET_HIT) {
         process.exit(1);
     }
 }

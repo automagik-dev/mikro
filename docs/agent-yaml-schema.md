@@ -58,6 +58,11 @@ model: gemini-2.5-flash      # free-form string; the SDK does not
                              # validate — it's surfaced on AgentSpec
                              # for the consumer's driver / rlmDriver.
 
+# ─── Reasoning effort (optional) ──────────────────────────────
+thinking: high               # "minimal" | "low" | "medium" | "high"
+                             # Rejected with a named error if it is anything
+                             # else. Omit to inherit the ambient config.
+
 # ─── Tools ───────────────────────────────────────────────────
 tools:
   - greet                    # Each name must resolve via the plugin
@@ -94,12 +99,77 @@ system: SYSTEM.md            # Relative to agent dir. Consumer loads
 | `shape` | `"single-step" \| "loop" \| "recurse"` | `"single-step"` | SDK reads, enforces allowed values | Rejects unknown shapes with a named error. |
 | `model` | string | — | passthrough | Not validated. Consumers wire it into their driver. |
 | `tools` | string[] | `[]` | SDK reads | Empty strings are filtered. Duplicate names collapse (last wins at load). |
+| `thinking` | `"minimal" \| "low" \| "medium" \| "high"` | — | SDK reads, enforces allowed values | Reasoning effort for the agent's own model calls. Rejects unknown levels with a named error. See [Reasoning effort](#reasoning-effort-thinking). |
 | `system` | string | — | passthrough | Consumer is responsible for reading the file + handing its contents to the driver. |
 | `scope.reads` | string[] | — | passthrough | Advisory. Enforced by individual tool handlers (e.g. brain's `read`). |
 | `scope.writes` | string[] | — | passthrough | Advisory, same as above. |
 | `budget.max_cost` / `maxCost` | number | — | passthrough | Consumer threads it into their budget tracker. |
 | `budget.max_iterations` / `maxIterations` | number | — | SDK/consumer | Can be passed to `runAgent({ maxIterations })`. |
 | `budget.max_depth` / `maxDepth` | number | — | passthrough | For recursive shapes. |
+
+## Reasoning effort: `thinking`
+
+```yaml
+thinking: high
+```
+
+The `agent.yaml` twin of `rlmx --thinking`. Under `rlmx mcp`, `applyAgent`
+writes it to the single field the whole stack already reads —
+`config.gemini.thinkingLevel` → `llmComplete({ thinkingLevel })` → pi-ai's
+`reasoning` option — so a declared level outranks the ambient `rlmx.yaml`'s
+`gemini.thinking-level` exactly the way the CLI flag does. There is no
+separate per-agent channel to keep in sync.
+
+Four things worth knowing before you set it:
+
+- **It is not Google-only,** despite the `gemini.` prefix the config field
+  inherited. pi-ai maps `reasoning` on every API family it supports: OpenAI
+  Responses (`reasoning.effort`), OpenAI Completions and its
+  deepseek / openrouter / zai / together dialects (`reasoning_effort`), Google
+  (`thinkingConfig.thinkingLevel`), and Anthropic (`thinking.budget_tokens`).
+- **Omitting it is not "provider default".** pi-ai explicitly *disables*
+  reasoning when no level is given, on models that support it. So an agent that
+  wants its model to think has to say so.
+- **The level is a request, not a guarantee.** pi-ai clamps it to the levels the
+  resolved model actually declares, and it searches *upward* first — so
+  `thinking: minimal` on a model whose floor is higher comes back *raised*, not
+  lowered. Treat it as a hint, and read the run's reported effort if the exact
+  value matters.
+- **It is not graded everywhere, and on `station/` it is a footgun** — see the
+  next section before setting it on a local model.
+
+`minimal`, `low`, `medium`, and `high` are the accepted values. pi-ai's own type
+additionally has `xhigh` and `max`, but those are reachable only on models that
+declare an explicit mapping for them, so `agent.yaml` rejects them today.
+
+### `station/` models: leave `thinking` unset
+
+`station/` models (`src/station-provider.ts`) declare
+`compat.supportsReasoningEffort: false`, so pi-ai never sends a
+`reasoning_effort` at all. The four levels therefore do not grade anything
+there: `low` and `high` build the identical request, and the only thing a
+declared level changes is that *some* level was declared.
+
+On the llama.cpp Qwen MTP models that one bit is load-bearing in the wrong
+direction. They carry `reasoning: true` +
+`compat.thinkingFormat: "qwen-chat-template"`, which makes pi-ai send
+`chat_template_kwargs.enable_thinking = !!reasoningEffort`:
+
+| `agent.yaml` | request | `Qwen3.6-35B-A3B-MTP-GGUF` behaviour |
+|---|---|---|
+| no `thinking:` | `enable_thinking: false` | answers directly — **the QA'd baseline** |
+| any `thinking:` level | `enable_thinking: true` | streams into `reasoning_content`, emits no `content` delta, parses as **empty** |
+
+Three consecutive empty turns abort the run (`src/rlm.ts`), which `rlmx mcp`
+reports as `isError`. So reasoning-off is not an accident inherited from the
+"omitting it is not a provider default" rule above — for these models it is the
+deliberate, live-QA'd compat workaround documented in the
+`src/station-provider.ts` header, and adding `thinking:` removes it. Every
+shipped `station/` recipe under `examples/agents/` omits the field for this
+reason.
+
+FastFlowLM / NPU `station` models (`*-FLM`) declare `reasoning: false`, so the
+field is simply inert on them rather than harmful.
 
 ## Extras
 
@@ -153,11 +223,28 @@ there is no warning to notice.
 | YAML syntax error | `Error: agent.yaml: parse error: ...` |
 | Top-level is not a mapping (e.g. a list or scalar) | `Error: agent.yaml: expected a YAML mapping at the top level` |
 | `shape` is set to an unsupported value | `Error: agent.yaml: shape must be one of single-step \| loop \| recurse, got "..."` |
+| `thinking` is set to an unsupported level | `Error: agent.yaml: thinking must be one of minimal \| low \| medium \| high, got "..."` |
 | `agent.yaml` file is missing (via `loadAgentSpec`) | `ENOENT` from `node:fs` |
 
 Non-strings, non-finite numbers, and other type drift default
 silently — the parser aims to be forgiving where there's no risk of
 surprise.
+
+### How `rlmx mcp` reports them
+
+Discovery must not let one bad agent take down the server, so `loadOne` skips
+any directory whose `agent.yaml` fails to parse. It does **not** skip quietly:
+when an `agent.yaml` exists but is invalid, the parser's message above is
+written to **stderr** once per directory (discovery re-runs on every request, so
+repeating it would flood the log), naming the agent and its path:
+
+```
+rlmx: skipping agent "triage" (/repo/.rlmx/agents/triage): agent.yaml: thinking must be one of minimal | low | medium | high, got "hgih"
+```
+
+A directory with *no* `agent.yaml` is not an error and stays silent — that is
+just a folder that is not an agent. The other silent case is the `.proposed`
+suffix below, which is skipped before the spec is read at all.
 
 ## Consumer schema evolution
 

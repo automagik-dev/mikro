@@ -2,51 +2,51 @@
 
 RLM algorithm CLI for coding agents — prompt externalization, Python REPL with symbolic recursion, code-driven navigation.
 
-Based on the [RLM paper](https://arxiv.org/abs/2501.12599) (REPL-based LLM Method). Uses [pi/ai](https://github.com/nickarora/pi-ai) as the multi-provider LLM client.
-
-## Production validation (2026-04-22)
-
-The SDK (`rlmx.sdk.*`) is production-validated via its first consumer,
-`khal-os/brain`, a multi-agent pipeline over WhatsApp / long-form
-archives. Three agent bridges run through `sdk.runAgent()`:
-
-| bridge | role | slate | status |
-|---|---|---|---|
-| L1 triage | worth-processing filter | 30 windows | **SHIP 30/30** structural match vs legacy path |
-| L2 preservation | multi-step extraction + brain mutation | 24 windows | **SHIP at variance ceiling** (baseline×baseline ≈ baseline×bridge) |
-| L3 audit | sampled self-audit | slate in flight | pending verdict |
-
-Evidence depth (metadata only — no content):
-
-- Dogfood reports live in the brain repo under
-  `brain-lab/rlmx-sdk-bridge-report/` (L1) and
-  `brain-lab/rlmx-sdk-bridge-report-l2/` (L2). Each carries a
-  `SHIP-decision.md` with the baseline-vs-bridge delta table + stop-
-  reason distribution.
-- Event streams, permission hooks, validate-with-retry, and session
-  checkpoints are all exercised per-window. Cost and latency are
-  captured per iteration.
-- Brain's bridge pattern (an outer `IterationDriver` wrapping the
-  legacy pi-agent loop) is a reusable template for consumers that
-  want to migrate a working agent into the SDK without rewriting
-  its internals. See `src/agent/rlmx-bridge.ts` in `khal-os/brain`
-  for the reference implementation.
-
-**Stability stamp:** `schema_version: 1` + `tools_api: 1` are the
-fields every bridge has shipped against. See
-[`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) for the
-schema itself.
+Based on the [RLM paper](https://arxiv.org/abs/2501.12599) (REPL-based LLM Method). Uses [pi/ai](https://www.npmjs.com/package/@earendil-works/pi-ai) as the multi-provider LLM client, plus two native providers of its own (`station/`, `khal/`).
 
 ## Install
 
+`scripts/install.sh` is the canonical installer — rlmx is git-installed, not
+npm-installed (see [`docs/release-contract.md`](docs/release-contract.md)):
+
 ```bash
-npm install -g rlmx
+curl -fsSL https://raw.githubusercontent.com/automagik-dev/rlmx/main/scripts/install.sh | bash
 ```
+
+It clones to `~/.rlmx/rlmx`, runs `npm ci --include=dev` and `npm run build`,
+then symlinks `dist/src/cli.js` → `~/.local/bin/rlmx`. Re-running it against an
+existing checkout refreshes it in place. From a clone you already have,
+`bash scripts/install.sh` (or `npm run install:local`) does the same.
+
+Four env vars override the defaults: `RLMX_REPO_URL`, `RLMX_BRANCH`,
+`RLMX_INSTALL_DIR`, `RLMX_BIN_DIR`.
+
+### Update
+
+```bash
+rlmx update            # fetch origin/main, rebuild in place
+rlmx update --force    # same, discarding local changes in the checkout
+```
+
+`rlmx update` refuses to run over a dirty checkout without `--force`, then
+resets to `origin/main`, reinstalls, rebuilds, and prints the before commit,
+the target commit and the resulting version. Because `rlmx` is a symlink into
+that clone's `dist/`, this is what makes a new `main` commit take effect.
+
+### npm is SDK-only
+
+```bash
+npm install @automagik/rlmx     # library, for programmatic consumers
+```
+
+The npm package ships **no `bin`** — by contract, and CI asserts it
+(`scripts/smoke-install-update.sh`). So `npx rlmx` cannot work and there is no
+`npm install -g` path. npm gets you the SDK; `install.sh` gets you the CLI.
 
 ## Quick Start
 
 ```bash
-# Scaffold config files in current directory
+# Scaffold .rlmx/ config in the current directory
 rlmx init
 
 # Run a query
@@ -84,16 +84,76 @@ process:
 claude plugin marketplace add ~/.rlmx/rlmx && claude plugin install rlmx@rlmx
 ```
 
-Details, limits and honest positioning:
-[`plugins/claude-code/README.md`](plugins/claude-code/README.md).
+The clone *is* the marketplace — `.claude-plugin/marketplace.json` sits at the
+repository root — and `~/.rlmx/rlmx` is exactly where `install.sh` put it.
+The plugin needs `rlmx` on `PATH`, which is what `install.sh` provides; if the
+server shows as failed in `claude mcp list`, check `command -v rlmx` in the
+shell that launched Claude Code. It ships that one server plus two skills
+(`/rlmx:offload-guidance`, `/rlmx:microagent-create`). Details, limits and
+honest positioning: [`plugins/claude-code/README.md`](plugins/claude-code/README.md).
 
-A microagent is an `agent.yaml` folder ([schema](docs/agent-yaml-schema.md))
+### Tool contract
+
+Every tool — `rlmx_query` and each microagent — takes the same input, chosen to
+mirror the host's own Agent tool so the model uses it without being taught:
+
+| field | required | meaning |
+| --- | --- | --- |
+| `prompt` | yes | The task. A complete, standalone instruction: the agent runs to completion and cannot ask follow-up questions mid-run. |
+| `query` | — | Deprecated alias for `prompt`. Pass one or the other, never both. |
+| `session_id` | — | Continue an earlier call **on this same tool** — pass the `session_id` its result returned. |
+| `context` | — | Path to a file or directory to load as context, relative to the server's working directory. Same as the CLI's `--context`. |
+| `model` | — | `rlmx_query` only: override the model as `"<provider>/<model>"`, e.g. `station/Brain-35B`. |
+
+`prompt` and `query` are both schema-*optional* and exactly one is demanded at
+runtime — JSON Schema can only say "exactly one of" via `anyOf`/`oneOf`, which
+several MCP hosts flatten or reject, so the constraint lives in code and the
+error names `prompt`.
+
+Every result declares an `outputSchema` of `{answer: string, session_id: string}`
+and returns both in `structuredContent`. `answer` is the text block byte for
+byte, token/cost footer included — declaring an `outputSchema` also *permits* a
+host to read `structuredContent` instead of `content`, so the answer has to be
+in it or the whole delegated run is invisible to that host.
+
+Pass `session_id` back to **the same tool** and the prior turns are replayed into
+the new prompt. Sessions are in-process and time-limited: an expired id, an id
+belonging to another tool, and an id with a call already in flight each get their
+own named error. Resume is conversation replay, not REPL state — the Python REPL
+is rebuilt per call and its state is deliberately not promised across turns.
+
+A run that fails **without throwing** comes back as `isError` with the reason in
+`answer`. rlmx's two designed aborts — three consecutive empty LLM responses and
+the wall-clock timeout — return their reason as the answer rather than raising,
+so without this a host model would read the abort reason as the agent's report.
+Both are matched by exact signal (the abort's `budgetHit`, the timeout's
+verbatim answer), never by sniffing the answer for an `Error:` prefix — a report
+that quotes a failing log line legitimately starts that way. A genuine
+`max-cost`/`max-tokens`/`max-depth` budget hit still forces a real final answer
+and stays a success: shorter, not failed.
+
+**The tool set is live.** Every `tools/list` *and* every `tools/call` re-scans
+the agent roots from one shared scan, and `notifications/tools/list_changed`
+fires when the set actually changes — so an agent you author mid-session is
+listed and callable with no reconnect.
+
+Long runs emit `notifications/progress` per iteration, which keeps conforming
+clients from timing out mid-delegation. `RLMX_MCP_RUN_TIMEOUT_MS` lifts rlmx's
+own wall-clock cap.
+
+> Not to be confused with `rlmx acp` below. In ACP the *client* is an editor and
+> the *agent* is the AI tool — Claude Code and Codex are agents themselves, so
+> they can't drive rlmx over ACP. MCP is the protocol they speak as clients.
+
+## Microagents (`agent.yaml`)
+
+A microagent is an `agent.yaml` folder ([full schema](docs/agent-yaml-schema.md))
 in any of:
 
 ```
 ~/.rlmx/agents/<name>/         # global
-<project>/.rlmx/agents/<name>/ # project — the convention
 <project>/.agents/<name>/      # project — supported alias
+<project>/.rlmx/agents/<name>/ # project — the convention
 ```
 
 `<project>/.rlmx/agents/` is the convention: everything rlmx owns in a
@@ -101,26 +161,73 @@ repository lives under one `.rlmx/` directory next to `rlmx.yaml`. `.agents/`
 is scanned too and stays supported — an agent folder is portable between the
 two, and `.rlmx/agents/` wins when the same name exists in both. Project agents
 shadow global ones with the same name, and `RLMX_AGENTS_DIR` (colon-separated)
-replaces every root.
+replaces every root. Roots are listed above in precedence order, lowest first.
 
-Ready-made ones to copy live in **[`examples/agents/`](examples/agents/)** —
-the single recipe tree ([index](examples/agents/README.md)). Start with
-[`explore/`](examples/agents/explore/): it answers a question about the repo it
-runs in with `file:line` citations. Install it as
-`<project>/.rlmx/agents/explore/` and Claude Code gets an `rlmx_explore` tool.
-Also there: `codebase-qa`, `changelog` and `log-triage` (small, local-model,
-ungated), and `explore-r` (recursive). Which worker model to run them on, and
-what the evidence does and does not establish:
-[`docs/worker-models.md`](docs/worker-models.md).
+Directory name → tool name: lowercased, anything outside `[a-z0-9_-]` folded to
+`_`, prefixed `rlmx_`. So `.rlmx/agents/explore-r/` becomes `rlmx_explore-r`.
 
 ```yaml
 # ~/.rlmx/agents/triage/agent.yaml
 schema_version: 1
+tools_api: 1
 shape: loop
 model: station/Qwen3.6-35B-A3B-MTP-GGUF   # local — $0 marginal cost
 description: Classifies inbound issues and proposes a label + owner.
 system: SYSTEM.md
+# no `thinking:` — required here: on a station/ Qwen GGUF model any level
+# makes the run abort empty. On a cloud model add `thinking: low`, where
+# omitting it means reasoning *off*, not "provider default". Notes below.
+budget:
+  max_iterations: 6
+  max_cost: 0.50
 ```
+
+### Fields
+
+Snake_case and camelCase are both accepted for every multi-word key. Unknown
+keys are preserved on `AgentSpec.extras` rather than rejected, so you can layer
+your own schema without forking the parser.
+
+| field | default | what it does |
+| --- | --- | --- |
+| `schema_version` | `1` | Schema generation. Stable at 1; prior versions stay loadable. |
+| `tools_api` | `1` | Tool-contract generation. Same guarantee. |
+| `shape` | `single-step` | `single-step` \| `loop` \| `recurse`. An unknown value is a hard error. |
+| `model` | ambient config | `"<provider>/<model>"` — `station/…`, `khal/…`, or any pi/ai provider. A bare model id keeps the configured provider. |
+| `description` | — | One line the MCP client shows the host model. Falls back to the first meaningful line of the system prompt, then a generic string — an agent with neither is effectively invisible. |
+| `system` | — | Path to the system prompt, relative to the agent directory. |
+| `tools` | `[]` | Plugin tool names to load. Empty strings drop; duplicates collapse. |
+| `budget.max_cost` | — | USD ceiling per run. |
+| `budget.max_iterations` | — | Iteration ceiling. Threaded into `runAgent({ maxIterations })`. |
+| `budget.max_depth` | — | Recursion depth ceiling, for `shape: recurse`. |
+| `scope.reads` / `scope.writes` | — | Advisory glob hints. The SDK does **not** enforce them; individual tool handlers do. |
+| `thinking` | ambient config | `minimal` \| `low` \| `medium` \| `high` — reasoning effort for this agent's own model calls. An unknown value is a hard error. The four levels are graded only on providers that accept a reasoning effort; on `station/` models they collapse to on/off, where **on breaks the Qwen GGUF models** — see the two notes below. |
+
+> **`thinking` is not tuning — it is a default worth overriding.** Omitting it
+> does **not** mean "provider default": pi/ai explicitly *disables* reasoning
+> when no level is given, so an agent that needs its model to think has to say
+> so. A declared level outranks the ambient `gemini.thinking-level` exactly the
+> way `--thinking` does, because it writes that same field — there is no second
+> per-agent channel to keep in sync. Despite the `gemini.` prefix the config key
+> inherited, this is **not** Google-only: pi/ai maps it onto OpenAI
+> (`reasoning.effort`), Google (`thinkingConfig.thinkingLevel`), and Anthropic
+> (`thinking.budget_tokens`) alike. Treat the level as a request rather than a
+> guarantee — pi/ai clamps it to what the resolved model declares, searching
+> *upward* first, so `minimal` on a model with a higher floor comes back raised.
+> Full detail in [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md#reasoning-effort-thinking).
+
+> **Do not set `thinking` on a `station/` Qwen GGUF model.** There the field is
+> not graded and reasoning-off is not an oversight — it is the QA'd workaround
+> that makes the model answer at all. `station/` models declare
+> `supportsReasoningEffort: false`, so no `reasoning_effort` is ever sent and
+> `low` and `high` are indistinguishable; what the level actually toggles is
+> `chat_template_kwargs.enable_thinking`, which pi/ai sets from *whether* a
+> level was requested. Off, `Qwen3.6-35B-A3B-MTP-GGUF` answers. On, it streams
+> everything into `reasoning_content` and never emits a `content` delta, so the
+> turn parses as empty and three of those abort the run — surfaced as `isError`
+> over MCP. This is why every shipped `station/` recipe in
+> [`examples/agents/`](examples/agents/) omits the field. Rationale and the
+> live-QA record: `src/station-provider.ts`.
 
 > **Choosing `shape`.** rlmx externalizes context into the Python REPL — the
 > model has to *run code* to read it. So `shape: single-step` gives it one pass
@@ -129,6 +236,34 @@ system: SYSTEM.md
 > whenever the agent takes `context`. Symptom of getting this wrong: a
 > confident answer and a suspiciously small input-token count in the footer.
 
+### `.proposed` is a reserved suffix
+
+A directory whose name ends `.proposed` (matched case-insensitively) is a draft
+awaiting human approval. Discovery skips it **before the spec is parsed**, and
+`tools/call` dispatches from that same scan, so a draft is neither listed nor
+callable — calling it by its would-be name answers
+`Unknown tool: rlmx_<name>_proposed`. Activation is a rename you perform:
+
+```bash
+mv .rlmx/agents/<name>.proposed .rlmx/agents/<name>
+```
+
+The tool appears on the next request. This is the propose-only boundary behind
+`/rlmx:microagent-create`. **The skip is silent by design**, so do not name a
+real agent `<something>.proposed`.
+
+### Ready-made ones
+
+Copy from **[`examples/agents/`](examples/agents/)** — the single recipe tree
+([index](examples/agents/README.md)). Start with
+[`explore/`](examples/agents/explore/): it answers a question about the repo it
+runs in with `file:line` citations. Install it as
+`<project>/.rlmx/agents/explore/` and Claude Code gets an `rlmx_explore` tool.
+Also there: `codebase-qa`, `changelog` and `log-triage` (small, local-model,
+ungated), and `explore-r` (recursive). Which worker model to run them on, and
+what the evidence does and does not establish:
+[`docs/worker-models.md`](docs/worker-models.md).
+
 Each result ends with what it cost, so the offload is visible rather than
 assumed:
 
@@ -136,16 +271,9 @@ assumed:
 rlmx · agent=triage · station/Qwen3.6-35B-A3B-MTP-GGUF · 3 iterations · 307 in / 36 out · $0.00 · 3.9s
 ```
 
-Long runs emit `notifications/progress` per iteration, which keeps conforming
-clients from timing out mid-delegation. `RLMX_MCP_RUN_TIMEOUT_MS` lifts rlmx's
-own wall-clock cap.
-
-Gates: `node scripts/smoke-mcp.mjs` (protocol) and `node scripts/smoke-explore.mjs`
+Protocol and recipe smokes, run manually — CI does not:
+`node scripts/smoke-mcp.mjs` (protocol) and `node scripts/smoke-explore.mjs`
 (the `explore` recipe end to end, citations resolved against this checkout).
-
-> Not to be confused with `rlmx acp` below. In ACP the *client* is an editor and
-> the *agent* is the AI tool — Claude Code and Codex are agents themselves, so
-> they can't drive rlmx over ACP. MCP is the protocol they speak as clients.
 
 ## SDK (`rlmx.sdk.*`)
 
@@ -156,6 +284,7 @@ tool registry. The CLI path above is untouched; the SDK is purely
 additive.
 
 ```ts
+import { readFile } from "node:fs/promises";
 import { sdk } from "@automagik/rlmx";
 
 const spec = await sdk.loadAgentSpec("./my-agent");
@@ -169,7 +298,7 @@ for await (const ev of sdk.runAgent({
 	input: "what's new?",
 	driver: sdk.rlmDriver({
 		model: { provider: "google", model: "gemini-2.5-flash" },
-		system: await Bun.file("./my-agent/SYSTEM.md").text(),
+		system: await readFile("./my-agent/SYSTEM.md", "utf8"),
 	}),
 	toolRegistry: registry,
 })) {
@@ -177,10 +306,20 @@ for await (const ev of sdk.runAgent({
 }
 ```
 
+The package has no `exports` map, so there are no subpaths — everything comes
+off the root, and the SDK surface is namespaced under `sdk`.
+
+**Stability stamp:** `schema_version: 1` + `tools_api: 1` are the fields every
+shipped bridge has run against. The SDK's first production consumer is
+`khal-os/brain`, a multi-agent pipeline whose L1 triage and L2 preservation
+bridges both run through `sdk.runAgent()`; its outer-`IterationDriver` bridge
+pattern is a reusable template for migrating a working agent into the SDK
+without rewriting its internals.
+
 Deeper dives:
 
 - [`docs/sdk-overview.md`](docs/sdk-overview.md) — layered architecture + design principles.
-- [`docs/events.md`](docs/events.md) — the 12-event catalogue + emitter contract.
+- [`docs/events.md`](docs/events.md) — the 13-event catalogue + emitter contract.
 - [`docs/tool-authoring.md`](docs/tool-authoring.md) — TS/MJS + Python plugin recipes, RTK integration.
 - [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) — `agent.yaml` field reference.
 - [`examples/agents/`](examples/agents/README.md) — **the** microagent recipe tree: `explore`, `explore-r`, `codebase-qa`, `changelog`, `log-triage`, plus the three runnable SDK walk-throughs with tests (hello-world / research-agent / brain-triage).
@@ -203,10 +342,9 @@ the emitter when it finishes (a `SessionClose` event, then the iterator
 returns).
 
 ```ts
-import { createEmitter } from "@automagik/rlmx/sdk";
-import { rlmLoop } from "@automagik/rlmx";
+import { rlmLoop, sdk } from "@automagik/rlmx";
 
-const emitter = createEmitter();
+const emitter = sdk.createEmitter();
 
 // Subscribe BEFORE the run starts.
 (async () => {
@@ -442,20 +580,20 @@ cargo install --git https://github.com/rtk-ai/rtk                               
 
 ### How it works
 
-- In your `TOOLS.md`, use `run_cli(cmd, *args)` instead of raw `subprocess.run(...)`
+- In your `.rlmx/TOOLS.md`, use `run_cli(cmd, *args)` instead of raw `subprocess.run(...)`
 - When RTK is installed, `run_cli` transparently prefixes with `rtk` → filtered output
 - When RTK is absent, `run_cli` passes through unchanged — no behavior break
 
 ### Configuration
 
 ```yaml
-# rlmx.yaml
+# .rlmx/rlmx.yaml
 rtk:
   enabled: auto   # auto | always | never (default: auto)
 ```
 
 - `auto` — use RTK when detected on PATH, otherwise pass through (fail-open)
-- `always` — require RTK; `rlmx doctor` exits non-zero if missing
+- `always` — require RTK; `rlmx doctor` exits **2** if it is missing
 - `never` — disable prefix even when RTK is installed
 
 ### Verify
@@ -464,6 +602,11 @@ rtk:
 rlmx doctor         # shows RTK status (installed version + mode)
 rtk gain            # shows token savings from rlmx + other RTK integrations
 ```
+
+> `rlmx doctor` exits **1** if **any** of the six provider keys it checks is
+> unset, so a healthy single-provider install still exits non-zero. Read its
+> output; don't script it as a pass/fail gate. Only exit 2 means a real config
+> error (`rtk.enabled=always` with rtk absent).
 
 ### Before / after
 
@@ -524,7 +667,7 @@ rlmx batch questions.txt --context ./docs/
 rlmx batch questions.txt --context ./docs/ --output json
 ```
 
-Each question in the file is run sequentially, reusing the cached context. The first question pays full cost; subsequent questions benefit from the cache.
+Each question in the file is run sequentially, reusing the cached context. The first question pays full cost; subsequent questions benefit from the cache. `--parallel <n>` runs them concurrently.
 
 ### Cache warmup and estimation
 
@@ -538,7 +681,7 @@ This loads your context, calculates token counts, and shows estimated costs for 
 
 ### YAML configuration
 
-Enable cache in your `rlmx.yaml`:
+Enable cache in your `.rlmx/rlmx.yaml`:
 
 ```yaml
 cache:
@@ -549,16 +692,18 @@ cache:
   session-prefix: "myproject" # prepended to content hash for sessionId
 ```
 
+`session-prefix` is YAML-only — there is no `--session-prefix` flag.
+
 For detailed provider-specific TTL behavior (Google, Anthropic, Bedrock, OpenAI), see [docs/TTL_CONTROL.md](docs/TTL_CONTROL.md).
 
-## Gemini 3 Native (v0.4)
+## Gemini 3 Native
 
-rlmx v0.4 integrates 14 Gemini 3 native features, making it the cheapest and most capable context agent available. All features are opt-in, additive, and silently ignored on non-Google providers.
+rlmx integrates Gemini 3 native features. All are opt-in, additive, and silently ignored on non-Google providers.
 
 ### Quick Start
 
 ```yaml
-# rlmx.yaml
+# .rlmx/rlmx.yaml
 model:
   provider: google
   model: gemini-3.1-flash-lite-preview
@@ -592,10 +737,11 @@ rlmx "Research latest AI developments" --context ./notes/ --tools standard --thi
 | Media Resolution | `gemini.media-resolution` | — | Per-type token cost control |
 | Batch API | — | `--batch-api` | 50% cost reduction for bulk operations |
 | Context Caching | `cache.enabled` | `--cache` | 90% discount on cached tokens |
-| Computer Use | `gemini.computer-use` | — | Planned for v0.5 |
-| Maps Grounding | `gemini.maps-grounding` | — | Planned for v0.5 |
-| File Search | `gemini.file-search` | — | Planned for v0.5 |
 | Function + Tools | automatic | — | Custom functions + built-in tools in one API call |
+
+Three keys are accepted, validated and then **warn instead of doing anything** —
+`gemini.computer-use`, `gemini.maps-grounding`, `gemini.file-search`. Setting one
+prints a "planned" warning; nothing is wired up behind it.
 
 ### Cost Comparison
 
@@ -648,15 +794,21 @@ See `examples/` for complete configs:
 
 ## Config Files
 
-Drop `.md` files in your working directory to customize behavior. Run `rlmx init` to scaffold defaults with inline comments.
+Config lives in a `.rlmx/` directory beside your project. `rlmx init` scaffolds
+it with inline comments; `rlmx init --template code` uses the code-oriented
+prompt set. **Only `.rlmx/` is read** — a `SYSTEM.md` at the repository root is
+silently ignored.
 
 | File | Purpose |
 |------|---------|
-| `SYSTEM.md` | System prompt sent to the LLM. Default: exact RLM paper prompt. |
-| `CONTEXT.md` | Context loading documentation (informational). |
-| `TOOLS.md` | Custom Python functions injected into the REPL namespace. |
-| `CRITERIA.md` | Output format criteria appended to the system prompt. |
-| `MODEL.md` | LLM provider and model selection. |
+| `.rlmx/rlmx.yaml` | Model, context, budget, cache, storage, rtk, gemini config. Its presence is what makes rlmx use the directory at all; without it you get built-in defaults. |
+| `.rlmx/SYSTEM.md` | System prompt sent to the LLM. Default: the RLM paper prompt. |
+| `.rlmx/CRITERIA.md` | Output format criteria appended to the system prompt. |
+| `.rlmx/TOOLS.md` | Custom Python functions injected into the REPL namespace. |
+
+Model selection is the `model:` block in `.rlmx/rlmx.yaml`, `--model <ref>` for
+one run, or `rlmx config set model.provider …` globally. There is no
+`MODEL.md` — nothing loads it.
 
 ### TOOLS.md Format
 
@@ -679,43 +831,63 @@ def summarize_chunk(text, max_words=100):
 ` ``
 ```
 
-### MODEL.md Format
-
-```markdown
-provider: google
-model: gemini-3.1-flash-lite-preview
-sub-call-model: gemini-3.1-flash-lite-preview
-```
-
-Supports any provider available in [pi/ai](https://github.com/nickarora/pi-ai): `anthropic`, `openai`, `google`, etc.
-
 ## CLI Reference
 
+`rlmx --schema` prints the machine-readable flag/output/exit-code contract as
+JSON — that is the generated source of truth; this table is the readable copy.
+
 ```
-rlmx "query" [options]                Run an RLM query
-rlmx init [--dir <path>]             Scaffold config files
-rlmx batch <file> [options]           Run batch queries from a file
-rlmx cache [options]                  Cache management (warmup, estimate)
+rlmx "query" [options]                              Run an RLM query
+rlmx init [--template default|code] [--dir <path>]  Scaffold .rlmx/ config
+rlmx cache [options]                                Pre-warm cache or estimate context size
+rlmx batch <file> [options]                         Bulk interrogation from a questions file
+rlmx benchmark <mode> [options]                     Run benchmarks (cost or oolong)
+rlmx stats [options]                                Query run history and cost breakdowns
+rlmx config <set|get|list|delete|path>              Manage ~/.rlmx/settings.json
+rlmx doctor                                         Health check: providers, RTK, config
+rlmx update [--force]                               Fetch latest main commit for a git install
+rlmx acp                                            Run as a stdio ACP agent (EXPERIMENTAL)
+rlmx mcp [--dir <path>]                             Run as a stdio MCP server (agents as tools)
 
 Options:
   --context <path>        Path to context (directory or file)
-  --cache                 Enable CAG mode (cache context in system prompt)
   --output <mode>         Output mode: text (default), json, stream
   --verbose               Show iteration progress on stderr
   --max-iterations <n>    Maximum RLM iterations (default: 30)
   --timeout <ms>          Timeout in milliseconds (default: 300000)
-  --dir <path>            Directory for init command (default: cwd)
+  --dir <path>            Working directory for init and mcp (default: cwd)
   --help, -h              Show this help message
   --version, -v           Show version
+  --schema                Output machine-readable CLI schema JSON
 
-Gemini options:
-  --thinking <level>      Thinking level: minimal, low, medium, high
-  --batch-api             Use Gemini Batch API for 50% cost reduction
-
-Cache options:
-  --estimate              Estimate cache costs without making LLM calls
-  --session-prefix <str>  Override session prefix for cache key
+  --stats                 Emit JSON stats to stderr (or include in --output json)
+  --log <path>            Write structured JSONL log to file
+  --tools <level>         Tool level: core (default), standard, full
+  --max-cost <n>          Maximum USD spend per run
+  --max-tokens <n>        Maximum total tokens per run
+  --max-depth <n>         Maximum recursive rlm_query depth
+  --model <ref>           Model for this run: "provider/model" or a bare model id
+  --ext <list>            File extensions for context dirs (comma-separated)
+  --thinking <level>      Thinking level: minimal, low, medium, high (Gemini 3)
+  --cache                 Enable cache mode (full context in system prompt)
+  --no-session            Disable auto-save of session data
+  --estimate              Show context size and cost estimate without caching (cache)
+  --parallel <n>          Concurrent questions for batch command (default: 1)
+  --batch-api             Use Gemini Batch API for 50% cost reduction (batch)
+  --template <name>       Template for init: default or code
 ```
+
+Sub-command shapes:
+
+```bash
+rlmx benchmark cost [--output json]                 # built-in dataset
+rlmx benchmark oolong [--samples 5] [--idx 42]      # auto-installs HF datasets
+rlmx stats [--run <id>] [--costs] [--tools] [--since 24h|7d|30m] [--output json]
+```
+
+Exit codes: `0` success · `1` general/validation error, missing query, missing
+provider key, or empty-response abort · `2` `rtk.enabled=always` with rtk absent
+· `130` SIGINT · `143` SIGTERM.
 
 ## Output Modes
 
@@ -735,11 +907,24 @@ Returns:
 {
   "answer": "The answer to your query...",
   "references": ["docs/start/create-project.md", "docs/concept/inter-process-communication.md"],
-  "usage": { "inputTokens": 12500, "outputTokens": 3200, "llmCalls": 5 },
+  "usage": {
+    "inputTokens": 12500,
+    "outputTokens": 3200,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "totalCost": 0.0041,
+    "llmCalls": 5
+  },
   "iterations": 3,
   "model": "google/gemini-3.1-flash-lite-preview"
 }
 ```
+
+`answer`, `references`, `usage`, `iterations` and `model` are always present,
+and `usage` always carries all six fields above. Optional additions:
+`reasoningTokens` inside `usage` when the provider reports it, plus
+`usageBreakdown` (root/child/total split on recursive runs), `budgetHit`,
+`geminiCounts`, `geminiBatteriesUsed`, and `stats` (with `--stats`).
 
 ### Stream
 
@@ -753,25 +938,51 @@ Emits JSONL events per iteration, then a final event.
 
 | Input | Behavior |
 |-------|----------|
-| `--context dir/` | Recursively reads `*.md` files as `list[{path, content}]` |
+| `--context dir/` | Recursively reads `*.md` files as `list[{path, content}]` (extensions configurable via `context.extensions` / `--ext`) |
 | `--context file.md` | Reads as single string |
 | `--context file.json` | Parses JSON as dict or list |
 | stdin pipe | Reads as single string |
 
-## Environment Variables
+## Settings and Environment Variables
 
-rlmx uses pi/ai for LLM calls. Set the appropriate API key for your provider:
+Provider keys can live in the environment or in `~/.rlmx/settings.json`, which
+`rlmx config set` writes. Priority is **CLI flags > settings.json >
+`.rlmx/rlmx.yaml` > defaults** — settings.json outranks the project YAML on
+purpose, so `rlmx config set model.provider openai` takes effect in a checkout
+that has its own `model:` block.
 
-- `GEMINI_API_KEY` — for Google Gemini models (default provider)
-- `ANTHROPIC_API_KEY` — for Anthropic models
-- `OPENAI_API_KEY` — for OpenAI models
+```bash
+rlmx config set GEMINI_API_KEY <key>     # persisted, chmod-restricted
+rlmx config set model.provider google
+rlmx config list                         # API keys masked
+rlmx config path                         # ~/.rlmx/settings.json
+```
+
+Recognised provider keys, as env vars or settings keys: `GEMINI_API_KEY`,
+`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`,
+`XAI_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, `KIMI_API_KEY`,
+`MOONSHOT_API_KEY`, `MINIMAX_API_KEY`, `ZAI_API_KEY`, `GLM_API_KEY`. A
+settings-file key is injected into the environment only when that env var is not
+already set, so the ambient environment always wins.
+
+Other environment variables rlmx reads:
+
+| Env var | Effect |
+| --- | --- |
+| `RLMX_AGENTS_DIR` | Colon-separated list that **replaces** the default microagent roots. |
+| `RLMX_MCP_RUN_TIMEOUT_MS` | Wall-clock cap for one `rlmx mcp` tool call. |
+| `RLMX_ACP_RUN_TIMEOUT_MS`, `RLMX_ACP_SESSIONS_DIR`, `RLMX_REPL_TIMEOUT_MS` | See the ACP env legend above. |
+| `STATION_BASE_URL` / `LEMONADE_BASE_URL` | Local `station/` gateway base URL (default `http://localhost:13305/api/v1`). |
+| `KHAL_API_KEY` (or `RLMX_KHAL_API_KEY`) / `KHAL_BASE_URL` | Credentials and endpoint for the native `khal/` provider. |
+| `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | Enable Langfuse trace export. |
+| `RLMX_PARENT_RUN_ID`, `RLMX_CHILD_CORRELATION_ID`, `RLMX_RECURSION_DEPTH` | Set by rlmx on spawned recursive children — read, not authored by you. |
 
 ## Programmatic API
 
 ```typescript
-import { rlmLoop, loadConfig, loadContext } from "rlmx";
+import { rlmLoop, loadConfig, loadContext } from "@automagik/rlmx";
 
-const config = await loadConfig("./");
+const config = await loadConfig("./");        // reads ./.rlmx/
 const context = await loadContext("./docs/");
 
 const result = await rlmLoop("How does IPC work?", context, config, {
@@ -789,7 +1000,18 @@ console.log(result.references);
 
 - Node.js >= 22.19.0
 - Python 3.10+ (for the REPL subprocess)
-- An LLM API key (Anthropic, OpenAI, Google, etc.)
+- An LLM API key (Anthropic, OpenAI, Google, etc.) — or a local `station/` gateway, which needs none
+
+## Versioning
+
+rlmx uses **calendar versioning**: `0.YYMMDD.N`, where `YYMMDD` is the UTC build
+date and `N` is a daily counter. A version records *when* a build was cut and
+carries **no compatibility promise** — read `CHANGELOG.md`, not the version
+delta, to learn about breaking changes. The release boundary is a PR merge into
+`main`, and the bump is **automatic** — CI derives the next version on merge and
+commits it, so do not hand-run `npm run bump-version` in a PR unless you intend
+that reviewed version to be the released one. See
+[`docs/release-contract.md`](docs/release-contract.md).
 
 ## License
 

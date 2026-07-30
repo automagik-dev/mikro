@@ -58,12 +58,13 @@ question mid-run**, so anything you leave implicit is simply lost. Name the
 concrete artifacts you want back, and ask for `path:line` citations explicitly —
 that is what makes the answer checkable, and checking it is the whole protocol.
 
-The result carries a token/cost footer and a `session_id` in
-`structuredContent`. To ask a follow-up — "you cited three files, now show me
-how they call each other" — pass that `session_id` back to **the same tool**;
-the prior turns are replayed into the new prompt. A `session_id` is not
-portable between tools, and sessions are in-process and time-limited: if it has
-expired, omit it and start again rather than working around the error.
+The result carries a token/cost footer, and `structuredContent` repeats the
+whole thing as `answer` alongside the `session_id`. To ask a follow-up — "you
+cited three files, now show me how they call each other" — pass that
+`session_id` back to **the same tool**; the prior turns are replayed into the
+new prompt. A `session_id` is not portable between tools, and sessions are
+in-process and time-limited: if it has expired, omit it and start again rather
+than working around the error.
 
 Prefer one resumed session over several fresh calls on the same subject. A
 fresh call re-explores from nothing.

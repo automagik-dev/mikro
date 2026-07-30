@@ -19,6 +19,9 @@
  *   7. The propose-only boundary: a `<name>.proposed/` draft is neither listed
  *      nor callable, and the rename that approves it takes effect on the next
  *      refresh without a reconnect.
+ *   8. The output contract: `structuredContent` actually carries every field
+ *      `outputSchema` promises — above all the answer, which a host reading the
+ *      structured channel instead of the text block would otherwise never see.
  */
 export {};
 //# sourceMappingURL=mcp-agents.test.d.ts.map

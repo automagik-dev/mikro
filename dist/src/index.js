@@ -1,5 +1,5 @@
 export { loadConfig, hasConfig, parseToolsMd } from "./config.js";
-export { isGoogleProvider, isValidThinkingLevel, checkFutureFlags, buildGeminiOnPayload, createGeminiStats, DEFAULT_GEMINI_CONFIG, } from "./gemini.js";
+export { isGoogleProvider, isValidThinkingLevel, THINKING_LEVELS, checkFutureFlags, buildGeminiOnPayload, createGeminiStats, DEFAULT_GEMINI_CONFIG, } from "./gemini.js";
 export { scaffold, needsScaffold } from "./scaffold.js";
 export { loadContext, loadContextFromDir, loadContextFromFile, loadContextFromStdin } from "./context.js";
 export { REPL } from "./repl.js";

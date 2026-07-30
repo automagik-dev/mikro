@@ -57,6 +57,27 @@ import type {
   ToolCallBeforeEvent,
 } from "./sdk/events.js";
 
+// ── rlmLoop's two designed aborts ──────────────────────────────────────────
+// rlmLoop throws on unexpected failures, but its two *designed* aborts return
+// normally with the reason as the `answer`, so a caller that wants to tell an
+// abort from a report has to test for them explicitly. These are the exact
+// discriminators, exported so every caller keys off one value instead of
+// re-deriving it from the prose: the CLI's exit code (`src/cli.ts`) and
+// `rlmx mcp`'s `isError` (`src/mcp/server.ts`) both read them. Sniffing the
+// answer text cannot work — `answer` is the model's own final report, and one
+// that opens with `Error: …` is a normal outcome, not a failure (quoting the
+// failing line out of a log is what the `log-triage` recipe is for).
+//
+// Note the asymmetry: the empty-response abort is identified by `budgetHit`,
+// the timeout by its answer, because the timeout path preserves whatever
+// `budgetHit` the run had already accumulated (usually none).
+
+/** `budgetHit` set by the consecutive-empty-response abort. */
+export const EMPTY_RESPONSES_BUDGET_HIT = "empty_responses";
+
+/** Exact `answer` returned by the wall-clock-timeout abort. */
+export const TIMEOUT_ANSWER = "Error: RLM query timed out";
+
 /** Options for the RLM loop. */
 export interface RLMOptions {
   maxIterations: number;
@@ -824,7 +845,7 @@ export async function rlmLoop(
         `rlmx: 3 consecutive empty LLM responses — aborting. Context may exceed API limits.\n`
       );
       clearTimeout(timeoutHandle);
-      if (recorder) recorder.recordError("empty_responses");
+      if (recorder) recorder.recordError(EMPTY_RESPONSES_BUDGET_HIT);
       await repl.stop();
       if (storage) await storage.stop();
 
@@ -841,7 +862,7 @@ export async function rlmLoop(
         usage,
         actualIterations,
         config,
-        "empty_responses",
+        EMPTY_RESPONSES_BUDGET_HIT,
         geminiCounts,
         repl.getGeminiBatteriesUsed(),
         buildUsageBreakdown(usage, childUsage)
@@ -877,7 +898,7 @@ export async function rlmLoop(
 
     if (aborted) {
       return buildResult(
-        "Error: RLM query timed out",
+        TIMEOUT_ANSWER,
         usage,
         0,
         config,

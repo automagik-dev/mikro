@@ -13,6 +13,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import yaml from "js-yaml";
+import { isValidThinkingLevel, THINKING_LEVELS } from "../gemini.js";
 const VALID_SHAPES = [
     "single-step",
     "loop",
@@ -89,6 +90,17 @@ export function parseAgentSpec(yamlText, dir) {
     }
     const tools = asStringArray(r.tools) ?? [];
     const systemPath = asString(r.system);
+    // `thinking:` is validated rather than passed through, because a typo has no
+    // safe fallback: an unrecognised level reaching pi-ai is clamped to some
+    // arbitrary supported level instead of being rejected, so `thinking: hgih`
+    // would run at whatever effort the model happens to floor at and look like
+    // it worked. Fail loudly at parse time — which is discovery time for
+    // `rlmx mcp` — the way `shape` does.
+    const thinkingRaw = asString(r.thinking);
+    if (thinkingRaw !== undefined && !isValidThinkingLevel(thinkingRaw)) {
+        throw new Error(`agent.yaml: thinking must be one of ${THINKING_LEVELS.join(" | ")}, ` +
+            `got "${thinkingRaw}"`);
+    }
     // Build the "extras" bag by stripping the known keys from r.
     const known = new Set([
         "schema_version",
@@ -99,6 +111,7 @@ export function parseAgentSpec(yamlText, dir) {
         "model",
         "tools",
         "system",
+        "thinking",
         "scope",
         "budget",
     ]);
@@ -115,6 +128,7 @@ export function parseAgentSpec(yamlText, dir) {
         model: asString(r.model),
         tools,
         systemPath,
+        thinking: thinkingRaw,
         scope: parseScope(r.scope),
         budget: parseBudget(r.budget),
         extras,

@@ -124,13 +124,40 @@ function deriveSummary(
   return `rlmx microagent "${name}" (${spec.shape})`;
 }
 
+/**
+ * Directories already reported as broken.
+ *
+ * Discovery re-runs on every request, so without this a single malformed
+ * agent.yaml would repeat its warning for the lifetime of the server.
+ */
+const reportedBroken = new Set<string>();
+
+/** True when the error is "there is no agent.yaml here" rather than "it is bad". */
+function isMissingFile(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "ENOENT";
+}
+
 async function loadOne(dir: string, name: string): Promise<Microagent | null> {
   let spec: AgentSpec;
   try {
     spec = await loadAgentSpec(dir);
-  } catch {
+  } catch (err) {
     // Not an agent folder, or an unreadable/invalid agent.yaml. Skipping is
     // correct here: one broken agent must not take down the whole server.
+    //
+    // Staying *silent* about it is not correct, though. Every validation the
+    // parser performs — `shape`, `thinking` — lands in this catch, so a single
+    // mistyped level made the agent vanish from tools/list with no error
+    // anywhere: the clear message `parseAgentSpec` raises never reached a
+    // human. So distinguish the two cases. A missing agent.yaml is the normal
+    // "this directory is not an agent" and stays quiet; anything else means an
+    // agent.yaml exists and is invalid, which is worth one line on stderr.
+    // stderr, not stdout: stdout is the MCP transport's framed JSON-RPC.
+    if (!isMissingFile(err) && !reportedBroken.has(dir)) {
+      reportedBroken.add(dir);
+      const reason = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`rlmx: skipping agent "${name}" (${dir}): ${reason}\n`);
+    }
     return null;
   }
 

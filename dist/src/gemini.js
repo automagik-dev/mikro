@@ -17,9 +17,23 @@ export function isGoogleProvider(provider) {
         provider === "google-gemini-cli" ||
         provider === "google-antigravity");
 }
-const VALID_THINKING_LEVELS = ["minimal", "low", "medium", "high"];
+/**
+ * Every accepted level, ascending. Exported so the several places that reject a
+ * bad level (`--thinking`, `gemini.thinking-level`, `agent.yaml` `thinking:`)
+ * can name the allowed set from one source instead of three literals.
+ *
+ * Narrower than pi-ai's own `ThinkingLevel`, which also has `xhigh` and `max`.
+ * Those two are only reachable on models that declare an explicit
+ * `thinkingLevelMap` entry for them, so rlmx does not accept them yet.
+ */
+export const THINKING_LEVELS = [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+];
 export function isValidThinkingLevel(level) {
-    return VALID_THINKING_LEVELS.includes(level);
+    return THINKING_LEVELS.includes(level);
 }
 // ─── Future Flags ────────────────────────────────────────
 const FUTURE_FLAGS = {
