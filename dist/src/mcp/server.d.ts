@@ -39,6 +39,7 @@
  */
 import { type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { type RlmxConfig } from "../config.js";
+import type { RLMResult } from "../output.js";
 import { type Microagent } from "./agents.js";
 /**
  * Output contract. Declaring it is what makes `structuredContent` a stated
@@ -204,18 +205,32 @@ export declare function sessionResult(text: string, sessionId: string, isError?:
  *
  * Only rlmLoop's `throw` path reaches the catch in the call handler. Its two
  * non-throwing failures — the consecutive-empty-response abort and the
- * wall-clock timeout — *return* normally with their reason as an `Error: …`
- * answer (`src/rlm.ts`). Reported as a success, the host model reads "Error:
- * aborted after 3 consecutive empty LLM responses" as the delegated agent's
- * report. `src/cli.ts` already treats that same shape as a failed run (exit 1
- * on `empty_responses`); this is the MCP equivalent.
+ * wall-clock timeout — *return* normally with their reason as the answer
+ * (`src/rlm.ts`). Reported as a success, the host model reads "Error: aborted
+ * after 3 consecutive empty LLM responses" as the delegated agent's report.
+ * `src/cli.ts` treats the first of those as a failed run (exit 1 on
+ * `budgetHit === "empty_responses"`); this is the MCP equivalent, keyed off the
+ * same field.
  *
- * The answer prefix is the discriminator, deliberately not `budgetHit`, which
- * is wrong in both directions: a timeout that spent no budget leaves it null,
- * while a genuine `max-cost`/`max-tokens`/`max-depth` hit forces a real final
- * answer — a shorter report, not a failure — which must stay `isError: false`.
+ * Each abort is matched by its own exact signal, because neither one alone
+ * covers both:
+ *
+ *   - the empty-response abort sets `budgetHit = "empty_responses"`;
+ *   - the timeout preserves whatever `budgetHit` the run had accumulated
+ *     (usually none) and is identified by its verbatim answer.
+ *
+ * What must NOT be used is a prefix test on the answer. `answer` is the model's
+ * own final text, and a report that legitimately opens with `Error: …` is a
+ * normal outcome, not a failure — quoting the failing line out of a log is the
+ * entire job of the shipped `log-triage` recipe. Flagging that as `isError`
+ * hands the host a paid, correct run marked failed, which it may discard or
+ * retry at double the cost.
+ *
+ * A genuine `max-cost`/`max-tokens`/`max-depth` budget hit is deliberately not
+ * a failure either: it forces a real final answer — a shorter report — and
+ * stays `isError: false`.
  */
-export declare function isFailedAnswer(answer: string): boolean;
+export declare function isFailedRun(result: Pick<RLMResult, "answer" | "budgetHit">): boolean;
 /**
  * Run the MCP server on stdio until the client disconnects.
  *

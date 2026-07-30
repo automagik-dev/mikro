@@ -115,9 +115,15 @@ release is the git commit on `main`. See `docs/release-contract.md`.
     host. A failed call puts its error message in `answer`.
   - A run that fails **without throwing** is now reported as `isError`. rlmx's
     two designed aborts — three consecutive empty LLM responses, and the
-    wall-clock timeout — return their reason as an `Error: …` answer rather than
-    raising, so they used to arrive as successful results and the host model
-    read the abort reason as the agent's report. A genuine
+    wall-clock timeout — return their reason as the answer rather than raising,
+    so they used to arrive as successful results and the host model read the
+    abort reason as the agent's report. Each is matched by its own exact signal
+    — the abort by `budgetHit === "empty_responses"` (the same field `src/cli.ts`
+    keys its exit code off, now one shared constant in `src/rlm.ts`), the
+    timeout by its verbatim answer — and deliberately **not** by testing the
+    answer for an `Error:` prefix: `answer` is the model's own text, and a
+    report that quotes the failing line out of a log starts that way as a matter
+    of course (that is the shipped `log-triage` recipe's whole job). A genuine
     `max-cost`/`max-tokens`/`max-depth` budget hit still forces a real final
     answer and stays a success — shorter, not failed.
   - Passing that `session_id` back **continues the conversation**: the

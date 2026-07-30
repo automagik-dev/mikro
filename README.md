@@ -124,10 +124,13 @@ is rebuilt per call and its state is deliberately not promised across turns.
 
 A run that fails **without throwing** comes back as `isError` with the reason in
 `answer`. rlmx's two designed aborts — three consecutive empty LLM responses and
-the wall-clock timeout — return their reason as an `Error: …` answer rather than
-raising, so without this a host model would read the abort reason as the agent's
-report. A genuine `max-cost`/`max-tokens`/`max-depth` budget hit still forces a
-real final answer and stays a success: shorter, not failed.
+the wall-clock timeout — return their reason as the answer rather than raising,
+so without this a host model would read the abort reason as the agent's report.
+Both are matched by exact signal (the abort's `budgetHit`, the timeout's
+verbatim answer), never by sniffing the answer for an `Error:` prefix — a report
+that quotes a failing log line legitimately starts that way. A genuine
+`max-cost`/`max-tokens`/`max-depth` budget hit still forces a real final answer
+and stays a success: shorter, not failed.
 
 **The tool set is live.** Every `tools/list` *and* every `tools/call` re-scans
 the agent roots from one shared scan, and `notifications/tools/list_changed`

@@ -13,6 +13,10 @@ import type { LoadedContext } from "./context.js";
 import { type RLMResult } from "./output.js";
 import type { Logger } from "./logger.js";
 import { type EmitterAndStream } from "./sdk/emitter.js";
+/** `budgetHit` set by the consecutive-empty-response abort. */
+export declare const EMPTY_RESPONSES_BUDGET_HIT = "empty_responses";
+/** Exact `answer` returned by the wall-clock-timeout abort. */
+export declare const TIMEOUT_ANSWER = "Error: RLM query timed out";
 /** Options for the RLM loop. */
 export interface RLMOptions {
     maxIterations: number;

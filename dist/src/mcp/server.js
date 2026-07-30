@@ -44,7 +44,7 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { applyModelRef, loadConfig } from "../config.js";
 import { loadContext } from "../context.js";
-import { rlmLoop } from "../rlm.js";
+import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER, rlmLoop } from "../rlm.js";
 import { createEmitter } from "../sdk/emitter.js";
 import { VERSION } from "../version.js";
 import { discoverAgents, splitModel } from "./agents.js";
@@ -490,19 +490,33 @@ function runTimeout() {
  *
  * Only rlmLoop's `throw` path reaches the catch in the call handler. Its two
  * non-throwing failures — the consecutive-empty-response abort and the
- * wall-clock timeout — *return* normally with their reason as an `Error: …`
- * answer (`src/rlm.ts`). Reported as a success, the host model reads "Error:
- * aborted after 3 consecutive empty LLM responses" as the delegated agent's
- * report. `src/cli.ts` already treats that same shape as a failed run (exit 1
- * on `empty_responses`); this is the MCP equivalent.
+ * wall-clock timeout — *return* normally with their reason as the answer
+ * (`src/rlm.ts`). Reported as a success, the host model reads "Error: aborted
+ * after 3 consecutive empty LLM responses" as the delegated agent's report.
+ * `src/cli.ts` treats the first of those as a failed run (exit 1 on
+ * `budgetHit === "empty_responses"`); this is the MCP equivalent, keyed off the
+ * same field.
  *
- * The answer prefix is the discriminator, deliberately not `budgetHit`, which
- * is wrong in both directions: a timeout that spent no budget leaves it null,
- * while a genuine `max-cost`/`max-tokens`/`max-depth` hit forces a real final
- * answer — a shorter report, not a failure — which must stay `isError: false`.
+ * Each abort is matched by its own exact signal, because neither one alone
+ * covers both:
+ *
+ *   - the empty-response abort sets `budgetHit = "empty_responses"`;
+ *   - the timeout preserves whatever `budgetHit` the run had accumulated
+ *     (usually none) and is identified by its verbatim answer.
+ *
+ * What must NOT be used is a prefix test on the answer. `answer` is the model's
+ * own final text, and a report that legitimately opens with `Error: …` is a
+ * normal outcome, not a failure — quoting the failing line out of a log is the
+ * entire job of the shipped `log-triage` recipe. Flagging that as `isError`
+ * hands the host a paid, correct run marked failed, which it may discard or
+ * retry at double the cost.
+ *
+ * A genuine `max-cost`/`max-tokens`/`max-depth` budget hit is deliberately not
+ * a failure either: it forces a real final answer — a shorter report — and
+ * stays `isError: false`.
  */
-export function isFailedAnswer(answer) {
-    return answer.startsWith("Error: ");
+export function isFailedRun(result) {
+    return result.budgetHit === EMPTY_RESPONSES_BUDGET_HIT || result.answer === TIMEOUT_ANSWER;
 }
 /**
  * Run one turn. `query` is already the resume-folded prompt; `prompt` is the
@@ -588,7 +602,7 @@ async function runTurn(config, label, query, sessionId, contextPath, cwd, progre
         return {
             answer: result.answer,
             text: `${result.answer}\n\n---\n${footer}`,
-            failed: isFailedAnswer(result.answer),
+            failed: isFailedRun(result),
         };
     }
     finally {

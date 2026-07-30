@@ -29,7 +29,8 @@ import { mkdtempSync, rmSync, mkdirSync, renameSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverAgents, isProposedDir, splitModel, toToolName, PROPOSED_SUFFIX, } from "../src/mcp/agents.js";
-import { agentMaxIterations, applyAgent, buildResumeQuery, buildToolList, createAgentRegistry, isFailedAnswer, McpSessionStore, sessionResult, textResult, toolOutputSchema, } from "../src/mcp/server.js";
+import { agentMaxIterations, applyAgent, buildResumeQuery, buildToolList, createAgentRegistry, isFailedRun, McpSessionStore, sessionResult, textResult, toolOutputSchema, } from "../src/mcp/server.js";
+import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../src/rlm.js";
 const MCP_TOOL_NAME = /^[a-zA-Z0-9_-]{1,128}$/;
 function writeAgent(root, name, yamlBody, system) {
     const dir = join(root, name);
@@ -781,29 +782,46 @@ describe("tool output contract", () => {
 /**
  * `rlmLoop` only *throws* on unexpected failures. Its two designed ones — the
  * consecutive-empty-response abort and the wall-clock timeout — return normally
- * with an `Error: …` answer, so nothing downstream notices unless the answer
- * itself is inspected, and the host model reads the abort reason as the
+ * with their reason as the answer, so nothing downstream notices unless the
+ * result is inspected, and the host model reads the abort reason as the
  * delegated agent's report.
+ *
+ * The constants come from `src/rlm.ts` on purpose: the discriminators are
+ * values the loop produces, so if one is reworded the test moves with it rather
+ * than quietly describing a shape nothing returns any more.
  */
-describe("isFailedAnswer", () => {
+describe("isFailedRun", () => {
     it("flags the failures rlmLoop returns instead of throwing", () => {
-        for (const answer of [
-            "Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.",
-            "Error: RLM query timed out",
-        ]) {
-            assert.equal(isFailedAnswer(answer), true, `${answer.slice(0, 40)}… must count as a failure`);
-        }
+        // The empty-response abort is identified by budgetHit, not by its prose.
+        assert.equal(isFailedRun({
+            answer: "Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.",
+            budgetHit: EMPTY_RESPONSES_BUDGET_HIT,
+        }), true, "the empty-response abort must count as a failure");
+        // The timeout keeps whatever budgetHit it had (usually none), so it is
+        // identified by its verbatim answer.
+        assert.equal(isFailedRun({ answer: TIMEOUT_ANSWER, budgetHit: null }), true, "the wall-clock timeout must count as a failure");
     });
     it("leaves a real answer alone, including a budget-truncated one", () => {
         // max-cost / max-tokens / max-depth force a *final answer* — shorter than
         // it would have been, but a report. Flagging it would teach the host to
         // discard good work.
+        for (const budgetHit of ["max-cost", "max-tokens", "max-depth", null, undefined]) {
+            assert.equal(isFailedRun({ answer: "The two call sites are src/a.ts:10 and src/b.ts:20.", budgetHit }), false, `budgetHit=${String(budgetHit)} is a shorter report, not a failure`);
+        }
+    });
+    it("does not sniff the answer text — a report may open with `Error: `", () => {
+        // Regression guard for the prefix heuristic this replaced. Quoting the
+        // failing line out of a log is the whole job of the shipped `log-triage`
+        // recipe, so `Error: …` is a normal first line of a *successful* run.
+        // Flagging it returns a paid, correct delegation to the host as a tool
+        // error, which it may discard or retry at double the cost.
         for (const answer of [
-            "The two call sites are src/a.ts:10 and src/b.ts:20.",
-            "No errors found in the module.",
+            "Error: ECONNREFUSED appears 42 times, all from worker-3 (logs/worker-3.log:118).",
+            "Error: RLM query timed out — this string appears inside the log at build.log:9, not as an abort.",
             "Errors: the handler swallows three of them (src/x.ts:44).",
+            "No errors found in the module.",
         ]) {
-            assert.equal(isFailedAnswer(answer), false, `${answer.slice(0, 40)}… is an answer`);
+            assert.equal(isFailedRun({ answer, budgetHit: null }), false, `${answer.slice(0, 40)}… is an answer`);
         }
     });
 });

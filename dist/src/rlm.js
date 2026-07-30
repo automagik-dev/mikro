@@ -24,6 +24,24 @@ import { createEmitter } from "./sdk/emitter.js";
 import { createRecursionBridge } from "./sdk/recursion-bridge.js";
 import { createMetricsRecorder } from "./sdk/metrics.js";
 import { makeEvent } from "./sdk/events.js";
+// ── rlmLoop's two designed aborts ──────────────────────────────────────────
+// rlmLoop throws on unexpected failures, but its two *designed* aborts return
+// normally with the reason as the `answer`, so a caller that wants to tell an
+// abort from a report has to test for them explicitly. These are the exact
+// discriminators, exported so every caller keys off one value instead of
+// re-deriving it from the prose: the CLI's exit code (`src/cli.ts`) and
+// `rlmx mcp`'s `isError` (`src/mcp/server.ts`) both read them. Sniffing the
+// answer text cannot work — `answer` is the model's own final report, and one
+// that opens with `Error: …` is a normal outcome, not a failure (quoting the
+// failing line out of a log is what the `log-triage` recipe is for).
+//
+// Note the asymmetry: the empty-response abort is identified by `budgetHit`,
+// the timeout by its answer, because the timeout path preserves whatever
+// `budgetHit` the run had already accumulated (usually none).
+/** `budgetHit` set by the consecutive-empty-response abort. */
+export const EMPTY_RESPONSES_BUDGET_HIT = "empty_responses";
+/** Exact `answer` returned by the wall-clock-timeout abort. */
+export const TIMEOUT_ANSWER = "Error: RLM query timed out";
 const DEFAULT_OPTIONS = {
     maxIterations: 30,
     timeout: 300_000,
@@ -648,7 +666,7 @@ export async function rlmLoop(query, context, config, options = {}) {
             process.stderr.write(`rlmx: 3 consecutive empty LLM responses — aborting. Context may exceed API limits.\n`);
             clearTimeout(timeoutHandle);
             if (recorder)
-                recorder.recordError("empty_responses");
+                recorder.recordError(EMPTY_RESPONSES_BUDGET_HIT);
             await repl.stop();
             if (storage)
                 await storage.stop();
@@ -659,7 +677,7 @@ export async function rlmLoop(query, context, config, options = {}) {
                 error: { name: "EmptyResponses", message: "aborted after 3 consecutive empty LLM responses" },
             }));
             closeEmitter("abort");
-            return buildResult("Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.", usage, actualIterations, config, "empty_responses", geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
+            return buildResult("Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.", usage, actualIterations, config, EMPTY_RESPONSES_BUDGET_HIT, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
         }
         // Force a final answer for normal loop exit
         if (opts.verbose) {
@@ -689,7 +707,7 @@ export async function rlmLoop(query, context, config, options = {}) {
         }));
         closeEmitter(aborted ? "abort" : "error");
         if (aborted) {
-            return buildResult("Error: RLM query timed out", usage, 0, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
+            return buildResult(TIMEOUT_ANSWER, usage, 0, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
         }
         throw err;
     }
