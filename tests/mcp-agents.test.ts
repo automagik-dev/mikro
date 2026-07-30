@@ -348,6 +348,98 @@ describe("discoverAgents — .proposed drafts", () => {
 });
 
 /**
+ * `thinking:` at discovery time.
+ *
+ * Two halves of one contract. A good level has to survive the trip from YAML
+ * onto `spec.thinking`, or `applyAgent` has nothing to apply. A bad level has
+ * to be *audible*: `loadOne` skips any agent whose spec fails to parse, so
+ * without a warning the parser's clear message dies in that catch and a typo'd
+ * level presents as the agent having disappeared — the hardest possible thing
+ * to debug from the host side, since the tool simply is not in `tools/list`.
+ */
+describe("discoverAgents — thinking:", () => {
+  let tmp: string;
+  let root: string;
+  const prevEnv = process.env.RLMX_AGENTS_DIR;
+
+  before(() => {
+    tmp = mkdtempSync(join(tmpdir(), "rlmx-mcp-thinking-"));
+    root = join(tmp, "agents");
+    mkdirSync(root, { recursive: true });
+    writeAgent(root, "deep", "schema_version: 1\nshape: loop\nthinking: high\n", "Deep.\n");
+    writeAgent(root, "cheap", "schema_version: 1\nshape: single-step\n", "Cheap.\n");
+    writeAgent(root, "typo", "schema_version: 1\nshape: loop\nthinking: hgih\n", "Typo.\n");
+    process.env.RLMX_AGENTS_DIR = root;
+  });
+
+  after(() => {
+    if (prevEnv === undefined) delete process.env.RLMX_AGENTS_DIR;
+    else process.env.RLMX_AGENTS_DIR = prevEnv;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  /**
+   * Capture the skip warnings emitted during `run`.
+   *
+   * Filtered to this module's own `skipping agent` lines rather than returning
+   * everything written: asserting on *all* stderr would make these tests fail
+   * whenever some unrelated part of the process happens to log inside the
+   * window, which is exactly the kind of flake that gets a suite ignored.
+   */
+  async function skipWarnings(run: () => Promise<void>): Promise<string[]> {
+    const written: string[] = [];
+    const real = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+      const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString();
+      if (text.includes("skipping agent")) {
+        written.push(text);
+        return true;
+      }
+      return (real as (...a: unknown[]) => boolean)(chunk, ...rest);
+    }) as typeof process.stderr.write;
+
+    try {
+      await run();
+    } finally {
+      process.stderr.write = real;
+    }
+    return written;
+  }
+
+  it("carries a declared level onto the spec, and undefined when absent", async () => {
+    // First scan, so it is also the one that emits the warning below.
+    let agents: Microagent[] = [];
+    const warnings = await skipWarnings(async () => {
+      agents = await discoverAgents(tmp);
+    });
+
+    assert.deepEqual(agents.map((a) => a.name), ["cheap", "deep"]);
+    assert.equal(agents.find((a) => a.name === "deep")?.spec.thinking, "high");
+    assert.equal(agents.find((a) => a.name === "cheap")?.spec.thinking, undefined);
+
+    // The invalid agent is skipped — but says why, naming the agent, the
+    // offending value, and the allowed set.
+    const warning = warnings.join("");
+    assert.match(warning, /skipping agent "typo"/);
+    assert.match(warning, /thinking must be one of/);
+    assert.match(warning, /got "hgih"/);
+  });
+
+  it("warns once per directory, and never for a non-agent directory", async () => {
+    mkdirSync(join(root, "not-an-agent"), { recursive: true });
+
+    const warnings = await skipWarnings(async () => {
+      await discoverAgents(tmp);
+    });
+
+    // A dir with no agent.yaml is normal, and the already-reported broken one
+    // must not repeat: discovery re-runs on every request, so a repeat would
+    // flood the log for the lifetime of the server.
+    assert.deepEqual(warnings, [], `unexpected warning: ${warnings.join("")}`);
+  });
+});
+
+/**
  * Iteration-cap regression. Two bugs found by dogfooding a real triage agent:
  *   1. `shape` was ignored entirely, so a single-step agent inherited
  *      rlmLoop's 30-iteration default — 30 iterations and 157s for one pass.
@@ -407,6 +499,10 @@ describe("applyAgent model inheritance", () => {
         subCallModel: "gemini-3.1-flash-lite-preview",
       },
       budget: { maxCost: null, maxTokens: null, maxDepth: null },
+      // `googleSearch` is here to prove the thinking override clones this
+      // object rather than replacing it — dropping a sibling flag would
+      // silently turn a configured feature off.
+      gemini: { thinkingLevel: null, googleSearch: true },
     }) as unknown as RlmxConfig;
 
   const agentWith = (spec: Record<string, unknown>) =>
@@ -449,6 +545,49 @@ describe("applyAgent model inheritance", () => {
     const config = ambient();
     const next = applyAgent(config, agentWith({ model: "deepseek-v4-flash" }));
     assert.deepEqual(next.model, config.model);
+  });
+
+  /**
+   * `thinking:` must land on `config.gemini.thinkingLevel` — the same field
+   * `--thinking` writes and the only one `rlmLoop` forwards to `llmComplete` as
+   * `options.thinkingLevel`. Asserting the field (not some new per-agent
+   * channel) is the point: a second mechanism would be dead weight that looks
+   * live.
+   */
+  describe("thinking level", () => {
+    it("writes the declared level onto config.gemini.thinkingLevel", () => {
+      const next = applyAgent(ambient(), agentWith({ thinking: "high" }));
+      assert.equal(next.gemini.thinkingLevel, "high");
+    });
+
+    it("keeps the ambient gemini flags around it", () => {
+      const next = applyAgent(ambient(), agentWith({ thinking: "low" }));
+      assert.equal(next.gemini.googleSearch, true);
+    });
+
+    it("does not mutate the ambient config's gemini block in place", () => {
+      // `applyAgent` shallow-copies, so `next.gemini` initially aliases the
+      // caller's object. Writing through that alias would leak this agent's
+      // level into every later run on the same loaded config.
+      const config = ambient();
+      applyAgent(config, agentWith({ thinking: "high" }));
+      assert.equal(config.gemini.thinkingLevel, null);
+    });
+
+    it("leaves the ambient level alone when the agent declares none", () => {
+      const config = ambient();
+      config.gemini.thinkingLevel = "medium";
+      const next = applyAgent(config, agentWith({}));
+      assert.equal(next.gemini.thinkingLevel, "medium");
+      assert.equal(next.gemini, config.gemini, "should not clone needlessly");
+    });
+
+    it("outranks an ambient rlmx.yaml level, like the CLI flag does", () => {
+      const config = ambient();
+      config.gemini.thinkingLevel = "minimal";
+      const next = applyAgent(config, agentWith({ thinking: "high" }));
+      assert.equal(next.gemini.thinkingLevel, "high");
+    });
   });
 });
 

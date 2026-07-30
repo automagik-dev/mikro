@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
+import { THINKING_LEVELS } from "../src/gemini.js";
 import { loadAgentSpec, parseAgentSpec } from "../src/sdk/index.js";
 
 describe("parseAgentSpec — agent.yaml parser (G3a)", () => {
@@ -89,6 +90,78 @@ budget:
 		const spec = parseAgentSpec("tools: []\n", DIR);
 		assert.equal(spec.scope, undefined);
 		assert.equal(spec.budget, undefined);
+	});
+});
+
+/**
+ * `thinking:` — per-agent reasoning effort, the agent.yaml twin of
+ * `rlmx --thinking`.
+ *
+ * Validated rather than passed through because a bad level has no safe
+ * fallback: pi-ai clamps an unrecognised value to *some* level the model
+ * supports instead of rejecting it, so `thinking: hgih` would quietly run at
+ * whatever effort that model floors at and look like it worked. The parser runs
+ * at discovery time for `rlmx mcp`, so failing here is what surfaces the typo.
+ */
+describe("parseAgentSpec — thinking:", () => {
+	const DIR = "/tmp/fake-agent";
+
+	it("accepts every valid ThinkingLevel", () => {
+		for (const level of THINKING_LEVELS) {
+			const spec = parseAgentSpec(`thinking: ${level}\n`, DIR);
+			assert.equal(spec.thinking, level, `expected ${level} to parse`);
+		}
+	});
+
+	it("leaves thinking undefined when the key is absent", () => {
+		const spec = parseAgentSpec("shape: loop\n", DIR);
+		assert.equal(spec.thinking, undefined);
+	});
+
+	it("rejects an invalid level and names the allowed set", () => {
+		assert.throws(
+			() => parseAgentSpec("thinking: hgih\n", DIR),
+			(err: unknown) => {
+				assert.ok(err instanceof Error);
+				assert.match(err.message, /agent\.yaml: thinking must be one of/);
+				// The message has to name the alternatives — "invalid" alone leaves
+				// the author guessing at the spelling.
+				for (const level of THINKING_LEVELS) {
+					assert.match(err.message, new RegExp(level));
+				}
+				assert.match(err.message, /got "hgih"/);
+				return true;
+			},
+		);
+	});
+
+	it("rejects levels pi-ai knows but rlmx does not expose", () => {
+		// pi-ai's own ThinkingLevel adds "xhigh" and "max", reachable only on
+		// models that declare an explicit map entry for them. rlmx's type is
+		// narrower, so agent.yaml must not accept them either.
+		for (const level of ["xhigh", "max", "off", "none"]) {
+			assert.throws(
+				() => parseAgentSpec(`thinking: ${level}\n`, DIR),
+				/thinking must be one of/,
+				`expected "${level}" to be rejected`,
+			);
+		}
+	});
+
+	it("does not leave thinking in the extras bag", () => {
+		// Regression guard: before this field existed `thinking:` parsed fine,
+		// landed on extras, and was read by nobody — an agent could declare a
+		// level and silently not get it.
+		const spec = parseAgentSpec("thinking: high\n", DIR);
+		assert.equal(spec.extras.thinking, undefined);
+		assert.deepEqual(Object.keys(spec.extras), []);
+	});
+
+	it("ignores a non-string thinking value rather than throwing", () => {
+		// Type drift defaults silently everywhere else in this parser; only a
+		// *string* that is not a level is a typo worth rejecting.
+		assert.equal(parseAgentSpec("thinking: 3\n", DIR).thinking, undefined);
+		assert.equal(parseAgentSpec("thinking: null\n", DIR).thinking, undefined);
 	});
 });
 

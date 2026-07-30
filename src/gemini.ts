@@ -28,10 +28,24 @@ export function isGoogleProvider(provider: string): boolean {
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high";
 
-const VALID_THINKING_LEVELS: readonly string[] = ["minimal", "low", "medium", "high"];
+/**
+ * Every accepted level, ascending. Exported so the several places that reject a
+ * bad level (`--thinking`, `gemini.thinking-level`, `agent.yaml` `thinking:`)
+ * can name the allowed set from one source instead of three literals.
+ *
+ * Narrower than pi-ai's own `ThinkingLevel`, which also has `xhigh` and `max`.
+ * Those two are only reachable on models that declare an explicit
+ * `thinkingLevelMap` entry for them, so rlmx does not accept them yet.
+ */
+export const THINKING_LEVELS: readonly ThinkingLevel[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+];
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
-  return VALID_THINKING_LEVELS.includes(level);
+  return (THINKING_LEVELS as readonly string[]).includes(level);
 }
 
 // ─── Future Flags ────────────────────────────────────────

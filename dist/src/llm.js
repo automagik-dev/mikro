@@ -177,7 +177,15 @@ export async function llmComplete(messages, modelConfig, options) {
         signal: options?.signal,
         ...cacheOpts,
     };
-    // Add thinking level for Gemini
+    // Reasoning effort. Named `gemini.thinking-level` in config for historical
+    // reasons, but pi-ai maps `reasoning` on every api family: OpenAI Responses
+    // (`reasoning.effort`), OpenAI Completions and its deepseek/openrouter/zai
+    // dialects (`reasoning_effort`), Google (`thinkingConfig.thinkingLevel`), and
+    // Anthropic (`thinking.budget_tokens`). Leaving it unset does not mean
+    // "provider default" either — pi-ai then explicitly disables reasoning on
+    // models that support it. Whatever is set here is clamped to the resolved
+    // model's supported levels, searching upward first, so a low request can come
+    // back raised.
     if (options?.thinkingLevel) {
         piOptions.reasoning = options.thinkingLevel;
     }

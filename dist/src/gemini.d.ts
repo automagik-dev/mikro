@@ -13,6 +13,16 @@ import type { GeminiConfig, MediaResolutionConfig } from "./config.js";
 /** Check if the provider is Google (gemini). */
 export declare function isGoogleProvider(provider: string): boolean;
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high";
+/**
+ * Every accepted level, ascending. Exported so the several places that reject a
+ * bad level (`--thinking`, `gemini.thinking-level`, `agent.yaml` `thinking:`)
+ * can name the allowed set from one source instead of three literals.
+ *
+ * Narrower than pi-ai's own `ThinkingLevel`, which also has `xhigh` and `max`.
+ * Those two are only reachable on models that declare an explicit
+ * `thinkingLevelMap` entry for them, so rlmx does not accept them yet.
+ */
+export declare const THINKING_LEVELS: readonly ThinkingLevel[];
 export declare function isValidThinkingLevel(level: string): level is ThinkingLevel;
 /** Check future flags and return warnings for any that are enabled. */
 export declare function checkFutureFlags(gemini: GeminiConfig): string[];

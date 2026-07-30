@@ -186,7 +186,8 @@ function describeAgent(agent: Microagent): string {
     `follow-up questions mid-run. The result carries the tokens and cost it ` +
     `used plus a session_id; pass that session_id back to this tool to ` +
     `continue the conversation. ` +
-    `(rlmx microagent "${agent.name}", shape=${agent.spec.shape})`
+    `(rlmx microagent "${agent.name}", shape=${agent.spec.shape}` +
+    `${agent.spec.thinking ? `, thinking=${agent.spec.thinking}` : ""})`
   );
 }
 
@@ -516,6 +517,20 @@ export function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
 
   if (agent.spec.budget?.maxCost !== undefined) {
     next.budget = { ...config.budget, maxCost: agent.spec.budget.maxCost };
+  }
+
+  // A declared `thinking:` writes the one field `--thinking` writes
+  // (src/cli.ts) — `config.gemini.thinkingLevel`, which rlmLoop hands to
+  // `llmComplete` as `options.thinkingLevel` and which becomes pi-ai's
+  // `reasoning`. Reusing that field rather than adding a per-agent channel is
+  // the point: there is a single answer to "what effort is this call running
+  // at", and the agent's declaration simply outranks the ambient rlmx.yaml the
+  // same way the flag does.
+  //
+  // `next` is a shallow copy, so `next.gemini` still aliases the caller's
+  // object — clone it or this override leaks into every later ambient run.
+  if (agent.spec.thinking) {
+    next.gemini = { ...config.gemini, thinkingLevel: agent.spec.thinking };
   }
 
   return next;
