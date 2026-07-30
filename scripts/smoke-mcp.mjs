@@ -20,14 +20,15 @@
  *   2. tools/list exposes rlmx_query plus one tool per discovered agent.yaml,
  *      each with an MCP-legal name, a spawn-style description, the Agent-tool
  *      input shape (`prompt` + deprecated `query` + `session_id`, nothing
- *      required, no anyOf), and the `{session_id}` output schema.
+ *      required, no anyOf), and the `{answer, session_id}` output schema.
  *   3. Argument validation: prompt accepted, query accepted, both rejected,
  *      neither rejected — the errors naming `prompt`.
  *   4. An agent directory created mid-session is listed AND callable without a
  *      reconnect, and `notifications/tools/list_changed` fires once per set
  *      change (and not at all while the set is static).
- *   5. A result carries `session_id` in structuredContent and in the footer; a
- *      follow-up call passing it resumes the same session.
+ *   5. A result carries `session_id` in structuredContent and in the footer,
+ *      and `answer` in structuredContent mirroring the text block byte for
+ *      byte; a follow-up call passing it resumes the same session.
  *   6. Session errors: unknown session_id, a session presented to a different
  *      tool, and a concurrent call on a busy session each fail as tool errors.
  *   7. An agent deleted mid-session stops dispatching ("Unknown tool" wins over
@@ -198,14 +199,20 @@ try {
     );
 
     const out = tool.outputSchema ?? {};
+    // `answer` is part of the contract, not an extra: an outputSchema is also
+    // permission for a client to read structuredContent *instead of* the text
+    // block, so a schema promising only session_id describes a result whose
+    // whole payload the host may legally discard.
     assert(
       out.properties?.session_id?.type === "string" &&
+        out.properties?.answer?.type === "string" &&
         Array.isArray(out.required) &&
-        out.required.includes("session_id"),
-      `tool ${tool.name} must declare the {session_id: string} output contract`
+        out.required.includes("session_id") &&
+        out.required.includes("answer"),
+      `tool ${tool.name} must declare the {answer: string, session_id: string} output contract`
     );
   }
-  log("✓ every tool: legal name, spawn-style description, prompt/query/session_id optional, no anyOf, session_id output schema");
+  log("✓ every tool: legal name, spawn-style description, prompt/query/session_id optional, no anyOf, {answer, session_id} output schema");
 
   // ── argument validation: exactly one of prompt/query ────────────────────
   const neither = await client.callTool({ name: "rlmx_query", arguments: {} });
@@ -305,6 +312,11 @@ try {
       "result must carry session_id in structuredContent"
     );
     assert(
+      first.structuredContent?.answer === firstText,
+      "structuredContent.answer must mirror the text block — a host that reads " +
+        "the declared contract and drops content would otherwise see no answer"
+    );
+    assert(
       firstText.includes(`session ${sessionId}`),
       "the footer must echo session_id for hosts that render only text"
     );
@@ -347,6 +359,10 @@ try {
     assert(
       resumedText.split("\n---\n")[0].trim().length > 0,
       "a resumed call must return a non-empty answer"
+    );
+    assert(
+      resumed.structuredContent?.answer === resumedText,
+      "a resumed call must carry its answer in structuredContent too"
     );
     log(
       `✓ resume round-trip: same session_id, non-empty answer ` +

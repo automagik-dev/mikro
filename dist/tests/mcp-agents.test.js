@@ -19,6 +19,9 @@
  *   7. The propose-only boundary: a `<name>.proposed/` draft is neither listed
  *      nor callable, and the rename that approves it takes effect on the next
  *      refresh without a reconnect.
+ *   8. The output contract: `structuredContent` actually carries every field
+ *      `outputSchema` promises — above all the answer, which a host reading the
+ *      structured channel instead of the text block would otherwise never see.
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -26,7 +29,7 @@ import { mkdtempSync, rmSync, mkdirSync, renameSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverAgents, isProposedDir, splitModel, toToolName, PROPOSED_SUFFIX, } from "../src/mcp/agents.js";
-import { agentMaxIterations, applyAgent, buildResumeQuery, createAgentRegistry, McpSessionStore, } from "../src/mcp/server.js";
+import { agentMaxIterations, applyAgent, buildResumeQuery, buildToolList, createAgentRegistry, isFailedAnswer, McpSessionStore, sessionResult, textResult, toolOutputSchema, } from "../src/mcp/server.js";
 const MCP_TOOL_NAME = /^[a-zA-Z0-9_-]{1,128}$/;
 function writeAgent(root, name, yamlBody, system) {
     const dir = join(root, name);
@@ -544,6 +547,138 @@ describe("buildResumeQuery", () => {
         const out = buildResumeQuery([{ prompt: "p".repeat(10_000), answer: "a".repeat(10_000) }], "next");
         assert.ok(out.length < 8_000, `preamble grew to ${out.length} chars`);
         assert.match(out, /…/);
+    });
+});
+const SESSION_ID = "sess_0123456789abcdef";
+/** JSON Schema type name → the `typeof` a conforming payload must report. */
+const JSON_TYPEOF = {
+    string: "string",
+    number: "number",
+    boolean: "boolean",
+};
+/** The `type` the schema declares for one property, or undefined. */
+function declaredType(schema, key) {
+    const prop = (schema?.properties ?? {})[key];
+    return prop && typeof prop === "object" ? prop.type : undefined;
+}
+/**
+ * Hold a result against the schema its own tool advertises.
+ *
+ * Written against `required` rather than against a literal field list, so a
+ * field added to the declared contract and not to the payload fails here —
+ * which is exactly the drift that made the answer invisible.
+ */
+function assertSatisfiesOutputSchema(result, label) {
+    const schema = toolOutputSchema();
+    const required = Array.isArray(schema?.required) ? schema.required : [];
+    assert.ok(required.length > 0, "the declared output contract must require something");
+    const payload = result.structuredContent;
+    assert.ok(payload, `${label}: outputSchema is declared, so structuredContent is mandatory`);
+    for (const key of required) {
+        const declared = String(declaredType(schema, key));
+        const expected = JSON_TYPEOF[declared];
+        assert.ok(expected, `the schema declares ${key} as ${declared}, which this check cannot verify`);
+        assert.equal(typeof payload[key], expected, `${label}: structuredContent.${key} must be a ${expected}, got ${typeof payload[key]}`);
+        if (expected === "string") {
+            assert.ok(String(payload[key]).length > 0, `${label}: structuredContent.${key} is empty`);
+        }
+    }
+}
+function textOf(result) {
+    const block = result.content[0];
+    assert.ok(block && block.type === "text", "the first content block must be text");
+    return block.text;
+}
+/**
+ * Declaring `outputSchema` cuts both ways: it makes `structuredContent` a
+ * stated promise, and it also makes it a channel a conforming client may read
+ * *instead of* the text block — the MCP SDK's own client rejects a non-error
+ * result that omits it. So a payload narrower than the schema is not a cosmetic
+ * mismatch: a schema naming only `session_id` describes a delegated run that
+ * cost money and returned nothing the host model can read.
+ */
+describe("tool output contract", () => {
+    it("promises the answer, not only the session id", () => {
+        const schema = toolOutputSchema();
+        const required = Array.isArray(schema?.required) ? [...schema.required].sort() : [];
+        assert.deepEqual(required, ["answer", "session_id"], "the answer must be part of the stated contract, or a host may drop it");
+        assert.equal(declaredType(schema, "answer"), "string");
+        assert.equal(declaredType(schema, "session_id"), "string");
+    });
+    it("declares that same contract on every advertised tool", () => {
+        const agent = {
+            name: "triage",
+            toolName: "rlmx_triage",
+            dir: "/tmp/triage",
+            summary: "Classifies inbound issues.",
+            spec: {
+                dir: "/tmp/triage",
+                schemaVersion: 1,
+                toolsApi: 1,
+                shape: "single-step",
+                tools: [],
+                extras: {},
+            },
+        };
+        const tools = buildToolList([agent]);
+        assert.deepEqual(tools.map((t) => t.name), ["rlmx_query", "rlmx_triage"], "the generic tool plus one tool per agent");
+        for (const tool of tools) {
+            assert.deepEqual(tool.outputSchema, toolOutputSchema(), `${tool.name} must advertise the same output contract as every other tool`);
+        }
+    });
+    it("carries the answer in structuredContent on a successful call", () => {
+        const text = "Two call sites: src/a.ts:10, src/b.ts:20.\n\n---\n" +
+            `rlmx · query · station/Brain-4B · 2 iterations · 900 in / 40 out · $0.00 · 3.1s · session ${SESSION_ID}`;
+        const result = sessionResult(text, SESSION_ID);
+        assert.equal(result.isError, false);
+        assert.equal(result.structuredContent?.answer, text, "a host reading only structuredContent must still get the answer");
+        assert.equal(result.structuredContent?.session_id, SESSION_ID);
+        assert.equal(result.structuredContent?.answer, textOf(result), "the structured answer and the text block must not drift");
+        assert.match(String(result.structuredContent?.answer), /rlmx · /, "the cost footer rides along, so the offload stays visible on either channel");
+        assertSatisfiesOutputSchema(result, "success");
+    });
+    it("carries the failure message in structuredContent on a failed call", () => {
+        const text = "rlmx rlmx_triage failed: connect ECONNREFUSED 127.0.0.1:8080";
+        const result = sessionResult(text, SESSION_ID, true);
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent?.answer, text, "a host reading only structuredContent must still learn why the call failed");
+        assert.equal(result.structuredContent?.session_id, SESSION_ID, "the session survives a failure so the caller can retry on it");
+        assert.equal(result.structuredContent?.answer, textOf(result));
+        assertSatisfiesOutputSchema(result, "error");
+    });
+    it("omits structuredContent only where no session exists to report", () => {
+        const result = textResult('rlmx_query: "prompt" is required', true);
+        assert.equal(result.structuredContent, undefined, "a pre-session failure has no session_id, and the schema requires one");
+        assert.equal(result.isError, true, "omitting structuredContent is legal only on an error result");
+    });
+});
+/**
+ * `rlmLoop` only *throws* on unexpected failures. Its two designed ones — the
+ * consecutive-empty-response abort and the wall-clock timeout — return normally
+ * with an `Error: …` answer, so nothing downstream notices unless the answer
+ * itself is inspected, and the host model reads the abort reason as the
+ * delegated agent's report.
+ */
+describe("isFailedAnswer", () => {
+    it("flags the failures rlmLoop returns instead of throwing", () => {
+        for (const answer of [
+            "Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.",
+            "Error: RLM query timed out",
+        ]) {
+            assert.equal(isFailedAnswer(answer), true, `${answer.slice(0, 40)}… must count as a failure`);
+        }
+    });
+    it("leaves a real answer alone, including a budget-truncated one", () => {
+        // max-cost / max-tokens / max-depth force a *final answer* — shorter than
+        // it would have been, but a report. Flagging it would teach the host to
+        // discard good work.
+        for (const answer of [
+            "The two call sites are src/a.ts:10 and src/b.ts:20.",
+            "No errors found in the module.",
+            "Errors: the handler swallows three of them (src/x.ts:44).",
+        ]) {
+            assert.equal(isFailedAnswer(answer), false, `${answer.slice(0, 40)}… is an answer`);
+        }
     });
 });
 //# sourceMappingURL=mcp-agents.test.js.map
