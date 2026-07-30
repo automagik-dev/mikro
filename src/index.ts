@@ -4,6 +4,7 @@ export type { RlmxConfig, ToolDef, ModelConfig, BudgetConfig, ContextConfig, Too
 export {
   isGoogleProvider,
   isValidThinkingLevel,
+  THINKING_LEVELS,
   checkFutureFlags,
   buildGeminiOnPayload,
   createGeminiStats,

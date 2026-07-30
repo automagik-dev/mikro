@@ -10,6 +10,7 @@
  *
  * Spec: `.genie/wishes/rlmx-sdk-upgrade/WISH.md` L24, L164-168.
  */
+import { type ThinkingLevel } from "../gemini.js";
 export interface AgentBudget {
     readonly maxCost?: number;
     readonly maxIterations?: number;
@@ -29,6 +30,28 @@ export interface AgentSpec {
     readonly model?: string;
     readonly tools: readonly string[];
     readonly systemPath?: string;
+    /**
+     * Reasoning effort for this agent's own model calls — the `agent.yaml`
+     * equivalent of `rlmx --thinking`. `undefined` means "not declared".
+     *
+     * Consumers apply it by writing `config.gemini.thinkingLevel`, the single
+     * field `llmComplete` turns into pi-ai's `reasoning` option (see
+     * `applyAgent` in `src/mcp/server.ts`). Two honest caveats:
+     *
+     * 1. Despite the `gemini.` prefix on the config field, pi-ai maps
+     *    `reasoning` on **every** api family it supports — OpenAI Responses
+     *    (`reasoning.effort`), OpenAI Completions and its deepseek / openrouter
+     *    / zai / together dialects (`reasoning_effort`), Google
+     *    (`thinkingConfig.thinkingLevel`), and Anthropic
+     *    (`thinking.budget_tokens`). This is not a Google-only knob.
+     * 2. The level is a **request, not a guarantee**. pi-ai's
+     *    `clampThinkingLevel` snaps it to the levels the resolved model
+     *    actually declares, searching *upward* first — so `minimal` on a model
+     *    whose floor is higher is silently raised, not lowered. Omitting the
+     *    field is likewise not "provider default": pi-ai then explicitly
+     *    *disables* reasoning on models that support it.
+     */
+    readonly thinking?: ThinkingLevel;
     readonly scope?: AgentScope;
     readonly budget?: AgentBudget;
     /** Preserved unrecognised keys — consumers layer their own schema. */
