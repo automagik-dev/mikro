@@ -167,6 +167,29 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   a resume round-trip, and the unknown-session / session-busy / cross-tool
   errors. Live turns run against the local station gateway — keyless, same
   convention as `smoke-acp.mjs`; `--no-live` gates the protocol surface alone.
+- **Optional `thinking:` in `agent.yaml`** — `minimal` | `low` | `medium` |
+  `high`, so an agent pins its own reasoning effort instead of inheriting the
+  ambient `gemini.thinking-level`. Validated at parse time, which is discovery
+  time under `rlmx mcp`, with a named error listing the legal values; unknown
+  levels no longer land silently on `extras`. `applyAgent` writes the one field
+  `--thinking` already writes (`config.gemini.thinkingLevel` →
+  `llmComplete({ thinkingLevel })` → pi/ai `reasoning`), so there is no second
+  per-agent channel to keep in sync.
+  - This is a **correctness fix, not tuning**: pi/ai explicitly *disables*
+    reasoning when no level is passed, so every microagent had been running with
+    reasoning off. Verified by capturing built request payloads (no network) —
+    `high` becomes `thinkingConfig.thinkingLevel: HIGH` on Google,
+    `reasoning.effort: "high"` on OpenAI Responses, and
+    `thinking.budget_tokens: 16384` on Anthropic. The knob is **not**
+    Google-only despite the `gemini.` config prefix.
+  - The level is a request, not a guarantee: pi/ai clamps to the levels the
+    resolved model declares and searches *upward* first, so `minimal` on a model
+    with a higher floor comes back raised.
+  - `rlmx mcp` now emits one stderr line per unloadable agent directory (deduped;
+    a directory with no `agent.yaml` stays silent). Discovery previously caught
+    and discarded every parse error, so a typo'd value presented as the agent
+    silently vanishing from `tools/list` with nothing to debug. Broken agents are
+    still skipped rather than taking down the server.
 
 ### explore microagent
 

@@ -110,13 +110,24 @@ runtime — JSON Schema can only say "exactly one of" via `anyOf`/`oneOf`, which
 several MCP hosts flatten or reject, so the constraint lives in code and the
 error names `prompt`.
 
-Every result declares an `outputSchema` and returns
-`structuredContent.session_id`. Pass it back to **the same tool** and the prior
-turns are replayed into the new prompt. Sessions are in-process and
-time-limited: an expired id, an id belonging to another tool, and an id with a
-call already in flight each get their own named error. Resume is conversation
-replay, not REPL state — the Python REPL is rebuilt per call and its state is
-deliberately not promised across turns.
+Every result declares an `outputSchema` of `{answer: string, session_id: string}`
+and returns both in `structuredContent`. `answer` is the text block byte for
+byte, token/cost footer included — declaring an `outputSchema` also *permits* a
+host to read `structuredContent` instead of `content`, so the answer has to be
+in it or the whole delegated run is invisible to that host.
+
+Pass `session_id` back to **the same tool** and the prior turns are replayed into
+the new prompt. Sessions are in-process and time-limited: an expired id, an id
+belonging to another tool, and an id with a call already in flight each get their
+own named error. Resume is conversation replay, not REPL state — the Python REPL
+is rebuilt per call and its state is deliberately not promised across turns.
+
+A run that fails **without throwing** comes back as `isError` with the reason in
+`answer`. rlmx's two designed aborts — three consecutive empty LLM responses and
+the wall-clock timeout — return their reason as an `Error: …` answer rather than
+raising, so without this a host model would read the abort reason as the agent's
+report. A genuine `max-cost`/`max-tokens`/`max-depth` budget hit still forces a
+real final answer and stays a success: shorter, not failed.
 
 **The tool set is live.** Every `tools/list` *and* every `tools/call` re-scans
 the agent roots from one shared scan, and `notifications/tools/list_changed`
@@ -160,6 +171,7 @@ shape: loop
 model: station/Qwen3.6-35B-A3B-MTP-GGUF   # local — $0 marginal cost
 description: Classifies inbound issues and proposes a label + owner.
 system: SYSTEM.md
+thinking: low                             # omit and reasoning is *off*, not default
 budget:
   max_iterations: 6
   max_cost: 0.50
@@ -184,13 +196,20 @@ your own schema without forking the parser.
 | `budget.max_iterations` | — | Iteration ceiling. Threaded into `runAgent({ maxIterations })`. |
 | `budget.max_depth` | — | Recursion depth ceiling, for `shape: recurse`. |
 | `scope.reads` / `scope.writes` | — | Advisory glob hints. The SDK does **not** enforce them; individual tool handlers do. |
+| `thinking` | ambient config | `minimal` \| `low` \| `medium` \| `high` — reasoning effort for this agent's own model calls. An unknown value is a hard error. |
 
-> **`thinking` — landing separately.** A per-agent `thinking: minimal\|low\|medium\|high`
-> key, so an agent can pin its own reasoning depth instead of inheriting the
-> ambient `gemini.thinking-level` / `--thinking`, is being added on the
-> `wish/add-agent-thinking` branch. It is **not** in `main` yet: today the same
-> effect comes from the run-level `--thinking` flag or the `gemini:` block in
-> `.rlmx/rlmx.yaml`.
+> **`thinking` is not tuning — it is a default worth overriding.** Omitting it
+> does **not** mean "provider default": pi/ai explicitly *disables* reasoning
+> when no level is given, so an agent that needs its model to think has to say
+> so. A declared level outranks the ambient `gemini.thinking-level` exactly the
+> way `--thinking` does, because it writes that same field — there is no second
+> per-agent channel to keep in sync. Despite the `gemini.` prefix the config key
+> inherited, this is **not** Google-only: pi/ai maps it onto OpenAI
+> (`reasoning.effort`), Google (`thinkingConfig.thinkingLevel`), and Anthropic
+> (`thinking.budget_tokens`) alike. Treat the level as a request rather than a
+> guarantee — pi/ai clamps it to what the resolved model declares, searching
+> *upward* first, so `minimal` on a model with a higher floor comes back raised.
+> Full detail in [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md#reasoning-effort-thinking).
 
 > **Choosing `shape`.** rlmx externalizes context into the Python REPL — the
 > model has to *run code* to read it. So `shape: single-step` gives it one pass
@@ -971,7 +990,10 @@ rlmx uses **calendar versioning**: `0.YYMMDD.N`, where `YYMMDD` is the UTC build
 date and `N` is a daily counter. A version records *when* a build was cut and
 carries **no compatibility promise** — read `CHANGELOG.md`, not the version
 delta, to learn about breaking changes. The release boundary is a PR merge into
-`main`; see [`docs/release-contract.md`](docs/release-contract.md).
+`main`, and the bump is **automatic** — CI derives the next version on merge and
+commits it, so do not hand-run `npm run bump-version` in a PR unless you intend
+that reviewed version to be the released one. See
+[`docs/release-contract.md`](docs/release-contract.md).
 
 ## License
 
