@@ -13,9 +13,10 @@ name: SDK Package
 #
 # There is no automatic trigger. Publishing the SDK is a deliberate act, taken
 # when the SDK surface actually changed — not a side effect of merging a CLI
-# change. The version bump is a reviewed commit (`npm run bump-version`) that
-# lands on main first, so the published artifact always matches a real commit
-# and tag.
+# change. This workflow never bumps: `Release Metadata` already bumped and tagged
+# main's version on merge, so publishing what main holds always matches a real
+# commit and tag. Running `npm run bump-version` before dispatching would
+# double-bump and publish a version no commit or tag matches.
 #
 # The `next` dist-tag is legacy: it was fed by a `dev` branch that no longer
 # exists, so it trails `latest`. Repoint or retire it manually:
@@ -34,8 +35,8 @@ name: SDK Package
 # git merge itself, consumed by scripts/install.sh and `rlmx update`; npm is a
 # separate, SDK-only artifact that ships when the SDK surface actually changes.
 #
-# To publish the SDK: bump the version, merge, then run this workflow from the
-# Actions tab (or `gh workflow run "SDK Package"`).
+# To publish the SDK: run this workflow from the Actions tab (or
+# `gh workflow run "SDK Package"`). It publishes whatever main currently holds.
 on:
   workflow_dispatch:
 
@@ -58,9 +59,10 @@ jobs:
         id: context
         run: |
           # Manual dispatch only. Publish exactly what is committed as @latest;
-          # never bump here. The version bump is a reviewed commit
-          # (`npm run bump-version`) that lands on main before this runs, so the
-          # published artifact always matches a real commit and tag.
+          # never bump here. `Release Metadata` bumped and tagged main's version
+          # on merge, so the published artifact always matches a real commit and
+          # tag. The should_bump branches below are dead by design, retained as
+          # documentation of the commit+tag+atomic-push shape.
           echo "branch=main" >> "$GITHUB_OUTPUT"
           echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
           echo "should_bump=false" >> "$GITHUB_OUTPUT"
