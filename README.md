@@ -174,7 +174,9 @@ shape: loop
 model: station/Qwen3.6-35B-A3B-MTP-GGUF   # local — $0 marginal cost
 description: Classifies inbound issues and proposes a label + owner.
 system: SYSTEM.md
-thinking: low                             # omit and reasoning is *off*, not default
+# no `thinking:` — required here: on a station/ Qwen GGUF model any level
+# makes the run abort empty. On a cloud model add `thinking: low`, where
+# omitting it means reasoning *off*, not "provider default". Notes below.
 budget:
   max_iterations: 6
   max_cost: 0.50
@@ -199,7 +201,7 @@ your own schema without forking the parser.
 | `budget.max_iterations` | — | Iteration ceiling. Threaded into `runAgent({ maxIterations })`. |
 | `budget.max_depth` | — | Recursion depth ceiling, for `shape: recurse`. |
 | `scope.reads` / `scope.writes` | — | Advisory glob hints. The SDK does **not** enforce them; individual tool handlers do. |
-| `thinking` | ambient config | `minimal` \| `low` \| `medium` \| `high` — reasoning effort for this agent's own model calls. An unknown value is a hard error. |
+| `thinking` | ambient config | `minimal` \| `low` \| `medium` \| `high` — reasoning effort for this agent's own model calls. An unknown value is a hard error. The four levels are graded only on providers that accept a reasoning effort; on `station/` models they collapse to on/off, where **on breaks the Qwen GGUF models** — see the two notes below. |
 
 > **`thinking` is not tuning — it is a default worth overriding.** Omitting it
 > does **not** mean "provider default": pi/ai explicitly *disables* reasoning
@@ -213,6 +215,19 @@ your own schema without forking the parser.
 > guarantee — pi/ai clamps it to what the resolved model declares, searching
 > *upward* first, so `minimal` on a model with a higher floor comes back raised.
 > Full detail in [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md#reasoning-effort-thinking).
+
+> **Do not set `thinking` on a `station/` Qwen GGUF model.** There the field is
+> not graded and reasoning-off is not an oversight — it is the QA'd workaround
+> that makes the model answer at all. `station/` models declare
+> `supportsReasoningEffort: false`, so no `reasoning_effort` is ever sent and
+> `low` and `high` are indistinguishable; what the level actually toggles is
+> `chat_template_kwargs.enable_thinking`, which pi/ai sets from *whether* a
+> level was requested. Off, `Qwen3.6-35B-A3B-MTP-GGUF` answers. On, it streams
+> everything into `reasoning_content` and never emits a `content` delta, so the
+> turn parses as empty and three of those abort the run — surfaced as `isError`
+> over MCP. This is why every shipped `station/` recipe in
+> [`examples/agents/`](examples/agents/) omits the field. Rationale and the
+> live-QA record: `src/station-provider.ts`.
 
 > **Choosing `shape`.** rlmx externalizes context into the Python REPL — the
 > model has to *run code* to read it. So `shape: single-step` gives it one pass

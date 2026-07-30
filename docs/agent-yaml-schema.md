@@ -120,7 +120,7 @@ writes it to the single field the whole stack already reads —
 `gemini.thinking-level` exactly the way the CLI flag does. There is no
 separate per-agent channel to keep in sync.
 
-Three things worth knowing before you set it:
+Four things worth knowing before you set it:
 
 - **It is not Google-only,** despite the `gemini.` prefix the config field
   inherited. pi-ai maps `reasoning` on every API family it supports: OpenAI
@@ -135,10 +135,41 @@ Three things worth knowing before you set it:
   `thinking: minimal` on a model whose floor is higher comes back *raised*, not
   lowered. Treat it as a hint, and read the run's reported effort if the exact
   value matters.
+- **It is not graded everywhere, and on `station/` it is a footgun** — see the
+  next section before setting it on a local model.
 
 `minimal`, `low`, `medium`, and `high` are the accepted values. pi-ai's own type
 additionally has `xhigh` and `max`, but those are reachable only on models that
 declare an explicit mapping for them, so `agent.yaml` rejects them today.
+
+### `station/` models: leave `thinking` unset
+
+`station/` models (`src/station-provider.ts`) declare
+`compat.supportsReasoningEffort: false`, so pi-ai never sends a
+`reasoning_effort` at all. The four levels therefore do not grade anything
+there: `low` and `high` build the identical request, and the only thing a
+declared level changes is that *some* level was declared.
+
+On the llama.cpp Qwen MTP models that one bit is load-bearing in the wrong
+direction. They carry `reasoning: true` +
+`compat.thinkingFormat: "qwen-chat-template"`, which makes pi-ai send
+`chat_template_kwargs.enable_thinking = !!reasoningEffort`:
+
+| `agent.yaml` | request | `Qwen3.6-35B-A3B-MTP-GGUF` behaviour |
+|---|---|---|
+| no `thinking:` | `enable_thinking: false` | answers directly — **the QA'd baseline** |
+| any `thinking:` level | `enable_thinking: true` | streams into `reasoning_content`, emits no `content` delta, parses as **empty** |
+
+Three consecutive empty turns abort the run (`src/rlm.ts`), which `rlmx mcp`
+reports as `isError`. So reasoning-off is not an accident inherited from the
+"omitting it is not a provider default" rule above — for these models it is the
+deliberate, live-QA'd compat workaround documented in the
+`src/station-provider.ts` header, and adding `thinking:` removes it. Every
+shipped `station/` recipe under `examples/agents/` omits the field for this
+reason.
+
+FastFlowLM / NPU `station` models (`*-FLM`) declare `reasoning: false`, so the
+field is simply inert on them rather than harmful.
 
 ## Extras
 

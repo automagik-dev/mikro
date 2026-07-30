@@ -181,13 +181,25 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   `--thinking` already writes (`config.gemini.thinkingLevel` →
   `llmComplete({ thinkingLevel })` → pi/ai `reasoning`), so there is no second
   per-agent channel to keep in sync.
-  - This is a **correctness fix, not tuning**: pi/ai explicitly *disables*
-    reasoning when no level is passed, so every microagent had been running with
-    reasoning off. Verified by capturing built request payloads (no network) —
-    `high` becomes `thinkingConfig.thinkingLevel: HIGH` on Google,
+  - On a **cloud** model this is a **correctness fix, not tuning**: pi/ai
+    explicitly *disables* reasoning when no level is passed, so a microagent on
+    Google / OpenAI / Anthropic had been running with reasoning off and had no
+    way to ask for it. Verified by capturing built request payloads (no
+    network) — `high` becomes `thinkingConfig.thinkingLevel: HIGH` on Google,
     `reasoning.effort: "high"` on OpenAI Responses, and
     `thinking.budget_tokens: 16384` on Anthropic. The knob is **not**
     Google-only despite the `gemini.` config prefix.
+  - **`station/` models are the exception, and there reasoning-off is
+    deliberate.** They declare `supportsReasoningEffort: false`, so no
+    `reasoning_effort` is sent and the levels do not grade — the only thing a
+    declared level changes is `chat_template_kwargs.enable_thinking`, which
+    pi/ai derives from *whether* a level was requested. Off is the QA'd
+    baseline that makes `Qwen3.6-35B-A3B-MTP-GGUF` answer at all; on, it
+    streams into `reasoning_content`, never emits a `content` delta, and three
+    such turns abort the run (see `src/station-provider.ts`). So `thinking:` is
+    a footgun on local Qwen GGUF models and every shipped `station/` recipe
+    omits it. Documented in `README.md` and
+    `docs/agent-yaml-schema.md#station-models-leave-thinking-unset`.
   - The level is a request, not a guarantee: pi/ai clamps to the levels the
     resolved model declares and searches *upward* first, so `minimal` on a model
     with a higher floor comes back raised.
