@@ -5,11 +5,17 @@ All notable changes to rlmx are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 rlmx uses **calendar versioning**, not semantic versioning. Versions are
-`0.YYMMDD.N` — a fixed `0` prefix, the UTC date of the build, and a 1-based
-daily build counter (see `scripts/version.mjs`). A version number therefore
+`0.YYMMDD.N` — a fixed `0` prefix, the UTC date of the build, and a per-UTC-day
+release counter (see `scripts/version.mjs`). A version number therefore
 tells you *when* a build was cut, not what compatibility it promises. Breaking
 changes are called out under a `### Changed` or `### Removed` heading in the
 entry for the release that contains them.
+
+Every merge into `main` cuts a release, and the per-release notes are generated
+from conventional commits by `Release Metadata` (see `cliff.toml`). This file
+stays hand-curated as the narrative record of *notable* changes, so it
+intentionally covers fewer versions than the tag list; the `## [Unreleased]`
+section accumulates until it is promoted under a released version heading.
 
 Note that npm is an **SDK-only** distribution channel; the canonical CLI
 release is the git commit on `main`. See `docs/release-contract.md`.

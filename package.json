@@ -1,7 +1,7 @@
 {
   "name": "@automagik/rlmx",
   "version": "0.260725.1",
-  "description": "RLM algorithm SDK for coding agents \u2014 prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
+  "description": "RLM algorithm SDK for coding agents — prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
   "type": "module",
   "publishConfig": {
     "access": "public"
