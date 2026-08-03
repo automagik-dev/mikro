@@ -36,10 +36,10 @@
  *     → assert no "Invalid params" and a non-empty coherent answer. That turn-1
  *     context genuinely survived is proven DETERMINISTICALLY off the durable
  *     store on disk (the persisted history carries the turn-1 codeword), so the
- *     gate does not depend on a 2B model verbatim-echoing it.
+ *     gate does not depend on the local model verbatim-echoing it.
  *   The two agent processes share a scratch RLMX_ACP_SESSIONS_DIR so the store
  *   survives the restart without touching the real ~/.rlmx. Budget-capped like
- *   the default gate to stay fast + deterministic on the local station 2B model.
+ *   the default gate to stay bounded on the local station NPU model.
  *
  * Exits 0 on success; non-zero with a printed reason on any failure.
  * Runs entirely against the local station/Lemonade provider — no cloud keys.
@@ -69,12 +69,12 @@ const MODE = MULTITURN ? "multiturn" : RECURSIVE ? "recursive" : "default";
 // takes ~20-40s, so the overall timeout is ~10 min and the spawned agent's env
 // carries a long RLMX_REPL_TIMEOUT_MS (inherited by the child process).
 //
-// MULTITURN: two short station 2B turns bracketing an agent-process restart. A
+// MULTITURN: two short station NPU turns bracketing an agent-process restart. A
 // modest budget (bigger than DEFAULT's forced-1-iteration cap) lets the model
 // emit a real short answer. The GATE proves the restore MECHANICS deterministically
 // (session/load succeeds after a SIGKILL restart with no "Invalid params", the
 // durable store carries turn-1 context on disk, and the follow-up prompt returns
-// a non-empty coherent answer) — it does NOT hinge on a 2B model verbatim-echoing
+// a non-empty coherent answer) — it does NOT hinge on a model verbatim-echoing
 // the codeword, which is captured as best-effort evidence only. That keeps the
 // gate reproducible instead of flaking on model non-determinism.
 const OVERALL_TIMEOUT_MS = RECURSIVE ? 780_000 : MULTITURN ? 600_000 : 180_000;
@@ -89,7 +89,7 @@ const RECURSIVE_PROMPT = [
   "After the REPL prints the result, finish with FINAL(n).",
 ].join("\n");
 const PROMPT_TEXT = RECURSIVE ? RECURSIVE_PROMPT : "What is 2+2? Answer in one short sentence.";
-const MODEL_ID = RECURSIVE ? "Qwen3.6-35B-A3B-MTP-GGUF" : "qwen3.5-2b-FLM";
+const MODEL_ID = RECURSIVE ? "Qwen3.6-35B-A3B-MTP-GGUF" : "qwen3.6-moe-35b-a3b-FLM";
 const BUDGET_YAML = RECURSIVE
   ? "budget:\n  max-tokens: 13000\n"
   : MULTITURN

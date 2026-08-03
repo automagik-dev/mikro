@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import {
   STATION_BASELINE_MODELS,
@@ -27,7 +28,7 @@ describe("station provider", () => {
     const models = builtinModels();
     registerStationProvider(models);
     for (const id of [
-      "qwen3.5-2b-FLM",
+      "qwen3.6-moe-35b-a3b-FLM",
       "Qwen3.6-35B-A3B-MTP-GGUF",
       "Qwen3.5-4B-MTP-GGUF",
     ]) {
@@ -40,6 +41,15 @@ describe("station provider", () => {
       assert.equal(m?.cost.output, 0);
       assert.equal(m?.maxTokens, 8192);
     }
+  });
+
+  it("ACP smoke defaults to the curated NPU model", () => {
+    const smoke = readFileSync(new URL("../../scripts/smoke-acp.mjs", import.meta.url), "utf8");
+    assert.match(
+      smoke,
+      /const MODEL_ID = RECURSIVE \? "Qwen3\.6-35B-A3B-MTP-GGUF" : "qwen3\.6-moe-35b-a3b-FLM";/,
+    );
+    assert.doesNotMatch(smoke, /qwen3\.5-2b-FLM/);
   });
 
   it("base URL targets the gateway's /api/v1 (not /v1)", () => {
@@ -64,8 +74,12 @@ describe("station provider", () => {
   });
 
   it("keeps the NPU FastFlowLM model minimal (no thinking format)", () => {
-    const flm = STATION_BASELINE_MODELS.find((m) => m.id === "qwen3.5-2b-FLM");
+    const flm = STATION_BASELINE_MODELS.find(
+      (m) => m.id === "qwen3.6-moe-35b-a3b-FLM",
+    );
     assert.ok(flm);
+    assert.equal(flm?.name, "Qwen3.6 35B A3B (NPU / FastFlowLM)");
+    assert.equal(flm?.contextWindow, 32768);
     assert.equal(flm?.reasoning, false);
     assert.equal(flm?.compat?.thinkingFormat, undefined);
     assert.equal(flm?.compat?.supportsDeveloperRole, false);
