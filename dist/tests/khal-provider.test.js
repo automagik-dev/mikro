@@ -612,7 +612,7 @@ describe("station is unaffected", () => {
         const models = builtinModels();
         registerStationProvider(models);
         registerKhalProvider(models);
-        assert.ok(models.getModel(STATION_PROVIDER_ID, "qwen3.5-2b-FLM"));
+        assert.ok(models.getModel(STATION_PROVIDER_ID, "qwen3.6-moe-35b-a3b-FLM"));
         assert.ok(models.getProvider(KHAL_PROVIDER_ID));
     });
 });

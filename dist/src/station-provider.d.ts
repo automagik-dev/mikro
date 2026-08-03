@@ -33,7 +33,7 @@ export declare const STATION_PROVIDER_ID = "station";
 export declare const STATION_BASE_URL: string;
 type StationModel = Model<"openai-completions">;
 /**
- * Static baseline models. The NPU gate model plus the two GGUF baselines the
+ * Static baseline models. The NPU station default plus the two GGUF baselines the
  * wish requires. Dynamic discovery (see `fetchModels`) adds any further
  * chat-capable models the gateway advertises.
  */

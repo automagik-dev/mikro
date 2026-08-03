@@ -108,12 +108,17 @@ function stationModel(
 }
 
 /**
- * Static baseline models. The NPU gate model plus the two GGUF baselines the
+ * Static baseline models. The NPU station default plus the two GGUF baselines the
  * wish requires. Dynamic discovery (see `fetchModels`) adds any further
  * chat-capable models the gateway advertises.
  */
 export const STATION_BASELINE_MODELS: readonly StationModel[] = [
-  stationModel("qwen3.5-2b-FLM", "Qwen3.5 2B (NPU / FastFlowLM)", "flm", 32768),
+  stationModel(
+    "qwen3.6-moe-35b-a3b-FLM",
+    "Qwen3.6 35B A3B (NPU / FastFlowLM)",
+    "flm",
+    32768,
+  ),
   stationModel(
     "Qwen3.6-35B-A3B-MTP-GGUF",
     "Qwen3.6 35B A3B MTP (iGPU / llama.cpp)",
