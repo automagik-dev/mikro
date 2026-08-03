@@ -1,0 +1,18 @@
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","choices":[{"index":0,"delta":{"role":"assistant","content":"["},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","choices":[{"index":0,"delta":{"role":"assistant","content":"INFO"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","choices":[{"index":0,"delta":{"role":"assistant","content":"]"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","choices":[{"index":0,"delta":{"role":"assistant","content":" arm"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","choices":[{"index":0,"delta":{"role":"assistant","content":" check"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","choices":[{"index":0,"delta":{"role":"assistant","content":" ok"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","choices":[{"index":0,"delta":{"role":"assistant","content":"."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-347d52e034229a6e6c363f2b","object":"chat.completion.chunk","created":1785756229,"model":"qwen3.6-moe:35b-a3b","system_fingerprint":"fp_57241f3863cd5a60","choices":[{"index":0,"delta":{"content":null},"finish_reason":"stop"}],"usage":{"prompt_tokens":678,"completion_tokens":8,"total_tokens":686,"active_kv_tokens":686,"max_kv_token_capacity":32768,"kv_token_occupancy_rate_percentage":2.093505859375,"load_duration":9.92e-07,"prefill_duration_ttft":8.78104576,"decoding_duration":0.678569,"prefill_speed_tps":77.21176025394041,"decoding_speed_tps":11.789515878267354}}
+
+data: [DONE]
+

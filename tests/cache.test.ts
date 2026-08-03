@@ -38,6 +38,7 @@ function makeConfig(overrides: Partial<RlmxConfig> = {}): RlmxConfig {
     budget: overrides.budget ?? { maxCost: null, maxTokens: null, maxDepth: null },
     contextConfig: overrides.contextConfig ?? { extensions: [".md"], exclude: ["node_modules"] },
     toolsLevel: overrides.toolsLevel ?? "core",
+    loop: overrides.loop ?? "full",
     cache: overrides.cache ?? { enabled: true, strategy: "full", retention: "long" },
     configSource: overrides.configSource ?? "yaml",
     gemini: overrides.gemini ?? { thinkingLevel: null, googleSearch: false, urlContext: false, codeExecution: false, computerUse: false, mapsGrounding: false, fileSearch: false, mediaResolution: null },

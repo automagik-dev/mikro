@@ -247,6 +247,38 @@ discipline.** They emitted **zero citations**, so the scorer had nothing to
 fail; `union-report.mjs` marks all six task-level cases `VACUOUS` for exactly
 this reason.
 
+### Direct mode and the station arm
+
+Everything above measures a station model driving the **full RLM loop**. When
+you wire a station model into an ACP host (`rlmx acp`), consider `loop: direct`
+in the project's `.rlmx/rlmx.yaml` ([field reference](project-config.md))
+instead: one chat completion, the project's `SYSTEM.md` verbatim, no REPL and no
+iteration.
+
+**Why the engine matters more than the model here.** The
+[acp-station-viability trace report](../.genie/wishes/acp-station-viability/trace-report.md)
+took a station arm apart and found that the two costs are not the same cost:
+
+- **Prefill is not the constraint.** A 2 028-token system prompt prefilled at
+  ~154 tok/s — about 13 s. Long prompts are affordable.
+- **Decode is.** ~12-14 tok/s. Budget roughly one second per 12-14 output
+  tokens; a 45-word answer runs 5-6 s.
+- **The loop protocol, not the question, is what spends the budget.** The loop's
+  intermediate iterations emit Python blocks of 3 000-5 000 characters each,
+  which at decode speed cost 75-100 s *per iteration* — and the model had
+  already produced the correct final answer on iteration 0, in 9.7 s, where the
+  loop could not recognize it.
+
+So on a slow-decode local arm the loop's own traffic dominates wall-clock, and
+one question can burn a whole 300 s turn budget to return a worse result than
+its own first iteration. Direct mode removes that traffic. It also removes the
+REPL, custom tools, recursion and multi-iteration reasoning — if the microagent
+needs those, `full` is still the engine, and the trade is real.
+
+Direct mode does **not** make a small local model better at the task; it changes
+which engine drives it. The n = 2 caveats above apply to the loop measurements
+and are untouched by any of this.
+
 ---
 
 ## Reproducing any row

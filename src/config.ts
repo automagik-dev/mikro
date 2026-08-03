@@ -89,6 +89,19 @@ export interface RtkConfig {
 /** Tool level — controls which functions are available in the REPL */
 export type ToolsLevel = "core" | "standard" | "full";
 
+/**
+ * Which engine answers a prompt turn.
+ *
+ * `full`   — the RLM iteration loop (`rlmLoop`): system scaffold + Python REPL +
+ *            FINAL()/FINAL_VAR() termination. The default; unchanged behavior.
+ * `direct` — ONE chat completion: the project's `system` as-is plus the query.
+ *            No REPL, no protocol scaffold, no iteration. Intended for small
+ *            local models that answer a one-shot question fine but cannot drive
+ *            the loop's termination protocol (see the acp-station-viability
+ *            trace report). Currently honored at the ACP prompt seam.
+ */
+export type LoopMode = "full" | "direct";
+
 /** Full rlmx config */
 export interface RlmxConfig {
   system: string | null;
@@ -103,6 +116,8 @@ export interface RlmxConfig {
   contextConfig: ContextConfig;
   /** Tool level */
   toolsLevel: ToolsLevel;
+  /** Which engine answers a prompt turn (see {@link LoopMode}). */
+  loop: LoopMode;
   /** Cache configuration for CAG mode */
   cache: CacheConfig;
   /** Gemini-specific configuration */
@@ -170,6 +185,9 @@ export const DEFAULT_RTK_CONFIG: RtkConfig = {
   enabled: "auto",
 };
 
+/** Default engine for a prompt turn — the full RLM loop (unchanged behavior). */
+export const DEFAULT_LOOP_MODE: LoopMode = "full";
+
 // ─── YAML Schema ─────────────────────────────────────────
 
 /** Shape of rlmx.yaml on disk (config-only — no system/criteria) */
@@ -190,6 +208,7 @@ interface RawYamlConfig {
     "max-depth"?: number | null;
   };
   "tools-level"?: string;
+  loop?: string;
   gemini?: {
     "thinking-level"?: string;
     "google-search"?: boolean;
@@ -410,6 +429,18 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   }
   const toolsLevel = rawLevel as ToolsLevel;
 
+  // Parse loop mode. Absent → "full", so an existing rlmx.yaml is untouched.
+  // Unknown KEYS elsewhere in the file stay tolerated (RawYamlConfig is a shape
+  // hint, never a whitelist); an unknown VALUE for a known enum key is a config
+  // error, exactly as tools-level / storage.enabled / rtk.enabled already are.
+  const rawLoop = cfg.loop ?? DEFAULT_LOOP_MODE;
+  if (!["full", "direct"].includes(rawLoop)) {
+    throw new Error(
+      `Invalid loop "${rawLoop}" in rlmx.yaml. Must be one of: full, direct.`
+    );
+  }
+  const loop = rawLoop as LoopMode;
+
   // Parse cache config
   const rawRetention = cfg.cache?.retention ?? "long";
   if (rawRetention && !["short", "long"].includes(rawRetention)) {
@@ -550,6 +581,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
     budget,
     contextConfig,
     toolsLevel,
+    loop,
     cache,
     gemini,
     output,
@@ -572,6 +604,7 @@ function defaultConfig(dir: string): RlmxConfig {
     budget: { ...DEFAULT_BUDGET },
     contextConfig: { ...DEFAULT_CONTEXT_CONFIG },
     toolsLevel: "core",
+    loop: DEFAULT_LOOP_MODE,
     cache: { ...DEFAULT_CACHE_CONFIG },
     gemini: { ...DEFAULT_GEMINI_CONFIG },
     output: { ...DEFAULT_OUTPUT_CONFIG },

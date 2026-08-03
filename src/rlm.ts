@@ -100,7 +100,13 @@ export interface RLMOptions {
   emitter?: EmitterAndStream;
 }
 
-const DEFAULT_OPTIONS: RLMOptions = {
+/**
+ * The loop's own defaults. Exported so a caller that plumbs an override (the
+ * ACP adapter's RLMX_ACP_RUN_TIMEOUT_MS / RLMX_ACP_MAX_ITERATIONS knobs) can
+ * pass the SAME value the loop would have chosen on its own when the override
+ * is absent, instead of re-declaring 30/300_000 somewhere that can drift.
+ */
+export const DEFAULT_OPTIONS: RLMOptions = {
   maxIterations: 30,
   timeout: 300_000,
   verbose: false,
@@ -111,8 +117,11 @@ const DEFAULT_OPTIONS: RLMOptions = {
 /**
  * Check if structured output mode is active.
  * Structured output is when output.schema is set and provider is Google (Gemini).
+ *
+ * Exported because the ACP adapter's missing-protocol diagnostic has to exclude
+ * structured-output runs: those terminate on a schema, not on FINAL().
  */
-function isStructuredOutputMode(config: RlmxConfig): boolean {
+export function isStructuredOutputMode(config: RlmxConfig): boolean {
   return config.output.schema !== null && isGoogleProvider(config.model.provider);
 }
 
@@ -857,21 +866,73 @@ export async function rlmLoop(
       }));
       closeEmitter("abort");
 
-      return buildResult(
-        "Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.",
-        usage,
-        actualIterations,
-        config,
-        EMPTY_RESPONSES_BUDGET_HIT,
-        geminiCounts,
-        repl.getGeminiBatteriesUsed(),
-        buildUsageBreakdown(usage, childUsage)
-      );
+      const emptyMessage =
+        "Error: aborted after 3 consecutive empty LLM responses. Context may exceed API token limits.";
+      return {
+        ...buildResult(
+          emptyMessage,
+          usage,
+          actualIterations,
+          config,
+          EMPTY_RESPONSES_BUDGET_HIT,
+          geminiCounts,
+          repl.getGeminiBatteriesUsed(),
+          buildUsageBreakdown(usage, childUsage)
+        ),
+        // Structural restatement of the prose above: a consumer that must not
+        // relay a failure as a reply branches here rather than matching strings.
+        failure: { kind: EMPTY_RESPONSES_BUDGET_HIT, message: emptyMessage },
+      };
+    }
+
+    // ── Honest timeout exit (trace-report defect #1, amendment (a)) ───────
+    // The wall-clock timeout breaks the loop at the top with the SHARED
+    // AbortController ALREADY aborted. `forceFinalAnswer` below was then handed
+    // that dead signal: pi/ai short-circuits an already-aborted request by
+    // RETURNING empty text rather than throwing, so the catch beneath (which
+    // would have produced TIMEOUT_ANSWER) never ran and the run reported
+    // SUCCESS with `answer: ""`. Proven on the wire — llmCalls incremented
+    // without a sixth request reaching the gateway.
+    //
+    // A timeout can never produce a forced answer, so take the honest exit here
+    // instead of spending a doomed call. FIXED IN rlm.ts, not at the ACP
+    // boundary, because the broken contract is the LOOP's: every consumer (CLI,
+    // SDK, ACP) was told a timed-out run had succeeded, and the alternative —
+    // sniffing an empty answer at one caller — leaves the other two lying.
+    // Budget/max-iteration exits keep the live-signal forced answer unchanged.
+    if (abortController.signal.aborted) {
+      if (opts.verbose) logVerbose(actualIterations, "timeout, no forced answer is possible");
+      clearTimeout(timeoutHandle);
+      if (recorder) recorder.recordError("timeout");
+      await repl.stop().catch(() => {});
+      if (storage) await storage.stop().catch(() => {});
+
+      emitter.emit(makeEvent<ErrorEvent>("Error", {
+        sessionId: selfCorrelationId,
+        ...selfTag,
+        phase: "timeout",
+        error: { name: "AbortError", message: TIMEOUT_ANSWER },
+      }));
+      closeEmitter("abort");
+
+      return {
+        ...buildResult(
+          TIMEOUT_ANSWER,
+          usage,
+          actualIterations,
+          config,
+          budget.getState().budgetHit,
+          geminiCounts,
+          repl.getGeminiBatteriesUsed(),
+          buildUsageBreakdown(usage, childUsage)
+        ),
+        failure: { kind: "timeout", message: TIMEOUT_ANSWER },
+      };
     }
 
     // Force a final answer for normal loop exit
     if (opts.verbose) {
-      const reason = budget.isExceeded() ? "budget exceeded" : abortController.signal.aborted ? "timeout" : "max iterations reached";
+      const reason = budget.isExceeded() ? "budget exceeded" : "max iterations reached";
       logVerbose(actualIterations, `${reason}, forcing final answer`);
     }
 
@@ -897,16 +958,19 @@ export async function rlmLoop(
     closeEmitter(aborted ? "abort" : "error");
 
     if (aborted) {
-      return buildResult(
-        TIMEOUT_ANSWER,
-        usage,
-        0,
-        config,
-        budget.getState().budgetHit,
-        geminiCounts,
-        repl.getGeminiBatteriesUsed(),
-        buildUsageBreakdown(usage, childUsage)
-      );
+      return {
+        ...buildResult(
+          TIMEOUT_ANSWER,
+          usage,
+          0,
+          config,
+          budget.getState().budgetHit,
+          geminiCounts,
+          repl.getGeminiBatteriesUsed(),
+          buildUsageBreakdown(usage, childUsage)
+        ),
+        failure: { kind: "timeout", message: TIMEOUT_ANSWER },
+      };
     }
 
     throw err;

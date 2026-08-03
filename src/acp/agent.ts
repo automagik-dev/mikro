@@ -58,12 +58,22 @@ import {
   type NewSessionResponse,
   type PromptRequest,
   type PromptResponse,
+  type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import { loadConfig } from "../config.js";
-import { rlmLoop } from "../rlm.js";
+import { DEFAULT_OPTIONS as RLM_DEFAULTS, rlmLoop } from "../rlm.js";
 import { createEmitter, type EmitterAndStream } from "../sdk/emitter.js";
 import { createTranslationContext, translateEvent } from "./session.js";
 import { SessionStore, isValidSessionId, type StoredSession } from "./session-store.js";
+import {
+  loopEmptyAnswerError,
+  loopFailureError,
+  missingFinalProtocolWarning,
+  resolveEnvPositive,
+  resolveLoopMode,
+  runDirectCompletion,
+  type LlmCompleteFn,
+} from "./modes.js";
 
 /**
  * Per-session state. Group 3 makes this durable: the in-memory copy is a cache
@@ -90,6 +100,34 @@ const PREAMBLE_TURNS = 8;
 /** Per-turn char caps for the resume preamble (independent of the store caps). */
 const PREAMBLE_QUERY_CHARS = 2_000;
 const PREAMBLE_ANSWER_CHARS = 4_000;
+
+/**
+ * The only client capability a prompt turn uses. `AgentSideConnection` satisfies
+ * it structurally; naming the narrow surface lets the hermetic tests drive real
+ * prompt turns with a recording sink instead of standing up a transport.
+ */
+export interface SessionUpdateSink {
+  sessionUpdate(params: SessionNotification): Promise<void>;
+}
+
+/**
+ * Injectable collaborators. Every field defaults to the production
+ * implementation, so `new RlmxAcpAgent(conn)` is unchanged; the hermetic suite
+ * substitutes a fake provider / loop / config loader and a captured env, and
+ * never reaches a network or the real `process.env`.
+ */
+export interface AgentDeps {
+  /** Project config loader. Default: the real `loadConfig`. */
+  readonly loadConfig?: typeof loadConfig;
+  /** Full-mode engine. Default: the real `rlmLoop`. */
+  readonly rlmLoop?: typeof rlmLoop;
+  /** Direct-mode provider call. Default: the real `llmComplete`. */
+  readonly complete?: LlmCompleteFn;
+  /** Environment the mode + knob resolution reads. Default: `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
+  /** Diagnostic sink. Default: stderr (stdout is reserved for JSON-RPC). */
+  readonly warn?: (message: string) => void;
+}
 
 /** Cancellation handle for the single in-flight prompt turn. */
 interface ActivePrompt {
@@ -125,6 +163,14 @@ function resolveVersion(): string {
   }
 }
 
+/**
+ * Default diagnostic sink. An ACP stdio agent owns stdout for framed JSON-RPC,
+ * so every human-readable line goes to stderr.
+ */
+function writeStderr(message: string): void {
+  process.stderr.write(message);
+}
+
 /** Extract the plain-text prompt from a list of ACP content blocks. */
 function extractPromptText(blocks: ContentBlock[]): string {
   const parts: string[] = [];
@@ -143,7 +189,8 @@ function extractPromptText(blocks: ContentBlock[]): string {
  * documented rejection rather than a silent queue.
  */
 export class RlmxAcpAgent implements Agent {
-  private readonly conn: AgentSideConnection;
+  private readonly conn: SessionUpdateSink;
+  private readonly deps: AgentDeps;
   private readonly sessions = new Map<string, SessionState>();
   private readonly store = new SessionStore();
   private readonly version = resolveVersion();
@@ -151,9 +198,16 @@ export class RlmxAcpAgent implements Agent {
   private promptInFlight = false;
   /** Cancellation handle for the in-flight prompt turn, if any. */
   private activePrompt: ActivePrompt | null = null;
+  /**
+   * Fire-once state for the missing-FINAL-protocol diagnostic. Scoped to the
+   * agent instance — one per stdio connection — so an operator sees the warning
+   * once per session, not once per turn.
+   */
+  private warnedMissingFinalProtocol = false;
 
-  constructor(conn: AgentSideConnection) {
+  constructor(conn: SessionUpdateSink, deps: AgentDeps = {}) {
     this.conn = conn;
+    this.deps = deps;
   }
 
   async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
@@ -290,7 +344,10 @@ export class RlmxAcpAgent implements Agent {
     this.activePrompt = { sessionId: params.sessionId, abort, emitter };
     try {
       // Load the project config from the session cwd, exactly as the CLI does.
-      const config = await loadConfig(session.cwd);
+      const config = await (this.deps.loadConfig ?? loadConfig)(session.cwd);
+      const env = this.deps.env ?? process.env;
+      // Which engine answers this turn: RLMX_ACP_LOOP > `loop:` > full.
+      const mode = resolveLoopMode(config, env);
 
       // Thread prior-turn context: a follow-up prompt in a durable session
       // resumes with the earlier turns folded into the query, so a session is
@@ -341,69 +398,135 @@ export class RlmxAcpAgent implements Agent {
         }
       })();
 
-      // Wrap the run so a failing run fails only THIS prompt, never the agent
-      // process. output: "json" keeps rlmLoop off its stream-mode stdout path.
-      //
+      // ── Turn budgets ────────────────────────────────────────────────────
       // A recursive turn (parent iterations + a child spawn that itself takes
-      // tens of seconds) can exceed rlmLoop's 300s default wall-clock cap. The
-      // client owns turn duration (it can session/cancel), so an ACP-hosted run
-      // honors an optional RLMX_ACP_RUN_TIMEOUT_MS override for the loop's
-      // internal timeout. Unset → rlmLoop's own default applies (unchanged for
-      // the fast non-recursive path). Additive; rlm.ts untouched.
-      const runTimeoutMs = Number(process.env.RLMX_ACP_RUN_TIMEOUT_MS);
-      const result = await rlmLoop(effectiveQuery, null, config, {
-        emitter,
-        output: "json",
-        ...(Number.isFinite(runTimeoutMs) && runTimeoutMs > 0
-          ? { timeout: runTimeoutMs }
-          : {}),
-      });
-      await drain; // emitter is closed by rlmLoop when the run finishes.
+      // tens of seconds) can exceed the 300s default wall-clock cap, and a
+      // stalled gateway can hang a direct completion indefinitely (a 2.5h hang
+      // is on the record). The client owns turn duration (it can session/cancel),
+      // so an ACP-hosted run honors two optional overrides. Both use the same
+      // guard: finite and positive is honored as-is, anything else falls back to
+      // the loop's OWN default — so an unset knob is a no-op in either mode.
+      const runTimeoutMs = resolveEnvPositive(
+        env.RLMX_ACP_RUN_TIMEOUT_MS,
+        RLM_DEFAULTS.timeout,
+      );
+      const maxIterations = resolveEnvPositive(
+        env.RLMX_ACP_MAX_ITERATIONS,
+        RLM_DEFAULTS.maxIterations,
+      );
+
+      // ── Mode branch ─────────────────────────────────────────────────────
+      // Both branches settle on ONE `answer`, or throw a structured failure
+      // (see acp/modes.ts). Nothing below this block knows which engine ran.
+      let answer: string;
+      if (mode === "direct") {
+        // Direct mode: one completion, whole answer, own deadline. It drives no
+        // rlmLoop, so nothing else will ever close the emitter the drain loop is
+        // iterating — close it here (idempotent) or `await drain` hangs the turn.
+        // The answer reaches the client through the end-of-run backstop below,
+        // i.e. the existing single-agent_message_chunk contract.
+        try {
+          answer = await runDirectCompletion({
+            config,
+            query: effectiveQuery,
+            timeoutMs: runTimeoutMs,
+            turnSignal: abort.signal,
+            ...(this.deps.complete ? { complete: this.deps.complete } : {}),
+          });
+        } finally {
+          if (!emitter.closed) emitter.close();
+          await drain;
+        }
+      } else {
+        // Full mode. Diagnostic first (trace-report defect #2): a project whose
+        // SYSTEM.md replaced rlmx's scaffold has silently dropped the FINAL
+        // protocol, and the loop it is about to drive cannot terminate early.
+        // Warn ONCE per connection; nothing about the run changes.
+        if (!this.warnedMissingFinalProtocol) {
+          const warning = missingFinalProtocolWarning(config);
+          if (warning) {
+            this.warnedMissingFinalProtocol = true;
+            (this.deps.warn ?? writeStderr)(warning);
+          }
+        }
+
+        // Wrap the run so a failing run fails only THIS prompt, never the agent
+        // process. output: "json" keeps rlmLoop off its stream-mode stdout path.
+        const result = await (this.deps.rlmLoop ?? rlmLoop)(
+          effectiveQuery,
+          null,
+          config,
+          { emitter, output: "json", timeout: runTimeoutMs, maxIterations },
+        );
+        await drain; // emitter is closed by rlmLoop when the run finishes.
+
+        // The loop states its no-answer exits structurally (RLMResult.failure).
+        // Surface them as ACP errors and DROP the loop's error prose: relaying
+        // "Error: RLM query timed out" as an agent_message_chunk is how a
+        // failure came to be persisted into consumer stores as the model's
+        // reply. A cancelled turn is reported as cancelled, not as a failure.
+        if (!abort.signal.aborted && result.failure) {
+          throw loopFailureError(result.failure, runTimeoutMs);
+        }
+        answer = result.answer ?? "";
+      }
+
+      // Invariant: a prompt turn NEVER resolves `end_turn` with nothing to say.
+      // Direct mode enforces this inside runDirectCompletion; this is the same
+      // bar for the loop, whose success exits are not supposed to be able to
+      // return empty now that the timeout path is honest.
+      if (!abort.signal.aborted && answer.trim().length === 0) {
+        throw loopEmptyAnswerError();
+      }
 
       // Persist the completed turn to the durable store BEFORE returning, so a
       // follow-up prompt (even after an agent restart + session/load) resumes
       // with this turn's context. A non-cancelled turn with an answer is
-      // recorded; a cancelled turn is not (its answer stream was cut). The
-      // ORIGINAL `query` is stored — not `effectiveQuery` — so the preamble is
-      // rebuilt fresh each turn rather than compounding.
+      // recorded; a cancelled turn is not (its answer stream was cut), and a
+      // turn that ended in a structured failure threw above and never reaches
+      // here — a failure must never be replayed into a later turn's preamble.
+      // The ORIGINAL `query` is stored — not `effectiveQuery` — so the preamble
+      // is rebuilt fresh each turn rather than compounding.
       if (!abort.signal.aborted) {
-        const answer = result.answer ?? "";
         try {
           await this.store.appendTurn(session.record, query, answer);
         } catch (persistErr) {
           // Persistence failure must not fail the prompt turn; the client still
           // gets its answer. It only degrades a later restart's resume fidelity.
           const m = persistErr instanceof Error ? persistErr.message : String(persistErr);
-          process.stderr.write(`rlmx acp: session persist failed: ${m}\n`);
+          writeStderr(`rlmx acp: session persist failed: ${m}\n`);
         }
       }
 
       // Invariant backstop: some rlmLoop exit paths (e.g. the consecutive-empty
       // abort) return an answer WITHOUT emitting EmitDone, so no answer chunk
-      // was streamed. If nothing reached the client as a message chunk, send
-      // the final answer once so a prompt turn always yields an answer.
+      // was streamed — and direct mode emits no events at all. If nothing
+      // reached the client as a message chunk, send the final answer once so a
+      // prompt turn always yields an answer.
       if (!abort.signal.aborted && messageChunksSent === 0) {
-        const answer = result.answer ?? "";
-        if (answer.length > 0) {
-          await this.conn.sessionUpdate({
-            sessionId: params.sessionId,
-            update: {
-              sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: answer },
-              messageId: `answer:${params.sessionId}`,
-            },
-          });
-        }
+        await this.conn.sessionUpdate({
+          sessionId: params.sessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: answer },
+            messageId: `answer:${params.sessionId}`,
+          },
+        });
       }
 
       // A cancelled turn reports `cancelled`; a normal turn reports `end_turn`.
       return { stopReason: abort.signal.aborted ? "cancelled" : "end_turn" };
     } catch (err) {
-      // A RequestError propagates as a structured JSON-RPC error; any other
-      // failure is surfaced as an internal error scoped to this prompt turn.
+      // A cancelled turn is NOT a failure: `session/cancel` (or a disconnect)
+      // aborted the work, and the ACP contract for that is stopReason
+      // "cancelled". Whatever the aborted run threw on its way out is discarded.
+      if (abort.signal.aborted) return { stopReason: "cancelled" };
+      // A RequestError propagates as a structured JSON-RPC error — that is the
+      // whole per-mode failure taxonomy (acp/modes.ts) reaching the client. Any
+      // other failure is an unclassified fault scoped to this prompt turn.
       if (err instanceof RequestError) throw err;
       const message = err instanceof Error ? err.message : String(err);
-      throw RequestError.internalError(undefined, `rlmLoop failed: ${message}`);
+      throw RequestError.internalError(undefined, `rlmx acp run failed: ${message}`);
     } finally {
       this.promptInFlight = false;
       this.activePrompt = null;
@@ -442,7 +565,7 @@ export class RlmxAcpAgent implements Agent {
     cwd: string,
   ): Promise<{ provider: string; model: string } | null> {
     try {
-      const config = await loadConfig(cwd);
+      const config = await (this.deps.loadConfig ?? loadConfig)(cwd);
       return { provider: config.model.provider, model: config.model.model };
     } catch {
       return null;

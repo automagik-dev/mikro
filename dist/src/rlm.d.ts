@@ -39,6 +39,21 @@ export interface RLMOptions {
     emitter?: EmitterAndStream;
 }
 /**
+ * The loop's own defaults. Exported so a caller that plumbs an override (the
+ * ACP adapter's RLMX_ACP_RUN_TIMEOUT_MS / RLMX_ACP_MAX_ITERATIONS knobs) can
+ * pass the SAME value the loop would have chosen on its own when the override
+ * is absent, instead of re-declaring 30/300_000 somewhere that can drift.
+ */
+export declare const DEFAULT_OPTIONS: RLMOptions;
+/**
+ * Check if structured output mode is active.
+ * Structured output is when output.schema is set and provider is Google (Gemini).
+ *
+ * Exported because the ACP adapter's missing-protocol diagnostic has to exclude
+ * structured-output runs: those terminate on a schema, not on FINAL().
+ */
+export declare function isStructuredOutputMode(config: RlmxConfig): boolean;
+/**
  * Main RLM loop entry point.
  */
 export declare function rlmLoop(query: string, context: LoadedContext | null, config: RlmxConfig, options?: Partial<RLMOptions>): Promise<RLMResult>;

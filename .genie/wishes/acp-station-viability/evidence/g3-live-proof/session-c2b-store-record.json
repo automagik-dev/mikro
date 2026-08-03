@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "sessionId": "cf3bbefb-9d4b-4df1-8764-f5ba2a805b82",
+  "cwd": "/tmp/claude-1000/-home-namastex-prod-metal-river/ead635e5-3123-4a17-8cb0-966da59bc72e/scratchpad/direct-proof-project",
+  "createdAt": "2026-08-03T12:41:30.651Z",
+  "updatedAt": "2026-08-03T12:42:02.658Z",
+  "mcpServers": [],
+  "configSnapshot": {
+    "provider": "station",
+    "model": "qwen3.6-moe-35b-a3b-FLM"
+  },
+  "turns": [
+    {
+      "query": "Remember this for later: my project codeword is TANGERINE-91. Reply with just: ok.",
+      "answer": "ok.",
+      "timestamp": "2026-08-03T12:41:36.059Z"
+    },
+    {
+      "query": "What is my project codeword? Reply with only the codeword.",
+      "answer": "TANGERINE-91",
+      "timestamp": "2026-08-03T12:42:02.658Z"
+    }
+  ]
+}

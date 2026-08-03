@@ -45,6 +45,8 @@ export const DEFAULT_STORAGE_CONFIG = {
 export const DEFAULT_RTK_CONFIG = {
     enabled: "auto",
 };
+/** Default engine for a prompt turn — the full RLM loop (unchanged behavior). */
+export const DEFAULT_LOOP_MODE = "full";
 // ─── File Helpers ────────────────────────────────────────
 /**
  * Try to read a file, returning null if it doesn't exist.
@@ -194,6 +196,15 @@ function parseYamlConfig(content, dir) {
         throw new Error(`Invalid tools-level "${rawLevel}" in rlmx.yaml. Must be one of: core, standard, full.`);
     }
     const toolsLevel = rawLevel;
+    // Parse loop mode. Absent → "full", so an existing rlmx.yaml is untouched.
+    // Unknown KEYS elsewhere in the file stay tolerated (RawYamlConfig is a shape
+    // hint, never a whitelist); an unknown VALUE for a known enum key is a config
+    // error, exactly as tools-level / storage.enabled / rtk.enabled already are.
+    const rawLoop = cfg.loop ?? DEFAULT_LOOP_MODE;
+    if (!["full", "direct"].includes(rawLoop)) {
+        throw new Error(`Invalid loop "${rawLoop}" in rlmx.yaml. Must be one of: full, direct.`);
+    }
+    const loop = rawLoop;
     // Parse cache config
     const rawRetention = cfg.cache?.retention ?? "long";
     if (rawRetention && !["short", "long"].includes(rawRetention)) {
@@ -302,6 +313,7 @@ function parseYamlConfig(content, dir) {
         budget,
         contextConfig,
         toolsLevel,
+        loop,
         cache,
         gemini,
         output,
@@ -323,6 +335,7 @@ function defaultConfig(dir) {
         budget: { ...DEFAULT_BUDGET },
         contextConfig: { ...DEFAULT_CONTEXT_CONFIG },
         toolsLevel: "core",
+        loop: DEFAULT_LOOP_MODE,
         cache: { ...DEFAULT_CACHE_CONFIG },
         gemini: { ...DEFAULT_GEMINI_CONFIG },
         output: { ...DEFAULT_OUTPUT_CONFIG },

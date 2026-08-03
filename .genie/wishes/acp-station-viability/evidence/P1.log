@@ -1,0 +1,6 @@
+[liveness pre] 2026-08-03T08:21:47-03:00 http=200 t=0.000776
+--- P1: direct chat/completions, SMALL system prompt ---
+HTTP:200 time:4.668572
+wall=4.677198354s
+{"content":"[INFO] arm check ok.","finish":"stop","usage":{"completion_tokens":8,"decoding_duration":0.672426,"decoding_speed_tps":11.897219917135864,"kv_token_occupancy_rate_percentage":0.1495361328125,"load_duration":0.000001303,"prefill_duration_ttft":3.781643008,"prefill_speed_tps":10.841848348261646,"prompt_tokens":41,"total_tokens":49}}
+[liveness post] 2026-08-03T08:21:52-03:00 http=200 t=0.000657

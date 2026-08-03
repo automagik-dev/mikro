@@ -1,0 +1,4 @@
+[liveness pre-P4] 2026-08-03T08:35:07-03:00 http=200
+HTTP:200 time:14.109706
+{"content":"[INFO] arm check ok.","finish":"stop","usage":{"completion_tokens":8,"decoding_duration":0.691174,"decoding_speed_tps":11.57450945782104,"kv_token_occupancy_rate_percentage":6.21337890625,"load_duration":0.000001823,"prefill_duration_ttft":13.195302912,"prefill_speed_tps":153.69105306068477,"prompt_tokens":2028,"total_tokens":2036}}
+[liveness post-P4] 2026-08-03T08:35:21-03:00 http=200

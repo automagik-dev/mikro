@@ -1,4 +1,4 @@
-export { loadConfig, hasConfig, parseToolsMd } from "./config.js";
+export { loadConfig, hasConfig, parseToolsMd, DEFAULT_LOOP_MODE } from "./config.js";
 export { isGoogleProvider, isValidThinkingLevel, THINKING_LEVELS, checkFutureFlags, buildGeminiOnPayload, createGeminiStats, DEFAULT_GEMINI_CONFIG, } from "./gemini.js";
 export { scaffold, needsScaffold } from "./scaffold.js";
 export { loadContext, loadContextFromDir, loadContextFromFile, loadContextFromStdin } from "./context.js";

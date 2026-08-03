@@ -5,6 +5,28 @@
  * Stats output: --stats emits JSON to stderr, --output json --stats includes stats in response.
  */
 import type { UsageStats, GeminiCallCounts, UsageBreakdown } from "./llm.js";
+/**
+ * Machine-readable exit reason for a run that finished WITHOUT a usable answer.
+ *
+ * The loop has always reported these two exits as prose inside `answer`
+ * ("Error: RLM query timed out", "Error: aborted after 3 consecutive empty …"),
+ * which leaves every consumer string-sniffing to tell an answer from a failure —
+ * and one consumer (the ACP adapter) relaying error prose to a client as if it
+ * were the model's reply. `failure` states the exit reason structurally so a
+ * caller can branch on it; `answer` keeps its historical prose for the CLI and
+ * the benchmark classifier that already read it.
+ *
+ * Absent on every successful run — including a forced-final answer.
+ */
+export interface RLMFailure {
+    /**
+     * `timeout`         — the run's wall-clock budget expired (`RLMOptions.timeout`).
+     * `empty_responses` — aborted after 3 consecutive empty LLM responses.
+     */
+    kind: "timeout" | "empty_responses";
+    /** Human-readable summary; mirrors the prose left in `answer`. */
+    message: string;
+}
 /** The full result returned by an RLM run. */
 export interface RLMResult {
     answer: string;
@@ -18,6 +40,11 @@ export interface RLMResult {
     geminiCounts?: GeminiCallCounts;
     /** Names of Gemini battery functions invoked during the run. */
     geminiBatteriesUsed?: string[];
+    /**
+     * Set ONLY when the run produced no usable answer (see {@link RLMFailure}).
+     * A caller that must not surface a failure as a reply branches on this.
+     */
+    failure?: RLMFailure;
 }
 /** Cache stats included in --stats output when cache is enabled. */
 export interface CacheStats {

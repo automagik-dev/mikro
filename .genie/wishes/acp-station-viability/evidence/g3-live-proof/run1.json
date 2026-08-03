@@ -1,0 +1,247 @@
+{
+  "startedAt": "2026-08-03T12:40:12.893Z",
+  "cli": "/home/namastex/.cache/acp-station-viability-build/dist/src/cli.js",
+  "project": "/tmp/claude-1000/-home-namastex-prod-metal-river/ead635e5-3123-4a17-8cb0-966da59bc72e/scratchpad/direct-proof-project",
+  "strippedEnv": [
+    "RLMX_ACP_LOOP",
+    "RLMX_ACP_RUN_TIMEOUT_MS",
+    "RLMX_ACP_MAX_ITERATIONS",
+    "RLMX_REPL_TIMEOUT_MS",
+    "RLMX_MCP_RUN_TIMEOUT_MS",
+    "RLMX_BENCH_DIRECT_TIMEOUT_MS",
+    "STATION_BASE_URL",
+    "LEMONADE_BASE_URL"
+  ],
+  "strippedEnvVerified": {
+    "RLMX_ACP_LOOP": null,
+    "RLMX_ACP_RUN_TIMEOUT_MS": null,
+    "RLMX_ACP_MAX_ITERATIONS": null,
+    "RLMX_REPL_TIMEOUT_MS": null,
+    "RLMX_MCP_RUN_TIMEOUT_MS": null,
+    "RLMX_BENCH_DIRECT_TIMEOUT_MS": null,
+    "STATION_BASE_URL": null,
+    "LEMONADE_BASE_URL": null
+  },
+  "spacingMs": 20000,
+  "samples": [
+    {
+      "id": "C2-1",
+      "kind": "C2",
+      "sessionId": "3884baba-024f-4877-970e-bb3b0ccaa94e",
+      "prompt": "In one short sentence: what is the capital of France?",
+      "startedAt": "2026-08-03T12:40:13.138Z",
+      "latencyMs": 5600,
+      "latencyS": 5.6,
+      "stopReason": "end_turn",
+      "error": null,
+      "chunkCount": 1,
+      "chunkMessageIds": [
+        "answer:3884baba-024f-4877-970e-bb3b0ccaa94e"
+      ],
+      "answer": "The capital of France is Paris.",
+      "answerNonEmpty": true,
+      "liveness": {
+        "pre": {
+          "label": "pre",
+          "at": "2026-08-03T12:40:13.115Z",
+          "status": 200,
+          "ms": 23,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        },
+        "post": {
+          "label": "post",
+          "at": "2026-08-03T12:40:18.738Z",
+          "status": 200,
+          "ms": 2,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        }
+      },
+      "voided": false
+    },
+    {
+      "id": "C2-2",
+      "kind": "C2",
+      "sessionId": "715b1f2c-6758-4218-b92a-b417c7ee04cf",
+      "prompt": "In one short sentence: what does the Unix command `df -h` report?",
+      "startedAt": "2026-08-03T12:40:38.752Z",
+      "latencyMs": 6430,
+      "latencyS": 6.43,
+      "stopReason": "end_turn",
+      "error": null,
+      "chunkCount": 1,
+      "chunkMessageIds": [
+        "answer:715b1f2c-6758-4218-b92a-b417c7ee04cf"
+      ],
+      "answer": "It reports the amount of available and used disk space on mounted filesystems in human-readable format.",
+      "answerNonEmpty": true,
+      "liveness": {
+        "pre": {
+          "label": "pre",
+          "at": "2026-08-03T12:40:38.749Z",
+          "status": 200,
+          "ms": 3,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        },
+        "post": {
+          "label": "post",
+          "at": "2026-08-03T12:40:45.182Z",
+          "status": 200,
+          "ms": 2,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        }
+      },
+      "voided": false
+    },
+    {
+      "id": "C2-3",
+      "kind": "C2",
+      "sessionId": "cfcb32d8-ba7d-41b6-af70-fd5a24c5cfaa",
+      "prompt": "In one short sentence: what does the acronym HTTP stand for?",
+      "startedAt": "2026-08-03T12:41:05.190Z",
+      "latencyMs": 5449,
+      "latencyS": 5.45,
+      "stopReason": "end_turn",
+      "error": null,
+      "chunkCount": 1,
+      "chunkMessageIds": [
+        "answer:cfcb32d8-ba7d-41b6-af70-fd5a24c5cfaa"
+      ],
+      "answer": "HTTP stands for HyperText Transfer Protocol.",
+      "answerNonEmpty": true,
+      "liveness": {
+        "pre": {
+          "label": "pre",
+          "at": "2026-08-03T12:41:05.188Z",
+          "status": 200,
+          "ms": 2,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        },
+        "post": {
+          "label": "post",
+          "at": "2026-08-03T12:41:10.639Z",
+          "status": 200,
+          "ms": 2,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        }
+      },
+      "voided": false
+    }
+  ],
+  "c2b": {
+    "sessionId": "cf3bbefb-9d4b-4df1-8764-f5ba2a805b82",
+    "turn1": {
+      "id": "C2b-turn1",
+      "kind": "C2b",
+      "sessionId": "cf3bbefb-9d4b-4df1-8764-f5ba2a805b82",
+      "prompt": "Remember this for later: my project codeword is TANGERINE-91. Reply with just: ok.",
+      "startedAt": "2026-08-03T12:41:30.653Z",
+      "latencyMs": 5407,
+      "latencyS": 5.41,
+      "stopReason": "end_turn",
+      "error": null,
+      "chunkCount": 1,
+      "chunkMessageIds": [
+        "answer:cf3bbefb-9d4b-4df1-8764-f5ba2a805b82"
+      ],
+      "answer": "ok.",
+      "answerNonEmpty": true,
+      "liveness": {
+        "pre": {
+          "label": "pre",
+          "at": "2026-08-03T12:41:30.651Z",
+          "status": 200,
+          "ms": 2,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        },
+        "post": {
+          "label": "post",
+          "at": "2026-08-03T12:41:36.060Z",
+          "status": 200,
+          "ms": 2,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        }
+      },
+      "voided": false
+    },
+    "turn2": {
+      "id": "C2b-turn2",
+      "kind": "C2b",
+      "sessionId": "cf3bbefb-9d4b-4df1-8764-f5ba2a805b82",
+      "prompt": "What is my project codeword? Reply with only the codeword.",
+      "startedAt": "2026-08-03T12:41:56.075Z",
+      "latencyMs": 6584,
+      "latencyS": 6.58,
+      "stopReason": "end_turn",
+      "error": null,
+      "chunkCount": 1,
+      "chunkMessageIds": [
+        "answer:cf3bbefb-9d4b-4df1-8764-f5ba2a805b82"
+      ],
+      "answer": "TANGERINE-91",
+      "answerNonEmpty": true,
+      "liveness": {
+        "pre": {
+          "label": "pre",
+          "at": "2026-08-03T12:41:56.072Z",
+          "status": 200,
+          "ms": 3,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        },
+        "post": {
+          "label": "post",
+          "at": "2026-08-03T12:42:02.659Z",
+          "status": 200,
+          "ms": 2,
+          "modelCount": 21,
+          "hasTargetModel": true,
+          "alive": true
+        }
+      },
+      "voided": false
+    },
+    "referencesTurn1": true
+  },
+  "agentStderr": "",
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true,
+        "_meta": {
+          "rlmx/mcp": "store-and-advertise-only; no MCP client execution yet"
+        }
+      },
+      "promptCapabilities": {
+        "image": false,
+        "audio": false,
+        "embeddedContext": false
+      }
+    },
+    "authMethods": [],
+    "agentInfo": {
+      "name": "rlmx",
+      "version": "0.0.0"
+    }
+  },
+  "finishedAt": "2026-08-03T12:42:02.668Z"
+}

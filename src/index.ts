@@ -1,5 +1,5 @@
-export { loadConfig, hasConfig, parseToolsMd } from "./config.js";
-export type { RlmxConfig, ToolDef, ModelConfig, BudgetConfig, ContextConfig, ToolsLevel, GeminiConfig, MediaResolutionConfig, OutputConfig } from "./config.js";
+export { loadConfig, hasConfig, parseToolsMd, DEFAULT_LOOP_MODE } from "./config.js";
+export type { RlmxConfig, ToolDef, ModelConfig, BudgetConfig, ContextConfig, ToolsLevel, LoopMode, GeminiConfig, MediaResolutionConfig, OutputConfig } from "./config.js";
 
 export {
   isGoogleProvider,
@@ -59,7 +59,7 @@ export {
 export type { CodeBlock, FinalSignal, ExecutionResult } from "./parser.js";
 
 export { outputResult, emitStreamEvent, emitStats, buildStats, logVerbose } from "./output.js";
-export type { RLMResult, StreamEvent, StatsData, GeminiStatsData, CacheStats } from "./output.js";
+export type { RLMResult, RLMFailure, StreamEvent, StatsData, GeminiStatsData, CacheStats } from "./output.js";
 
 export { Logger, createLogger } from "./logger.js";
 export type { EventType, LogEvent } from "./logger.js";

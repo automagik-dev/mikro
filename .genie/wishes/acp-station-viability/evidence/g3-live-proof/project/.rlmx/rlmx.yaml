@@ -1,0 +1,4 @@
+model:
+  provider: station
+  model: qwen3.6-moe-35b-a3b-FLM
+loop: direct

@@ -322,6 +322,7 @@ Deeper dives:
 - [`docs/events.md`](docs/events.md) — the 13-event catalogue + emitter contract.
 - [`docs/tool-authoring.md`](docs/tool-authoring.md) — TS/MJS + Python plugin recipes, RTK integration.
 - [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) — `agent.yaml` field reference.
+- [`docs/project-config.md`](docs/project-config.md) — project `.rlmx/rlmx.yaml`: the `loop` engine selector, its enum/default, and what `RlmxConfig.loop` means for TS consumers.
 - [`examples/agents/`](examples/agents/README.md) — **the** microagent recipe tree: `explore`, `explore-r`, `codebase-qa`, `changelog`, `log-triage`, plus the three runnable SDK walk-throughs with tests (hello-world / research-agent / brain-triage).
 - [`examples/`](examples/) — `rlmx.yaml` configuration examples (tauri-docs, paper-review, cag-*, gemini-*), which are not microagents.
 - [`docs/worker-models.md`](docs/worker-models.md) — which model to run a microagent on: the round-2 evidence, per-arm price and run date, and what each arm's `n` does and does not establish.
@@ -523,11 +524,81 @@ you. Point the host's `command` at `ssh` and pass the remote launch as args:
   forward local env by default), e.g.
   `ssh REMOTE_HOST "RLMX_REPL_TIMEOUT_MS=600000 /ABS/PATH/ON/REMOTE/node /abs/…/cli.js acp"`.
 
+### Prompt-turn engine — `loop: full` (default) vs `loop: direct`
+
+By default a prompt turn runs the **full RLM loop**: system scaffold + Python
+REPL + `FINAL()`/`FINAL_VAR()` termination, iterating until the model signals
+done. That is the right engine when the model can drive the protocol.
+
+Set `loop: direct` in the project's `.rlmx/rlmx.yaml`
+([field reference](docs/project-config.md)) to answer a turn with **one chat
+completion** instead — the project's `SYSTEM.md` verbatim plus the query, no
+REPL, no scaffold, no iteration, whole answer returned in one message chunk:
+
+```yaml
+# .rlmx/rlmx.yaml
+model:
+  provider: station
+  model: qwen3.6-moe-35b-a3b-FLM
+loop: direct
+```
+
+Direct mode exists for models that answer a one-shot question fine but cannot
+drive the loop's termination protocol — small local models in particular. See
+[`docs/worker-models.md`](docs/worker-models.md#direct-mode-and-the-station-arm).
+
+Two things carry over unchanged into direct mode: the bounded multi-turn
+preamble (a resumed session still replays its recent turns into the query) and
+the durable session store. Two things do not exist there: recursion/tool events
+(no loop runs, so there is no live event stream to translate) and
+`RLMX_ACP_MAX_ITERATIONS` (there are no iterations).
+
+`RLMX_ACP_LOOP=direct|full` overrides the config **per process**. An
+unrecognized value (a typo in a shell export) is ignored and the config's value
+stands — a bad export must not brick a running agent. An unrecognized value for
+the `loop:` key in `rlmx.yaml`, by contrast, is a hard config error.
+
+### Failure semantics — a failed turn is a JSON-RPC error, never a reply
+
+Historically a turn that produced no answer still resolved `end_turn`, either
+empty or carrying the loop's own error prose (`Error: RLM query timed out`) as
+if the model had written it — which ACP clients then persisted as the
+assistant's reply. It no longer does. A turn that ends without an answer
+**throws**, and the client receives JSON-RPC `-32603` with a machine-readable
+discriminant at `data.rlmx.kind`, so a client branches on the kind rather than
+matching the message. No answer chunk is streamed and no turn is appended to the
+durable session store.
+
+| `data.rlmx.kind` | `mode` | Raised when |
+| --- | --- | --- |
+| `loop_timeout` | `full` | The loop's wall-clock cap expired. `data.rlmx.timeoutMs` carries the budget. |
+| `loop_empty_responses` | `full` | The loop aborted after 3 consecutive empty LLM responses. |
+| `loop_empty_answer` | `full` | Invariant backstop: the loop reported success with nothing to say. |
+| `direct_timeout` | `direct` | The single completion did not settle inside the turn deadline. `data.rlmx.timeoutMs` carries it. |
+| `direct_empty` | `direct` | The completion settled but carried no non-whitespace text. |
+
+> **Full mode also emits the pre-existing error bubble.** The loop emits an
+> `Error` event on its way out, and the ACP event translator has always relayed
+> that to the client as an `agent_message_chunk` reading
+> `rlmx error [timeout] AbortError: Error: RLM query timed out`, under its own
+> `messageId` (`error:<sessionId>:<phase>`, distinct from the answer's
+> `answer:<sessionId>`). That bubble still fires, **before** the structured
+> error, and it is unchanged behavior — the separate `messageId` is why it never
+> pollutes answer dedupe. Direct mode drives no loop, so it emits no such bubble:
+> its only failure signal is the JSON-RPC error.
+
+A **cancelled** turn is not a failure: `session/cancel` (or a disconnect)
+resolves the turn with `stopReason: "cancelled"`, never a structured error —
+even when the cancel is what ended the in-flight completion, and even when a
+deadline was armed and racing. Cancel outranks every kind above.
+
 ### Env legend
 
 | Env var | Effect |
 | --- | --- |
-| `RLMX_ACP_RUN_TIMEOUT_MS` | Override `rlmLoop`'s internal wall-clock cap for an ACP-hosted turn (default 300000). Raise it for recursive turns whose child spawns run long. |
+| `RLMX_ACP_LOOP` | Per-process override of the project's `loop:` key — `direct` or `full`. Any other value (including empty) is ignored and the config's value stands. |
+| `RLMX_ACP_RUN_TIMEOUT_MS` | Wall-clock cap for an ACP-hosted turn (default 300000): `rlmLoop`'s internal cap in full mode, and direct mode's own completion deadline. Honored only when it parses to a **finite, positive** number — anything else (unset, non-numeric, `NaN`, `Infinity`, `0`, negative) silently falls back to the default. No clamping: the value is used as-is. Raise it for recursive turns whose child spawns run long. |
+| `RLMX_ACP_MAX_ITERATIONS` | Override `rlmLoop`'s iteration cap for an ACP-hosted turn (default 30). Same finite-and-positive guard as above. **Full mode only** — direct mode never reads it. |
 | `RLMX_REPL_TIMEOUT_MS` | Max time a single REPL cell may run before it is killed. Raise it when a recursive `rlm_query` cell must outlast a slow child. |
 | `RLMX_ACP_SESSIONS_DIR` | Override the durable session-store directory (default `~/.rlmx/acp-sessions`). Point it at scratch for hermetic tests. |
 | `STATION_BASE_URL` / `LEMONADE_BASE_URL` | Local station/Lemonade gateway base URL (default `http://localhost:13305/api/v1`). |

@@ -36,8 +36,37 @@
  * directly (unaffected). rlmLoop is driven with `output: "json"` so its
  * stream-mode stdout path is never taken.
  */
-import { AgentSideConnection, type Agent, type AuthenticateRequest, type AuthenticateResponse, type CancelNotification, type InitializeRequest, type InitializeResponse, type LoadSessionRequest, type LoadSessionResponse, type NewSessionRequest, type NewSessionResponse, type PromptRequest, type PromptResponse } from "@agentclientprotocol/sdk";
+import { type Agent, type AuthenticateRequest, type AuthenticateResponse, type CancelNotification, type InitializeRequest, type InitializeResponse, type LoadSessionRequest, type LoadSessionResponse, type NewSessionRequest, type NewSessionResponse, type PromptRequest, type PromptResponse, type SessionNotification } from "@agentclientprotocol/sdk";
+import { loadConfig } from "../config.js";
+import { rlmLoop } from "../rlm.js";
 import { type EmitterAndStream } from "../sdk/emitter.js";
+import { type LlmCompleteFn } from "./modes.js";
+/**
+ * The only client capability a prompt turn uses. `AgentSideConnection` satisfies
+ * it structurally; naming the narrow surface lets the hermetic tests drive real
+ * prompt turns with a recording sink instead of standing up a transport.
+ */
+export interface SessionUpdateSink {
+    sessionUpdate(params: SessionNotification): Promise<void>;
+}
+/**
+ * Injectable collaborators. Every field defaults to the production
+ * implementation, so `new RlmxAcpAgent(conn)` is unchanged; the hermetic suite
+ * substitutes a fake provider / loop / config loader and a captured env, and
+ * never reaches a network or the real `process.env`.
+ */
+export interface AgentDeps {
+    /** Project config loader. Default: the real `loadConfig`. */
+    readonly loadConfig?: typeof loadConfig;
+    /** Full-mode engine. Default: the real `rlmLoop`. */
+    readonly rlmLoop?: typeof rlmLoop;
+    /** Direct-mode provider call. Default: the real `llmComplete`. */
+    readonly complete?: LlmCompleteFn;
+    /** Environment the mode + knob resolution reads. Default: `process.env`. */
+    readonly env?: NodeJS.ProcessEnv;
+    /** Diagnostic sink. Default: stderr (stdout is reserved for JSON-RPC). */
+    readonly warn?: (message: string) => void;
+}
 /** Cancellation handle for the single in-flight prompt turn. */
 interface ActivePrompt {
     readonly sessionId: string;
@@ -63,6 +92,7 @@ export declare function abortActivePrompt(active: ActivePrompt | null): boolean;
  */
 export declare class RlmxAcpAgent implements Agent {
     private readonly conn;
+    private readonly deps;
     private readonly sessions;
     private readonly store;
     private readonly version;
@@ -70,7 +100,13 @@ export declare class RlmxAcpAgent implements Agent {
     private promptInFlight;
     /** Cancellation handle for the in-flight prompt turn, if any. */
     private activePrompt;
-    constructor(conn: AgentSideConnection);
+    /**
+     * Fire-once state for the missing-FINAL-protocol diagnostic. Scoped to the
+     * agent instance — one per stdio connection — so an operator sees the warning
+     * once per session, not once per turn.
+     */
+    private warnedMissingFinalProtocol;
+    constructor(conn: SessionUpdateSink, deps?: AgentDeps);
     initialize(_params: InitializeRequest): Promise<InitializeResponse>;
     authenticate(_params: AuthenticateRequest): Promise<AuthenticateResponse>;
     newSession(params: NewSessionRequest): Promise<NewSessionResponse>;

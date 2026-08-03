@@ -72,6 +72,18 @@ export interface RtkConfig {
 }
 /** Tool level — controls which functions are available in the REPL */
 export type ToolsLevel = "core" | "standard" | "full";
+/**
+ * Which engine answers a prompt turn.
+ *
+ * `full`   — the RLM iteration loop (`rlmLoop`): system scaffold + Python REPL +
+ *            FINAL()/FINAL_VAR() termination. The default; unchanged behavior.
+ * `direct` — ONE chat completion: the project's `system` as-is plus the query.
+ *            No REPL, no protocol scaffold, no iteration. Intended for small
+ *            local models that answer a one-shot question fine but cannot drive
+ *            the loop's termination protocol (see the acp-station-viability
+ *            trace report). Currently honored at the ACP prompt seam.
+ */
+export type LoopMode = "full" | "direct";
 /** Full rlmx config */
 export interface RlmxConfig {
     system: string | null;
@@ -86,6 +98,8 @@ export interface RlmxConfig {
     contextConfig: ContextConfig;
     /** Tool level */
     toolsLevel: ToolsLevel;
+    /** Which engine answers a prompt turn (see {@link LoopMode}). */
+    loop: LoopMode;
     /** Cache configuration for CAG mode */
     cache: CacheConfig;
     /** Gemini-specific configuration */
@@ -101,6 +115,8 @@ export interface RlmxConfig {
 }
 export declare const DEFAULT_STORAGE_CONFIG: StorageConfig;
 export declare const DEFAULT_RTK_CONFIG: RtkConfig;
+/** Default engine for a prompt turn — the full RLM loop (unchanged behavior). */
+export declare const DEFAULT_LOOP_MODE: LoopMode;
 /**
  * Split a `"<provider>/<model>"` reference into its parts.
  *
