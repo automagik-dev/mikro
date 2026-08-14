@@ -61,6 +61,14 @@ export interface AgentSpec {
 	readonly thinking?: ThinkingLevel;
 	readonly scope?: AgentScope;
 	readonly budget?: AgentBudget;
+	/**
+	 * Internal, undocumented: which runtime backend executes this agent's
+	 * turns (wish rlmx-v2-prime-backend). Absent means `rlmx` — the legacy
+	 * engine, which stays the default. Deliberately NOT part of the
+	 * documented `agent.yaml` schema: it is a gate/experiment selector that
+	 * may change without notice.
+	 */
+	readonly backend?: "rlmx" | "prime";
 	/** Preserved unrecognised keys — consumers layer their own schema. */
 	readonly extras: Readonly<Record<string, unknown>>;
 }
@@ -165,6 +173,14 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		);
 	}
 
+	// Same validate-don't-ignore rule as `thinking:`: a typo'd backend would
+	// silently fall back to the legacy engine and look like it worked, which
+	// is exactly the silent degradation a selection field must not allow.
+	const backendRaw = asString(r.backend);
+	if (backendRaw !== undefined && backendRaw !== "rlmx" && backendRaw !== "prime") {
+		throw new Error(`agent.yaml: backend must be one of rlmx | prime, got "${backendRaw}"`);
+	}
+
 	// Build the "extras" bag by stripping the known keys from r.
 	const known = new Set([
 		"schema_version",
@@ -178,6 +194,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		"thinking",
 		"scope",
 		"budget",
+		"backend",
 	]);
 	const extras: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(r)) {
@@ -195,6 +212,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		thinking: thinkingRaw as ThinkingLevel | undefined,
 		scope: parseScope(r.scope),
 		budget: parseBudget(r.budget),
+		backend: backendRaw as AgentSpec["backend"] | undefined,
 		extras,
 	};
 }
