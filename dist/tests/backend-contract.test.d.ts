@@ -30,10 +30,14 @@
  *     the stub runs here finish in microseconds, so the compared sequences
  *     are the backend-driven messages, which is what can diverge.
  *
- * Group 1 registers the legacy backend (twice, so the pairwise comparison has
- * real teeth from day one). Group 2 appends the prime backend to
- * `backendsFor` — fed its own stub engine — and every assertion below becomes
- * a live cross-backend gate with no other change.
+ * The legacy backend is registered twice, so the pairwise comparison has
+ * real teeth from day one. Group 2 registers the prime backend too — fed its
+ * own stub *engine* — and every assertion below becomes a live cross-backend
+ * gate. The prime stub is an engine seam, not the stub binary: two scenarios
+ * (empty-response abort, budget-truncated run) carry `budgetHit` reasons the
+ * prime backend can only *produce*, not derive from a scripted JSONL stream,
+ * so the binary-level spawn machinery stays in `tests/prime-backend.test.ts`
+ * and this harness proves the host-visible surface alone.
  */
 export {};
 //# sourceMappingURL=backend-contract.test.d.ts.map

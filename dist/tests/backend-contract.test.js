@@ -30,21 +30,33 @@
  *     the stub runs here finish in microseconds, so the compared sequences
  *     are the backend-driven messages, which is what can diverge.
  *
- * Group 1 registers the legacy backend (twice, so the pairwise comparison has
- * real teeth from day one). Group 2 appends the prime backend to
- * `backendsFor` — fed its own stub engine — and every assertion below becomes
- * a live cross-backend gate with no other change.
+ * The legacy backend is registered twice, so the pairwise comparison has
+ * real teeth from day one. Group 2 registers the prime backend too — fed its
+ * own stub *engine* — and every assertion below becomes a live cross-backend
+ * gate. The prime stub is an engine seam, not the stub binary: two scenarios
+ * (empty-response abort, budget-truncated run) carry `budgetHit` reasons the
+ * prime backend can only *produce*, not derive from a scripted JSONL stream,
+ * so the binary-level spawn machinery stays in `tests/prime-backend.test.ts`
+ * and this harness proves the host-visible surface alone.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { LegacyRlmxBackend } from "../src/mcp/backends/legacy.js";
+import { PrimeBackend, } from "../src/mcp/backends/prime.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../src/rlm.js";
 import { parseAgentSpec } from "../src/sdk/agent-spec.js";
 import { isFailedRun, runTurn, selectBackend, sessionResult, } from "../src/mcp/server.js";
 const SESSION_ID = "sess_contract0000000";
 /** Config whose fields the turn pipeline actually reads (model for the footer). */
 const CONFIG = {
-    model: { provider: "stub", model: "stub-model", subCallModel: "stub-model" },
+    // The gate model (wish decision 7, as amended): deepseek/deepseek-v4-flash.
+    // The prime backend maps rlmx's deepseek addressing to prime's native
+    // deepseek provider verbatim; any other provider would be a loud failure,
+    // which is not what this harness exists to compare.
+    model: { provider: "deepseek", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" },
     budget: { maxCost: null, maxTokens: null, maxDepth: null },
     gemini: { thinkingLevel: null },
     contextConfig: {},
@@ -84,19 +96,43 @@ function stubLoop(run) {
     };
     return { loop, calls };
 }
+function stubPrimeEngine(run, bareProgressMessages) {
+    const calls = [];
+    const engine = async (argv, emit, limits) => {
+        calls.push({ argv, limits });
+        for (const message of bareProgressMessages)
+            emit(message);
+        return {
+            answer: run.answer,
+            turns: run.iterations,
+            budgetHit: run.budgetHit,
+            usage: {
+                inputTokens: run.usage.inputTokens,
+                outputTokens: run.usage.outputTokens,
+                totalCost: run.usage.totalCost,
+            },
+        };
+    };
+    return { engine, calls };
+}
+/** Backends emit bare messages; runTurn adds "label · ". Strip the prefix back off. */
+function bareProgress(scenario) {
+    return scenario.expectedProgress.map((m) => m.slice(m.indexOf(" · ") + 3));
+}
 /**
- * The backends under contract, each fed the SAME engine stub for a scenario.
+ * The backends under contract, each fed the SAME scripted scenario.
  *
- * Group 1 registers the legacy backend twice so the pairwise comparison is
- * live from day one (two instances, one stub: any per-instance state or
- * nondeterminism fails). Group 2 appends its prime backend here — fed its own
- * stub engine — and the same assertions become the cross-backend gate.
+ * The legacy backend is registered twice (two instances, one stub loop: any
+ * per-instance state or nondeterminism fails) and the prime backend once,
+ * fed the same `StubRun` through its engine seam. Every assertion in this
+ * harness — envelope, footer fields, isError, progress — is therefore a live
+ * cross-backend gate.
  */
-function backendsFor(loop) {
+function backendsFor(loop, primeEngine) {
     return [
         { name: "legacy#1", backend: new LegacyRlmxBackend({ loop }) },
         { name: "legacy#2", backend: new LegacyRlmxBackend({ loop }) },
-        // Group 2: { name: "prime", backend: new PrimeBackend(...) } fed its stub.
+        { name: "prime", backend: new PrimeBackend({ engine: primeEngine }) },
     ];
 }
 async function drive(backend, scenario) {
@@ -153,7 +189,7 @@ function footerFields(o) {
     };
 }
 /** The host-visible contract a single record must satisfy. */
-function assertHostContract(observed, scenario, calls, tag) {
+function assertHostContract(observed, scenario, tag) {
     const { outcome, result, progress } = observed;
     // 1. The structuredContent envelope is exactly {answer, session_id}, and
     //    `answer` is the same string as the text block, byte for byte.
@@ -182,10 +218,9 @@ function assertHostContract(observed, scenario, calls, tag) {
     assert.equal(outcome.failed, isFailedRun({ answer: outcome.answer, budgetHit: scenario.stub.budgetHit }), `${tag}: isError must be isFailedRun's verdict, nothing else`);
     // 4. The progress sequence is the stub's events translated, label-prefixed.
     assert.deepEqual(progress, scenario.expectedProgress, `${tag}: progress sequence`);
-    // Engine forwarding. These assertions read the stub's recorded calls, which
-    // are the legacy backend's `rlmLoop` options today; Group 2's prime stub
-    // records its own spawn/argv and its forwarding assertions slot in here —
-    // the host-visible contract above is what every backend must satisfy.
+}
+/** Engine forwarding — the legacy stub's recorded `rlmLoop` options. */
+function assertLegacyForwarding(calls, scenario, tag) {
     assert.ok(calls.length > 0, `${tag}: the engine stub was never called`);
     for (const call of calls) {
         assert.equal(call.query, scenario.query, `${tag}: query forwarded`);
@@ -193,6 +228,45 @@ function assertHostContract(observed, scenario, calls, tag) {
         assert.equal(call.options.output, "json", `${tag}: output must stay "json" (stdout discipline)`);
         assert.ok(call.options.emitter, `${tag}: run must receive the subscribed emitter`);
         assert.equal(call.options.maxIterations, scenario.maxIterations, `${tag}: the spec's iteration cap must reach the engine`);
+    }
+}
+/** True when `seq` appears in `argv` as a contiguous run, in order. */
+function hasArgs(argv, seq) {
+    outer: for (let i = 0; i <= argv.length - seq.length; i += 1) {
+        for (let j = 0; j < seq.length; j += 1) {
+            if (argv[i + j] !== seq[j])
+                continue outer;
+        }
+        return true;
+    }
+    return false;
+}
+/**
+ * Prime forwarding — the prime stub's recorded spawn call: the argv the
+ * backend assembled and the limits it derived from the spec and config.
+ * (The real spawn/parse/kill machinery is covered in
+ * `tests/prime-backend.test.ts` against a stub binary.)
+ */
+function assertPrimeForwarding(calls, scenario, tag) {
+    assert.ok(calls.length > 0, `${tag}: the prime engine was never called`);
+    for (const call of calls) {
+        const { argv } = call;
+        assert.ok(hasArgs(argv, ["--mode", "json", "-p"]), `${tag}: json mode, print-and-exit`);
+        assert.ok(argv.includes("--no-session"), `${tag}: --no-session`);
+        assert.ok(hasArgs(argv, ["--cwd", "/tmp/rlmx-backend-contract"]), `${tag}: the server's cwd must reach prime's --cwd`);
+        for (const flag of ["-nc", "-ne", "-ns", "-np"]) {
+            assert.ok(argv.includes(flag), `${tag}: host isolation flag ${flag}`);
+        }
+        assert.ok(argv.includes("--append-system-prompt"), `${tag}: the microagent role must be appended to prime's base prompt`);
+        assert.ok(!argv.includes("--system-prompt"), `${tag}: prime's base RLM prompt must never be replaced`);
+        assert.ok(hasArgs(argv, ["--provider", "deepseek", "--model", "deepseek-v4-flash"]), `${tag}: the gate model maps to prime's native deepseek provider, bare id`);
+        assert.ok(!argv.some((a) => a.startsWith("@")), `${tag}: no context → no @file args`);
+        assert.equal(argv.at(-2), "--", `${tag}: -- separator before the message`);
+        assert.equal(argv.at(-1), scenario.query, `${tag}: query forwarded as the message`);
+        assert.equal(call.limits.maxCost, null, `${tag}: null budget maxCost → null cost ceiling`);
+        assert.equal(call.limits.maxTokens, null, `${tag}: null budget maxTokens → null token ceiling`);
+        assert.equal(call.limits.maxTurns, scenario.maxIterations ?? null, `${tag}: the spec's iteration cap must reach the engine as the turn ceiling`);
+        assert.ok(Number.isFinite(call.limits.deadlineMs) && call.limits.deadlineMs > 0, `${tag}: an rlmx-owned wall-clock deadline is always set`);
     }
 }
 const SECONDS_RE = / · \d+(?:\.\d+)?s ·/;
@@ -313,14 +387,21 @@ function fakeAgent(backend) {
 describe("backend contract — one harness, both backends", () => {
     for (const scenario of SCENARIOS) {
         it(`"${scenario.name}" is host-identical across every backend`, async () => {
-            const { loop, calls } = stubLoop(scenario.stub);
-            const backends = backendsFor(loop);
+            const legacy = stubLoop(scenario.stub);
+            const prime = stubPrimeEngine(scenario.stub, bareProgress(scenario));
+            const backends = backendsFor(legacy.loop, prime.engine);
             assert.ok(backends.length > 1, "the comparison needs at least two backends to mean anything");
             const observed = [];
             for (const { name, backend } of backends) {
                 const record = await drive(backend, scenario);
                 observed.push(record);
-                assertHostContract(record, scenario, calls, `${scenario.name} [${name}]`);
+                assertHostContract(record, scenario, `${scenario.name} [${name}]`);
+                if (name === "prime") {
+                    assertPrimeForwarding(prime.calls, scenario, `${scenario.name} [${name}]`);
+                }
+                else {
+                    assertLegacyForwarding(legacy.calls, scenario, `${scenario.name} [${name}]`);
+                }
             }
             // The actual contract: what the host sees must not depend on the backend.
             for (let i = 1; i < observed.length; i++) {
@@ -341,12 +422,42 @@ describe("backend selection", () => {
         // so there is no `backend` field to read.
         assert.ok(selectBackend(undefined) instanceof LegacyRlmxBackend);
     });
+    it("selects the prime backend for a spec naming backend: prime", async () => {
+        // The prime backend's constructor pins the binary version, so the
+        // selection test drives it with a version-only stub — the test suite
+        // must not require the real prime-agent install.
+        const dir = await mkdtemp(join(tmpdir(), "rlmx-contract-prime-"));
+        try {
+            const shim = join(dir, "prime-agent");
+            await writeFile(shim, "#!/usr/bin/env node\n" +
+                "if (process.argv.includes('--version')) { process.stderr.write('0.7.2'); process.exit(0); }\n" +
+                "process.exit(1);\n", "utf-8");
+            await chmod(shim, 0o755);
+            const previous = process.env.RLMX_PRIME_BINARY_PATH;
+            try {
+                process.env.RLMX_PRIME_BINARY_PATH = shim;
+                assert.ok(selectBackend(fakeAgent("prime")) instanceof PrimeBackend);
+            }
+            finally {
+                if (previous === undefined)
+                    delete process.env.RLMX_PRIME_BINARY_PATH;
+                else
+                    process.env.RLMX_PRIME_BINARY_PATH = previous;
+            }
+        }
+        finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+    it("rejects a forged backend name that would hit the prototype chain", () => {
+        // A plain-object BACKENDS record resolves "constructor" to a truthy
+        // non-backend; the Map record must resolve it to "not wired".
+        assert.throws(() => selectBackend(fakeAgent("constructor")), /backend "constructor" is not wired into this build/);
+    });
     it("fails loudly when a spec names a backend this build has not wired", () => {
-        // Group 2 wires the prime backend and replaces this expectation with
-        // "selects the prime backend".
-        assert.throws(() => selectBackend(fakeAgent("prime")), (err) => {
+        assert.throws(() => selectBackend(fakeAgent("pulp")), (err) => {
             assert.ok(err instanceof Error);
-            assert.match(err.message, /backend "prime" is not wired/);
+            assert.match(err.message, /backend "pulp" is not wired/);
             assert.match(err.message, /triage/);
             return true;
         });
