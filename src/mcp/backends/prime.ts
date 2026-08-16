@@ -38,9 +38,15 @@
  *   `--append-system-prompt` — never `--system-prompt`, which per prime
  *   0.7.2 `--help` *replaces* the default system prompt. Replacing would
  *   strip prime's base RLM prompt and handicap the prime leg.
- * - context: `LoadedContext` items map to `@file` arguments at their
+ * - context: `LoadedContext` items map to prime `@file` arguments at their
  *   original absolute paths (`BackendRequest.contextRoot` — the same files
- *   the caller named, so path citations stay resolvable); a `dict` context
+ *   the caller named, so path citations stay resolvable). Every arg is the
+ *   single `@<abs path>` form prime 0.7.2's parser turns into fileArgs
+ *   (contents inlined into the first user message): a plain path would
+ *   instead become a message and spawn one garbage autonomous turn per file.
+ *   Each mapped file's existence is pre-checked at spawn, so a missing
+ *   @file — which prime answers with a hard `process.exit(1)` — surfaces as
+ *   an actionable tool error before any child starts. A `dict` context
  *   throws.
  * - budget.maxCost / maxTokens: rlmx-owned ceilings monitored from the
  *   assistant messages' usage records, mirroring `BudgetTracker`
@@ -86,6 +92,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import type { RlmxConfig } from "../../config.js";
@@ -540,10 +547,17 @@ function sanitizeSegments(relativePath: string): string[] {
 }
 
 /**
- * Map the loaded context onto prime `@file` arguments at their original
+ * Map the loaded context onto prime `@file` arguments — each in the single
+ * `@<abs path>` form prime 0.7.2 parses into fileArgs — at their original
  * absolute paths (the same files the caller named), so path citations stay
- * resolvable. `dict` contexts and contexts without a root cannot be mapped —
- * fail loudly rather than degrade.
+ * resolvable. The `@` prefix is the contract itself, not decoration: a plain
+ * path becomes a message and prime runs one autonomous turn per path string.
+ *
+ * Every mapped file is also existence-checked here, before any spawn: prime
+ * answers a missing @file with a hard `process.exit(1)`, so a dead file
+ * surfaces as an actionable tool error instead of a cryptic child exit.
+ * `dict` contexts and contexts without a root cannot be mapped — fail
+ * loudly rather than degrade.
  */
 function resolveContextFiles(
   context: LoadedContext | null,
@@ -556,14 +570,20 @@ function resolveContextFiles(
         "Pass the context through a filesystem path, or switch the agent back to `backend: rlmx`."
     );
   }
-  if (context.type === "string") return [contextRoot];
-  if (context.type === "list") {
-    const files: string[] = [];
-    const items = context.content as ReadonlyArray<{ path: string }>;
-    for (const item of items) {
-      files.push(join(contextRoot, ...sanitizeSegments(item.path)));
+  const toFileArg = (absolutePath: string): string => {
+    if (!existsSync(absolutePath)) {
+      throw new Error(
+        `prime backend: context file "${absolutePath}" does not exist — a missing @file argument ` +
+          `makes prime-agent exit(1) at startup. Re-create the file or re-load the context, ` +
+          `or switch the agent back to \`backend: rlmx\`.`
+      );
     }
-    return files;
+    return `@${absolutePath}`;
+  };
+  if (context.type === "string") return [toFileArg(contextRoot)];
+  if (context.type === "list") {
+    const items = context.content as ReadonlyArray<{ path: string }>;
+    return items.map((item) => toFileArg(join(contextRoot, ...sanitizeSegments(item.path))));
   }
   throw new Error(
     `prime backend: context type "${(context as LoadedContext).type}" cannot be mapped to prime @file arguments. ` +

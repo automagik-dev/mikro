@@ -205,6 +205,12 @@ interface Scenario {
   readonly label: string;
   readonly query: string;
   readonly maxIterations?: number;
+  /**
+   * Absolute path to a real file or directory on disk, passed to `runTurn`
+   * as the caller's `context:` argument. Absent = no context is loaded, and
+   * the engines must see `null` context / no `@file` argv entries.
+   */
+  readonly contextPath?: string;
   readonly stub: StubRun;
   readonly expectedProgress: readonly string[];
   readonly isError: boolean;
@@ -239,7 +245,7 @@ async function drive(backend: RuntimeBackend, scenario: Scenario): Promise<Obser
     scenario.label,
     scenario.query,
     SESSION_ID,
-    undefined, // no context path → nothing to load
+    scenario.contextPath,
     "/tmp/rlmx-backend-contract",
     (message) => progress.push(message),
     scenario.maxIterations
@@ -377,7 +383,12 @@ function assertLegacyForwarding(
   assert.ok(calls.length > 0, `${tag}: the engine stub was never called`);
   for (const call of calls) {
     assert.equal(call.query, scenario.query, `${tag}: query forwarded`);
-    assert.equal(call.context, null, `${tag}: null context forwarded as null`);
+    if (scenario.contextPath === undefined) {
+      assert.equal(call.context, null, `${tag}: no context path → null context forwarded`);
+    } else {
+      assert.ok(call.context !== null, `${tag}: a loaded context must reach the engine`);
+      assert.equal(call.context?.type, "list", `${tag}: a directory context loads as a list`);
+    }
     assert.equal(call.options.output, "json", `${tag}: output must stay "json" (stdout discipline)`);
     assert.ok(call.options.emitter, `${tag}: run must receive the subscribed emitter`);
     assert.equal(
@@ -434,7 +445,16 @@ function assertPrimeForwarding(
       hasArgs(argv, ["--provider", "deepseek", "--model", "deepseek-v4-flash"]),
       `${tag}: the gate model maps to prime's native deepseek provider, bare id`
     );
-    assert.ok(!argv.some((a) => a.startsWith("@")), `${tag}: no context → no @file args`);
+    const contextArgs = argv.filter((a) => a.startsWith("@"));
+    if (scenario.contextPath === undefined) {
+      assert.equal(contextArgs.length, 0, `${tag}: no context path → no @file args`);
+    } else {
+      assert.ok(contextArgs.length > 0, `${tag}: a loaded context must reach prime as @file args`);
+      assert.ok(
+        contextArgs.every((a) => a.startsWith("@/")),
+        `${tag}: every @file arg must be the single @<abs path> form, got: ${argv.join(" ")}`
+      );
+    }
     assert.equal(argv.at(-2), "--", `${tag}: -- separator before the message`);
     assert.equal(argv.at(-1), scenario.query, `${tag}: query forwarded as the message`);
     assert.equal(call.limits.maxCost, null, `${tag}: null budget maxCost → null cost ceiling`);
@@ -581,36 +601,70 @@ function fakeAgent(backend: string | undefined): Microagent {
   } as unknown as Microagent;
 }
 
+/** Drive one scenario through every backend and assert the full contract. */
+async function runScenario(scenario: Scenario): Promise<void> {
+  const legacy = stubLoop(scenario.stub);
+  const prime = stubPrimeEngine(scenario.stub, bareProgress(scenario));
+  const backends = backendsFor(legacy.loop, prime.engine);
+  assert.ok(backends.length > 1, "the comparison needs at least two backends to mean anything");
+
+  const observed: Observed[] = [];
+  for (const { name, backend } of backends) {
+    const record = await drive(backend, scenario);
+    observed.push(record);
+    assertHostContract(record, scenario, `${scenario.name} [${name}]`);
+    if (name === "prime") {
+      assertPrimeForwarding(prime.calls, scenario, `${scenario.name} [${name}]`);
+    } else {
+      assertLegacyForwarding(legacy.calls, scenario, `${scenario.name} [${name}]`);
+    }
+  }
+
+  // The actual contract: what the host sees must not depend on the backend.
+  for (let i = 1; i < observed.length; i++) {
+    assertRecordsEqual(
+      observed[0]!,
+      observed[i]!,
+      `${scenario.name} [${backends[0]!.name} vs ${backends[i]!.name}]`
+    );
+  }
+}
+
 describe("backend contract — one harness, both backends", () => {
   for (const scenario of SCENARIOS) {
-    it(`"${scenario.name}" is host-identical across every backend`, async () => {
-      const legacy = stubLoop(scenario.stub);
-      const prime = stubPrimeEngine(scenario.stub, bareProgress(scenario));
-      const backends = backendsFor(legacy.loop, prime.engine);
-      assert.ok(backends.length > 1, "the comparison needs at least two backends to mean anything");
-
-      const observed: Observed[] = [];
-      for (const { name, backend } of backends) {
-        const record = await drive(backend, scenario);
-        observed.push(record);
-        assertHostContract(record, scenario, `${scenario.name} [${name}]`);
-        if (name === "prime") {
-          assertPrimeForwarding(prime.calls, scenario, `${scenario.name} [${name}]`);
-        } else {
-          assertLegacyForwarding(legacy.calls, scenario, `${scenario.name} [${name}]`);
-        }
-      }
-
-      // The actual contract: what the host sees must not depend on the backend.
-      for (let i = 1; i < observed.length; i++) {
-        assertRecordsEqual(
-          observed[0]!,
-          observed[i]!,
-          `${scenario.name} [${backends[0]!.name} vs ${backends[i]!.name}]`
-        );
-      }
-    });
+    it(`"${scenario.name}" is host-identical across every backend`, () => runScenario(scenario));
   }
+
+  it("forwards a loaded directory context as @<abs path> args to prime", async () => {
+    // The prime forwarding assertions must see the corrected argv: when a
+    // context exists, every context file reaches the spawn line as one
+    // `@<abs path>` arg (a plain path would become a message and spawn a
+    // garbage turn). The legacy engine, meanwhile, must receive the loaded
+    // context itself — the same files, through its own seam.
+    const dir = await mkdtemp(join(tmpdir(), "rlmx-contract-ctx-"));
+    try {
+      await writeFile(join(dir, "note.md"), "Call sites: src/c.ts:42 and src/d.ts:7.\n");
+      const scenario: Scenario = {
+        name: "directory context forwarding",
+        agent: undefined,
+        label: "query",
+        query: GENERIC_QUERY,
+        contextPath: dir,
+        stub: {
+          answer: "Two call sites: src/c.ts:42 and src/d.ts:7.",
+          iterations: 1,
+          budgetHit: null,
+          usage: USAGE,
+          events: [ev("IterationStart")],
+        },
+        expectedProgress: ["query · iteration 1"],
+        isError: false,
+      };
+      await runScenario(scenario);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("backend selection", () => {

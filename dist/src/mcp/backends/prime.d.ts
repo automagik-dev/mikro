@@ -38,9 +38,15 @@
  *   `--append-system-prompt` — never `--system-prompt`, which per prime
  *   0.7.2 `--help` *replaces* the default system prompt. Replacing would
  *   strip prime's base RLM prompt and handicap the prime leg.
- * - context: `LoadedContext` items map to `@file` arguments at their
+ * - context: `LoadedContext` items map to prime `@file` arguments at their
  *   original absolute paths (`BackendRequest.contextRoot` — the same files
- *   the caller named, so path citations stay resolvable); a `dict` context
+ *   the caller named, so path citations stay resolvable). Every arg is the
+ *   single `@<abs path>` form prime 0.7.2's parser turns into fileArgs
+ *   (contents inlined into the first user message): a plain path would
+ *   instead become a message and spawn one garbage autonomous turn per file.
+ *   Each mapped file's existence is pre-checked at spawn, so a missing
+ *   @file — which prime answers with a hard `process.exit(1)` — surfaces as
+ *   an actionable tool error before any child starts. A `dict` context
  *   throws.
  * - budget.maxCost / maxTokens: rlmx-owned ceilings monitored from the
  *   assistant messages' usage records, mirroring `BudgetTracker`

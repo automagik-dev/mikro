@@ -386,6 +386,7 @@ describe("prime backend — argv assembly", () => {
             const ctxDir = join(dir, "ctx");
             await mkdir(join(ctxDir, "sub"), { recursive: true });
             await writeFile(join(ctxDir, "sub", "a.md"), "AAA");
+            await writeFile(join(ctxDir, "evil.md"), "EVIL");
             const context = {
                 type: "list",
                 content: [
@@ -400,8 +401,8 @@ describe("prime backend — argv assembly", () => {
                 await runOnce(backend, { context, contextRoot: ctxDir });
             });
             const argv = JSON.parse(await readFile(argvFile, "utf8"));
-            assert.ok(argv.includes(join(ctxDir, "sub", "a.md")), "context file forwarded by original path");
-            assert.ok(argv.includes(join(ctxDir, "evil.md")), "dot segments sanitized, not escaped");
+            assert.ok(argv.includes(`@${join(ctxDir, "sub", "a.md")}`), "context file forwarded as one @<abs path> arg");
+            assert.ok(argv.includes(`@${join(ctxDir, "evil.md")}`), "dot segments sanitized, not escaped");
             assert.ok(!argv.some((a) => a.includes("..")), "no parent traversal in @file args");
         }
         finally {
@@ -420,7 +421,7 @@ describe("prime backend — argv assembly", () => {
                 await runOnce(backend, { context, contextRoot: ctxFile });
             });
             const argv = JSON.parse(await readFile(argvFile, "utf8"));
-            assert.ok(argv.includes(ctxFile), "string context forwarded as the file itself");
+            assert.ok(argv.includes(`@${ctxFile}`), "string context forwarded as one @<abs path> arg");
         }
         finally {
             await rm(dir, { recursive: true, force: true });
@@ -482,6 +483,30 @@ describe("prime backend — loud failures", () => {
             });
         });
     }
+    it("rejects a context file that no longer exists before any spawn, instead of letting prime exit(1) on a dead @file arg", async () => {
+        const dir = await scratch();
+        try {
+            const calls = [];
+            const context = {
+                type: "list",
+                content: [{ path: "gone.md", content: "GONE" }],
+                metadata: "",
+            };
+            const backend = new PrimeBackend({ engine: recordingEngine(calls) });
+            await assert.rejects(() => runOnce(backend, { context, contextRoot: dir }), (err) => {
+                assert.ok(err instanceof Error);
+                assert.match(err.message, /context file/);
+                assert.ok(err.message.includes(join(dir, "gone.md")), `the error must name the missing file: ${err.message}`);
+                assert.match(err.message, /does not exist/);
+                assert.match(err.message, /backend: rlmx/, "the message must name the escape hatch");
+                return true;
+            });
+            assert.equal(calls.length, 0, "the existence check fires before the engine is ever invoked");
+        }
+        finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
 });
 // ── Event mapping ─────────────────────────────────────────────────────────
 describe("prime backend — event mapping", () => {
