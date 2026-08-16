@@ -34,6 +34,48 @@ Prime leg spawns with `-nc -ne -ns -np` (no host context files/extensions/skills
 
 ---
 
+## Gate-execution decisions (recorded by the gate engineer BEFORE any scored task — 2026-08-16)
+
+The setup section above (D1–D5, commit 66f08a2) is preserved byte-for-byte as
+the record of pre-run decisions. The following decision was taken at gate
+execution start, before any model call, and is recorded here rather than in
+the setup section so that the setup section remains exactly as committed.
+
+### D6. Task-root `.rlmx/` configs excluded via mirror cwds (both legs)
+
+Discovered at execution time, before any run: all three trees involved in this
+gate ship a `.rlmx/` config directory at their root — the two re-pointed task
+roots (brain and genie each carry `rlmx.yaml` + `SYSTEM.md` + `CRITERIA.md` +
+`TOOLS.md`) and this repo itself. Because `rlmx mcp --dir <root>` makes the
+task root the server cwd, `loadConfig(cwd)` (`src/config.ts:594`) loads that
+`.rlmx/`, and:
+
+1. The genie and rlmx `TOOLS.md` files each parse one custom REPL tool
+   (`run_cli_example (demonstrates RTK auto-prefix)` — verified with
+   `parseToolsMd` at gate setup; the brain one parses none). Prime's landed
+   Group 2 backend rejects `config.tools` loudly (`assertSupportedConfig`,
+   `src/mcp/backends/prime.ts`), so the prime leg would throw before running
+   any genie-rooted task (tasks 2, 5, 6).
+2. The roots' ambient configs pin `google/gemini-3.1-flash-lite-preview` and
+   carry per-root `CRITERIA.md` content — root-specific ambient state that
+   differs between the two checkouts and muddles config parity between legs.
+
+**Decision:** the gate runs **both legs** from a scratch **mirror cwd** per
+root — a directory of symlinks to every top-level entry of the re-pointed
+checkout **except `.rlmx`** (built by `gate-agents/run-gate.mjs mirror` under
+`gate-agents/.work/mirrors/`, gitignored). Consequences, symmetric across
+legs: `loadConfig` finds no config, so both legs run on identical default
+config; the REPL reads the real tree through the mirror (same bytes, same
+commits — `.git` is symlinked too, so each run's `rootGit` is recorded from
+the checkout itself); citations are scored against the mirror tree (the tree
+the leg actually read — recorded as `root`/`rootOverride` in each run and
+score JSON). The frozen task files are untouched; nothing is written into the
+re-pointed checkouts (one disclosed caveat: a mirror symlink is not a write
+barrier — the frozen r1–r15 rounds ran against the live checkouts with the
+same exposure). The exclusion list is exactly one entry: `.rlmx`.
+
+---
+
 ## Measurements (to be filled by the gate run; each number carries the command that produced it)
 
 | # | Metric | Legacy (`backend: rlmx`) | Prime (`backend: prime`) |

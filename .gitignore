@@ -19,3 +19,6 @@ node_modules/
 /MODEL.md
 python/__pycache__/
 competition/
+
+# Gate work artifacts (wish rlmx-v2-prime-backend): mirrors, fixtures, argv logs
+.genie/wishes/rlmx-v2-prime-backend/gate-agents/.work/
