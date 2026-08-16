@@ -74,6 +74,50 @@ re-pointed checkouts (one disclosed caveat: a mirror symlink is not a write
 barrier — the frozen r1–r15 rounds ran against the live checkouts with the
 same exposure). The exclusion list is exactly one entry: `.rlmx`.
 
+### D7. Run-clock corrections, both legs (recorded before the re-run; first legacy pass preserved as evidence)
+
+The first legacy pass over the frozen suite ran at harness defaults and
+produced two environment artifacts, not recipe outcomes: (a) task 1 died on
+rlmLoop's 30s REPL-execution watchdog (`RLMX_REPL_TIMEOUT_MS` default) while
+the agent was fanning out recursive spawns at iteration 3 — the harness's own
+header names this a caller-owned environment correction (`parity/run-task.mjs`
+records `replTimeoutMs` per run for exactly this reason); (b) all six run
+JSONs lost `rootGit.head` to a `git status` failure on symlinked checkout
+paths (a harness `gitState` bug, fixed to isolate head from status). That pass
+is preserved under `runs/gate-v2-legacy/first-attempt-defaults/` as evidence
+and is not scored.
+
+**Decision:** the scored legs run with `RLMX_REPL_TIMEOUT_MS=120000`
+(legacy-only knob — prime has no REPL-execution cap; disclosed per run in
+`provenance.replTimeoutMs`) and `RLMX_MCP_RUN_TIMEOUT_MS=600000` on **both**
+legs (the harness's caller-owned wall-clock correction, recorded per run as
+`provenance.runTimeoutMs`; a single long task — legacy task 2 completed at
+301s wall, i.e. against the 300s default — must not turn the quality
+comparison into a wall-clock rail test; the deadline behavior itself is
+measured separately by the forced-abort exercise).
+
+### D8. Mirror freshness per task (recorded before the re-runs; contaminated runs preserved as evidence)
+
+The D6 mirror caught a real write: during the first legacy pass, the explore
+agent scaffolded `.rlmx/` in its own cwd via `rlmx init` (the brain mirror's
+`.rlmx/` carries mtime 15:32, mid-first-pass; the four files match the
+default `rlmx init` template byte sizes). Two consequences, both environment
+artifacts: (a) every later task on the brain mirror loaded that scaffolded
+config — the legacy re-run's brain tasks ran with one ambient REPL tool and
+template criteria appended, and the prime leg's brain tasks (1, 3, 4) failed
+loudly at 0.9s on `assertSupportedConfig` (custom REPL tools); (b) the write
+landed in the gitignored mirror, **not** in the user's checkout — both
+checkouts were verified clean after the runs (git status; the genie checkout's
+three pre-existing modified files predate the gate, Aug 13–14).
+
+**Decision:** `run-gate.mjs` rebuilds each task's mirror fresh before the run
+(delete + re-link, symlinks only), and each task is scored inline against the
+exact mirror state it read, before the next rebuild. The contaminated records
+are preserved under `runs/gate-v2-legacy/` (tasks 1, 3, 4 of the second pass,
+which ran with the scaffolded config) and `runs/gate-v2-prime/` (tasks 1, 3,
+4, which failed on it) as evidence; the scored set re-runs those six tasks
+(legacy 1/3/4 + prime 1/3/4) with fresh mirrors, everything else identical.
+
 ---
 
 ## Measurements (to be filled by the gate run; each number carries the command that produced it)

@@ -48,6 +48,7 @@ import {
   readFileSync,
   readdirSync,
   lstatSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -104,9 +105,17 @@ const argvLogPath = (label) => {
   return join(workDir, "argv-logs", `${label}.log`);
 };
 
-/** Symlink mirror of a real tree, minus `.rlmx` (recorded decision D6). */
-function makeMirror(real, name) {
+/**
+ * Symlink mirror of a real tree, minus `.rlmx` (recorded decision D6).
+ * `fresh` rebuilds the mirror first: the explore agent is free to write in
+ * its cwd, and the first pass proved it does — it scaffolded a `.rlmx` via
+ * `rlmx init` mid-run (timestamped 15:32, preserved as evidence). Those
+ * writes land in the gitignored mirror, never in the checkout, and a fresh
+ * rebuild per scored task keeps every task's config environment identical.
+ */
+function makeMirror(real, name, fresh = false) {
   const mirror = join(workDir, "mirrors", name);
+  if (fresh) rmSync(mirror, { recursive: true, force: true });
   if (!existsSync(mirror)) {
     mkdirSync(mirror, { recursive: true });
     for (const entry of readdirSync(real)) {
@@ -127,13 +136,13 @@ function frozenRootOf(taskNumber) {
 }
 
 /** Frozen → real → mirror for one task; unknown roots abort (D1 is closed). */
-function rootsFor(taskNumber) {
+function rootsFor(taskNumber, fresh = false) {
   const frozen = frozenRootOf(taskNumber);
   if (!frozen) fail(`task ${taskNumber}: no root row in the frozen task file`);
   const real = ROOT_MAP[frozen];
   if (!real) fail(`task ${taskNumber}: root ${frozen} is not in the recorded D1 map — refusing`);
   const name = frozen.includes("prod/brain") ? "brain" : "genie";
-  return { frozen, real, mirror: makeMirror(real, name) };
+  return { frozen, real, mirror: makeMirror(real, name, fresh) };
 }
 
 /** Probes use a mirror of this repo (its .rlmx also parses a TOOLS.md tool). */
@@ -298,13 +307,17 @@ if (cmd === "probe") {
 // ── scored ────────────────────────────────────────────────────────────────
 if (cmd === "scored") {
   const leg = process.argv[3];
-  if (leg !== "legacy" && leg !== "prime") fail("usage: run-gate.mjs scored <legacy|prime>");
+  if (leg !== "legacy" && leg !== "prime") fail("usage: run-gate.mjs scored <legacy|prime> [taskSubset 1,3,4]");
+  // Optional task subset (comma list) — used for the recorded re-runs; the
+  // manifest records which subset ran.
+  const subset = process.argv[4] ? process.argv[4].split(",").map((n) => Number(n)) : TASKS;
+  if (subset.some((n) => !TASKS.includes(n))) fail(`bad task subset ${subset}`);
   const yamlLeg = leg === "legacy" ? "rlmx" : "prime";
   flipBackend(yamlLeg);
-  const manifest = { leg, yamlLeg, gateModel: GATE_MODEL, startedAt: new Date().toISOString(), tasks: [] };
+  const manifest = { leg, yamlLeg, gateModel: GATE_MODEL, startedAt: new Date().toISOString(), subset, tasks: [] };
   try {
-    for (const t of TASKS) {
-      const { frozen, real, mirror } = rootsFor(t);
+    for (const t of subset) {
+      const { frozen, real, mirror } = rootsFor(t, true); // fresh mirror per task (D8)
       const runArgs = [
         runTask, String(t), GATE_MODEL, round(leg),
         "--tasks-dir", frozenTasks,
@@ -335,6 +348,20 @@ if (cmd === "scored") {
       });
       if (!existsSync(join(outDir(leg), `task-${t}.json`))) {
         console.error(`task ${t}: no run JSON written`);
+      }
+      // Score inline, against the exact mirror state this task read — the
+      // next task's fresh rebuild would otherwise erase model-written files
+      // before the rubric resolves citations.
+      const runFile = join(outDir(leg), `task-${t}.json`);
+      if (existsSync(runFile)) {
+        const scoreRes = spawnSync(
+          process.execPath,
+          [scoreTask, runFile, String(t), "--tasks-dir", frozenTasks, "--root", mirror],
+          { cwd: repo, encoding: "utf-8" }
+        );
+        manifest.tasks[manifest.tasks.length - 1].scoreExit = scoreRes.status;
+        manifest.tasks[manifest.tasks.length - 1].scoreOutput = scoreRes.stdout.trim() || scoreRes.stderr.trim();
+        console.log(`[score t${t}] ${scoreRes.stdout.trim() || scoreRes.stderr.trim()}`);
       }
     }
   } finally {
