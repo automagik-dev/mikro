@@ -99,7 +99,10 @@ function flipBackend(leg) {
 }
 
 /** Fresh argv log for one leg's runs (prime observation channel). */
-const argvLogPath = (label) => join(workDir, "argv-logs", `${label}.log`);
+const argvLogPath = (label) => {
+  mkdirSync(join(workDir, "argv-logs"), { recursive: true });
+  return join(workDir, "argv-logs", `${label}.log`);
+};
 
 /** Symlink mirror of a real tree, minus `.rlmx` (recorded decision D6). */
 function makeMirror(real, name) {
@@ -252,14 +255,26 @@ if (cmd === "probe") {
           argvLog: leg === "prime" ? argvLogPath(label) : null,
         };
         if (leg === "prime") {
-          const lines = readFileSync(argvLogPath(label), "utf-8").split("\n").filter(Boolean);
-          const runLine = lines.find((l) => l.includes("--mode json")) ?? "";
-          record.primeArgv = runLine;
-          record.primeVersionProbes = lines.filter((l) => l === "--version").length;
-          record.primeModelOk = runLine.includes(`--provider deepseek --model deepseek-v4-flash`);
-          record.primeHermeticFlagsOk = ["-nc", "-ne", "-ns", "-np"].every((f) => runLine.includes(f));
-          record.primeNoSystemPromptReplace = runLine.includes("--append-system-prompt") && !runLine.includes("--system-prompt");
-          record.primeCwdOk = runLine.includes(`--cwd ${probeMirror()}`);
+          record.toolErrorText = res?.isError ? (res?.content?.[0]?.text ?? "isError, no text") : null;
+          const logFile = argvLogPath(label);
+          if (existsSync(logFile)) {
+            const lines = readFileSync(logFile, "utf-8").split("\n").filter(Boolean);
+            const runLine = lines.find((l) => l.includes("--mode json")) ?? "";
+            record.primeArgv = runLine;
+            record.primeVersionProbes = lines.filter((l) => l === "--version").length;
+            record.primeModelOk = runLine.includes(`--provider deepseek --model deepseek-v4-flash`);
+            record.primeHermeticFlagsOk = ["-nc", "-ne", "-ns", "-np"].every((f) => runLine.includes(f));
+            record.primeNoSystemPromptReplace = runLine.includes("--append-system-prompt") && !runLine.includes("--system-prompt");
+            record.primeCwdOk = runLine.includes(`--cwd ${probeMirror()}`);
+          } else {
+            record.primeArgv = null;
+            record.primeVersionProbes = 0;
+            record.primeModelOk = false;
+            record.primeHermeticFlagsOk = false;
+            record.primeNoSystemPromptReplace = false;
+            record.primeCwdOk = false;
+            record.primeSpawnNeverHappened = true;
+          }
         }
         mkdirSync(probesDir, { recursive: true });
         writeFileSync(join(probesDir, `${label}.json`), JSON.stringify(record, null, 2), "utf-8");

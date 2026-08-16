@@ -212,7 +212,24 @@ writeFileSync(join(promptsDir, `${promptDigest}.md`), systemText, "utf-8");
 function gitState(dir) {
   const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf-8" }).trim();
   try {
-    return { head: git("rev-parse", "HEAD"), branch: git("rev-parse", "--abbrev-ref", "HEAD"), dirty: git("status", "--porcelain").length > 0 };
+    // Each probe is isolated: a checkout whose tree trips `git status`
+    // (e.g. a symlinked `docs` path git refuses) must not cost the head —
+    // the SHA is what makes a run re-resolvable.
+    const head = git("rev-parse", "HEAD");
+    let branch = null;
+    let dirty = null;
+    let statusError = null;
+    try {
+      branch = git("rev-parse", "--abbrev-ref", "HEAD");
+    } catch (e) {
+      branch = null;
+    }
+    try {
+      dirty = git("status", "--porcelain").length > 0;
+    } catch (e) {
+      statusError = e?.message ?? String(e);
+    }
+    return { head, branch, dirty, statusError };
   } catch (e) {
     return { head: null, error: e?.message ?? String(e) };
   }
