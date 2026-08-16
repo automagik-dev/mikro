@@ -37,9 +37,13 @@ Prime leg spawns with `-nc -ne -ns -np` (no host context files/extensions/skills
 ## Gate-execution decisions (recorded by the gate engineer BEFORE any scored task — 2026-08-16)
 
 The setup section above (D1–D5, commit 66f08a2) is preserved byte-for-byte as
-the record of pre-run decisions. The following decision was taken at gate
-execution start, before any model call, and is recorded here rather than in
+the record of pre-run decisions. The following decisions were taken at gate
+execution start, before any model call, and are recorded here rather than in
 the setup section so that the setup section remains exactly as committed.
+The header status line above ("Status: gate setup recorded — measurements
+pending.") sits inside that byte-preserved setup record (lines 1–36) and is
+left as recorded; the gate has run to completion — measurements below,
+verdict at the bottom.
 
 ### D6. Task-root `.rlmx/` configs excluded via mirror cwds (both legs)
 
@@ -107,16 +111,54 @@ config — the legacy re-run's brain tasks ran with one ambient REPL tool and
 template criteria appended, and the prime leg's brain tasks (1, 3, 4) failed
 loudly at 0.9s on `assertSupportedConfig` (custom REPL tools); (b) the write
 landed in the gitignored mirror, **not** in the user's checkout — both
-checkouts were verified clean after the runs (git status; the genie checkout's
-three pre-existing modified files predate the gate, Aug 13–14).
+checkouts were verified clean after the runs (git status; the genie
+checkout's pre-existing modifications — 16 modified files plus 1 untracked at
+final verification, mtimes Aug 13–15 — all predate the Aug 16 gate).
 
 **Decision:** `run-gate.mjs` rebuilds each task's mirror fresh before the run
 (delete + re-link, symlinks only), and each task is scored inline against the
 exact mirror state it read, before the next rebuild. The contaminated records
-are preserved under `runs/gate-v2-legacy/` (tasks 1, 3, 4 of the second pass,
-which ran with the scaffolded config) and `runs/gate-v2-prime/` (tasks 1, 3,
-4, which failed on it) as evidence; the scored set re-runs those six tasks
-(legacy 1/3/4 + prime 1/3/4) with fresh mirrors, everything else identical.
+are preserved under `runs/contaminated-evidence/` as evidence — the legacy
+second-pass records (`task-{1,3,4}.json`, the scaffolded-config runs, moved
+out of `runs/gate-v2-legacy/` when the final re-runs replaced those files) and
+the prime failure records (`prime-task-{1,3,4}.json`, the
+`assertSupportedConfig` failures, 0.6–0.9s, restored from git history commit
+`e9fca38` after the final re-runs replaced the originals under
+`runs/gate-v2-prime/`; provenance notes in
+`runs/contaminated-evidence/README.md`); the scored set re-runs those six
+tasks (legacy 1/3/4 + prime 1/3/4) with fresh mirrors, everything else
+identical.
+
+### D9. Scoring root — the re-pointed checkout; the legacy task-1 inline-score FAIL (decision recorded before the re-runs; outcome annotated after the fact)
+
+**Decision:** final scoring resolves rubric citations against the re-pointed
+checkout root, not the run's scratch mirror: `run-gate.mjs` invokes
+`parity/score-task.mjs` with `--root <checkout>` (the D1 map), and every score
+JSON records the resolution root as `root` / `rootOverride` (with the frozen
+root preserved as `rootFrozen`) — e.g. `runs/gate-v2-legacy/task-1.score.json`
+records `root` / `rootOverride` = `/Users/feliperosa/workspace/repos/brain`
+and `rootFrozen` = `/home/namastex/prod/brain`. Rationale: the mirror aliases
+the checkout 1:1 at run start, but the agent mutates its cwd mid-run — the
+legacy task-1 re-run proved it (below) — so the mirror is not a stable
+resolution root; the rubric's task root is the checkout, which is the tree the
+run actually reads through the mirror (same bytes, same commits).
+
+**The legacy task-1 inline-score FAIL (the mirror is not a stable root):**
+during the legacy re-run, task 1 was scored inline right after the run and
+returned `c2 FAIL audio.ts:17 (missing-file); image.ts:18 (missing-file)` /
+`c3 FAIL` (recorded in `runs/manifest-legacy.json`, task 1 `scoreOutput`):
+the agent had deleted mirror entries (`src/`, `tests/`, … symlinks) mid-run,
+so the mirror-tree walk could no longer reach
+`src/lib/processors/audio.ts` / `image.ts`. **Final re-score against the
+checkout** (`runs/score-outputs-legacy.json`,
+`runs/gate-v2-legacy/task-1.score.json`): c2 PASS, c3 PASS, 25 citations.
+Both citations resolve in the checkout: `audio.ts:17` →
+`src/lib/processors/audio.ts:17` and `image.ts:18` →
+`src/lib/processors/image.ts:18`, each line being
+`const TOOLS_DIR = process.env.GENIE_TOOLS_DIR ?? "/home/genie/tools";` —
+exactly the answer's claim ("Tools directory: `GENIE_TOOLS_DIR` env or
+default `/home/genie/tools` (audio.ts:17, image.ts:18)"). **The final PASS is
+the scored outcome.**
 
 ---
 
@@ -128,19 +170,22 @@ which ran with the scaffolded config) and `runs/gate-v2-prime/` (tasks 1, 3,
 | 2 | Resolved model per leg (pre-flight) | `deepseek/deepseek-v4-flash` (footer) | `deepseek-v4-flash` + `--provider deepseek` (spawn argv) |
 | 3 | Task 1–6 quality (rubric) | 1 PASS, 5 FAIL (c1; c2/c3 all PASS) | 0 PASS, 6 FAIL (c1; c2/c3 vacuously PASS) |
 | 4 | Suite pass count (≥5/6 = bar) | **1/6 — FAIL** | **0/6 — FAIL** |
-| 5 | Cost per task + total | $0.0300 / $0.0300 / $0.0085 / $0.0200 / $0.0100 / $0.0075 = **$0.1060** | $0.0012 / $0.0081 / $0.0011 / $0.0003 / $0.0100 / $0.0003 = **$0.0210** |
-| 6 | Tokens per task (in/out) | totals **422,713 / 101,807** | totals **91,192 / 24,485** |
-| 7 | Wall-clock per task + P50 | 248 / 230 / 80 / 166.8 / 79 / 85.4s → **P50 126.1s** | 5.4 / 170.1 / 6.1 / 6.3 / 123 / 5.6s → **P50 6.2s** (confounded — see Row 7) |
-| 8 | Cold-start / spawn overhead (median) | **81.5ms** (callTool → "iteration 1") | **942ms** (callTool → "iteration 1", incl. subprocess spawn) |
+| 5 | Cost per task + total | $0.0069 / $0.0300 / $0.0400 / $0.0051 / $0.0100 / $0.0075 = **$0.0995** | $0.0012 / $0.0081 / $0.0011 / $0.0003 / $0.0100 / $0.0003 = **$0.0210** |
+| 6 | Tokens per task (in/out) | totals **336,974 / 120,718** | totals **91,192 / 24,485** |
+| 7 | Wall-clock per task + P50 | 61.1 / 230 / 458.8 / 62.4 / 79 / 85.4s → **P50 82.2s** | 5.4 / 170.1 / 6.1 / 6.3 / 123 / 5.6s → **P50 6.2s** (confounded — see Row 7) |
+| 8 | Cold-start / spawn overhead (median) | **75ms** (callTool → "iteration 1") | **942ms** (callTool → "iteration 1", incl. subprocess spawn) |
 | 9 | Concurrency: parallel distinct-cwd runs | no leakage; both slots ok | no leakage; slot B stopped after the starter block (documented pattern) |
 | 10 | Forced aborts: deadline + ceiling + cap | deadline → empty success-classified answer (gate finding); ceiling → `budget hit: max-cost` ✓; cap → graceful, no note ✓ | deadline → `TIMEOUT_ANSWER`, `isError` ✓; ceiling → `budget hit: max-cost` ✓; cap → `budget hit: max-iterations` note (documented deviation) |
-| 11 | Pooled-RPC trigger evaluation | — | does **not** fire (P50 0.05× legacy, confounded; cold-start 942ms < 2s) |
+| 11 | Pooled-RPC trigger evaluation | — | does **not** fire (P50 0.075× legacy, confounded; cold-start 942ms < 2s) |
 
 Every number below carries the command that produced it. Runs were produced
 with `node gate-agents/run-gate.mjs scored <leg>` (which invokes
 `.genie/wishes/rlmx-explore-offload/parity/run-task.mjs` with the recorded
 `--root`/`--recipe`/`--out-dir` arguments and `RLMX_AGENTS_DIR` pointed at the
-gate directory) and re-derived with `node gate-agents/summarize.mjs runs`.
+gate directory) and re-derived with `node gate-agents/summarize.mjs runs`
+(rows 5–8 and 11 are verbatim from that command over the final scored records
+under `runs/gate-v2-<leg>/` — the contaminated first records are preserved
+separately under `runs/contaminated-evidence/` and are not scored).
 Serving path for every cost/latency/token number: **both legs target
 `https://api.deepseek.com`** — legacy via pi-ai's bundled deepseek provider
 (`node_modules/@earendil-works/pi-ai/dist/providers/deepseek.js:9` →
@@ -204,13 +249,13 @@ prime's pass count is below legacy's on the identical model.
 
 | Task | Legacy | Prime |
 |---|---|---|
-| 1 | $0.0300 | $0.0012 |
+| 1 | $0.0069 | $0.0012 |
 | 2 | $0.0300 | $0.0081 |
-| 3 | $0.0085 | $0.0011 |
-| 4 | $0.0200 | $0.0003 |
+| 3 | $0.0400 | $0.0011 |
+| 4 | $0.0051 | $0.0003 |
 | 5 | $0.0100 | $0.0100 |
 | 6 | $0.0075 | $0.0003 |
-| **Total** | **$0.1060** | **$0.0210** |
+| **Total** | **$0.0995** | **$0.0210** |
 
 Serving path: api.deepseek.com on both legs (see above).
 
@@ -218,13 +263,13 @@ Serving path: api.deepseek.com on both legs (see above).
 
 | Task | Legacy in/out | Prime in/out |
 |---|---|---|
-| 1 | 118,789 / 30,964 | 7,081 / 578 |
+| 1 | 31,192 / 3,799 | 7,081 / 578 |
 | 2 | 120,259 / 26,919 | 24,997 / 12,247 |
-| 3 | 36,608 / 7,011 | 6,315 / 691 |
-| 4 | 69,447 / 24,266 | 426 / 716 |
+| 3 | 87,226 / 73,087 | 6,315 / 691 |
+| 4 | 20,687 / 4,266 | 426 / 716 |
 | 5 | 48,372 / 5,263 | 51,843 / 9,680 |
 | 6 | 29,238 / 7,384 | 530 / 573 |
-| **Total** | **422,713 / 101,807** | **91,192 / 24,485** |
+| **Total** | **336,974 / 120,718** | **91,192 / 24,485** |
 
 Prime's one-turn input counts (426–530) are implausibly small for the
 appended role + question — prime's per-completion usage evidently excludes
@@ -234,13 +279,13 @@ the base prompt; reported as measured.
 
 | Task | Legacy | Prime |
 |---|---|---|
-| 1 | 248s | 5.4s |
+| 1 | 61.1s | 5.4s |
 | 2 | 230s | 170.1s |
-| 3 | 80s | 6.1s |
-| 4 | 166.8s | 6.3s |
+| 3 | 458.8s | 6.1s |
+| 4 | 62.4s | 6.3s |
 | 5 | 79s | 123s |
 | 6 | 85.4s | 5.6s |
-| **P50** | **126.1s** | **6.2s** |
+| **P50** | **82.2s** | **6.2s** |
 
 Serving path: api.deepseek.com on both legs. Prime's P50 is lower because 4 of
 its 6 runs stop after one turn without executing the workload — the wall-clock
@@ -251,10 +296,10 @@ evaluation below).
 callTool → first progress, both backends' first progress is the pre-model
 "iteration 1" signal)
 
-Legacy: 108 / 85 / 78 / 101 / 74 / 76 ms → **median 81.5ms** (in-process
+Legacy: 79 / 85 / 63 / 70 / 74 / 76 ms → **median 75ms** (in-process
 engine start). Prime: 834 / 1025 / 857 / 859 / 1246 / 1361 ms → **median
 942ms** (server dispatch + prime-agent subprocess spawn + startup). MCP server
-ready (connect → tools/list): legacy median 484.5ms, prime median 284ms
+ready (connect → tools/list): legacy median 440.5ms, prime median 284ms
 (`serverReadyMs`).
 
 ### Row 9 — concurrency (parallel invocations, distinct cwds; `node gate-agents/exercises.mjs concurrency <leg>`)
@@ -292,6 +337,12 @@ ready (connect → tools/list): legacy median 484.5ms, prime median 284ms
   hold on the real model path. **Gate finding, legacy-side** — recorded, not
   corrected.
 
+The saved records' `mechanism` fields state the timeout that produced each
+record: legacy `RLMX_MCP_RUN_TIMEOUT_MS=20000` (matching the committed driver
+and the 20.0s footer) and prime `RLMX_MCP_RUN_TIMEOUT_MS=3000` (matching the
+3.0s footer); the earlier 3s/4s attempts on both legs are intermediate and
+prose-only — the saved records are the authoritative ones.
+
 **Cost-ceiling breach (budget `max_cost: 0.000001`, fixture agent):**
 - Legacy: first real turn breaches → forced final, footer
   `… $0.0033 · 69.5s · budget hit: max-cost`, `isError: false` (non-throwing). ✓
@@ -315,7 +366,7 @@ Group 2 deviation (reviewer MEDIUM-1):**
 Thresholds at gate setup: prime P50 wall-clock ≥ 1.5× legacy P50 (fires only
 with cold-start corroboration), **or** median spawn/cold-start overhead > 2s
 per turn (fires on its own). Measured: prime P50 wall = 6.2s vs legacy P50 =
-126.1s (0.05× — far from firing, and confounded: 4 of 6 prime runs stop
+82.2s (0.075× — far from firing, and confounded: 4 of 6 prime runs stop
 before executing the workload, so wall-clock deltas measure workload
 non-execution, not backend speed). Cold-start limb: prime median
 callTool→first-progress = **942ms**, below the 2s threshold. **The pooled-RPC
@@ -333,11 +384,13 @@ failures above are rubric failures, not run failures.
 
 1. **The agent mutates its working tree.** During the first legacy pass the
    explore agent scaffolded `.rlmx/` via `rlmx init` in its own cwd and later
-   runs deleted mirror entries (`src/`, `tests/`, … symlinks — preserved as
-   evidence under `runs/contaminated-evidence/` and the mirror mtimes). The
-   D6 mirror contained every write; both user checkouts were verified clean
-   after all runs (`git status`; the genie checkout's three modified files
-   predate the gate, Aug 13–14). D8 (fresh mirror per task) and D9 (score
+   runs deleted mirror entries (`src/`, `tests/`, … symlinks — fingerprinted
+   by the task-1 inline-score FAIL recorded in `runs/manifest-legacy.json`
+   and D9; mirror mtimes observed at run time). The D6 mirror contained every
+   write; both user checkouts were verified clean after all runs
+   (`git status`; the genie checkout's pre-existing modifications — 16
+   modified files plus 1 untracked at final verification, mtimes Aug 13–15 —
+   all predate the Aug 16 gate). D8 (fresh mirror per task) and D9 (score
    against the re-pointed checkout) were recorded before the re-runs.
 2. The pre-flight assertions (row 2) held on every leg, and each scored run
    records `rootGit` (brain `1c6c9ca`, genie `3a7e9ce74` — the D1 heads) with
