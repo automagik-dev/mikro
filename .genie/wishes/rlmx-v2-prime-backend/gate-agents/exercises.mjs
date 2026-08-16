@@ -258,7 +258,9 @@ const run = async () => {
   // ── forced aborts ──────────────────────────────────────────────────────
   if (exercise === "abort-deadline") {
     const root = fixture("deadline", []);
-    const extraEnv = { env: { RLMX_MCP_RUN_TIMEOUT_MS: "15000" } };
+    // 20s: the run is guaranteed to be active (task-1 questions run 15-250s),
+    // so the wall-clock kill lands mid-run — the classification under test.
+    const extraEnv = { env: { RLMX_MCP_RUN_TIMEOUT_MS: "20000" } };
     const s = runServer(brainMirror, root, leg === "prime" ? { ...extraEnv, argvLog: join(root, "argv.log") } : extraEnv);
     const rec = await callTool(s.client, s.transport, "rlmx_explore", task1Question);
     await s.client.close().catch(() => {});
@@ -268,7 +270,7 @@ const run = async () => {
       question: "task 1 verbatim (frozen suite)", fixtureRoot: root, serverDir: brainMirror,
       ...rec,
       expected: { answer: "Error: RLM query timed out", isError: true },
-      observed: { isError: rec.isError, timedOutAnswer: rec.answer === "Error: RLM query timed out" },
+      observed: { isError: rec.isError, timedOutAnswer: (rec.answer ?? "").trim() === "Error: RLM query timed out" },
     };
     save(exercise, record);
     console.log(JSON.stringify(record, null, 2));

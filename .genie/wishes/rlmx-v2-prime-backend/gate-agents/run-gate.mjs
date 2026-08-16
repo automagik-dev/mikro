@@ -349,14 +349,15 @@ if (cmd === "scored") {
       if (!existsSync(join(outDir(leg), `task-${t}.json`))) {
         console.error(`task ${t}: no run JSON written`);
       }
-      // Score inline, against the exact mirror state this task read — the
-      // next task's fresh rebuild would otherwise erase model-written files
-      // before the rubric resolves citations.
+      // Score inline, against the re-pointed checkout (D1/D9): the mirror
+      // aliases the checkout 1:1 at run start, but the agent mutates its cwd
+      // mid-run (it deleted mirror entries — preserved as evidence) and the
+      // rubric's task root is the checkout, not the run's scratch.
       const runFile = join(outDir(leg), `task-${t}.json`);
       if (existsSync(runFile)) {
         const scoreRes = spawnSync(
           process.execPath,
-          [scoreTask, runFile, String(t), "--tasks-dir", frozenTasks, "--root", mirror],
+          [scoreTask, runFile, String(t), "--tasks-dir", frozenTasks, "--root", real],
           { cwd: repo, encoding: "utf-8" }
         );
         manifest.tasks[manifest.tasks.length - 1].scoreExit = scoreRes.status;
@@ -378,11 +379,11 @@ if (cmd === "score") {
   if (leg !== "legacy" && leg !== "prime") fail("usage: run-gate.mjs score <legacy|prime>");
   const outputs = { leg, scoredAt: new Date().toISOString(), tasks: [] };
   for (const t of TASKS) {
-    const { mirror } = rootsFor(t);
+    const { real } = rootsFor(t);
     const runFile = join(outDir(leg), `task-${t}.json`);
     const res = spawnSync(
       process.execPath,
-      [scoreTask, runFile, String(t), "--tasks-dir", frozenTasks, "--root", mirror],
+      [scoreTask, runFile, String(t), "--tasks-dir", frozenTasks, "--root", real],
       { cwd: repo, encoding: "utf-8" }
     );
     outputs.tasks.push({ task: t, runFile, scoreFile: runFile.replace(/\.json$/, ".score.json"), stdout: res.stdout.trim(), stderr: res.stderr.trim(), exit: res.status });
