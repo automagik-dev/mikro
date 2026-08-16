@@ -310,3 +310,23 @@ tests/prime-backend.test.ts             (new — stub-binary behavior tests)
 .genie/wishes/rlmx-v2-prime-backend/gate-report.md  (new — Group 3 output)
 ```
 Group 3's `gate-agents/` directory is a measurement fixture, not a shipped agent: it is reached only by pointing `RLMX_AGENTS_DIR` at it for the gate run, and nothing in `examples/agents/` is modified.
+
+
+---
+
+## Execution Reviews (appended by orchestrator, post-work)
+
+### Execution review — Group 1 (RuntimeBackend seam + legacy wrap) — 2026-08-16 — verdict: SHIP
+Independent reviewer subagent (≠ engineer), read-only. All 4 ACs evidenced: zero MCP-observable diff (schema/tool-registration hunks absent; 56/56 mcp-agents assertions unmodified), contract test has teeth (deliberate diverging backend → 9 pass/5 fail; per-dimension corruption tests), legacy busy/orphan/abort/stderr semantics preserved (agents.ts diff empty, isFailedRun logic identical, maxIterations/timeout forwarding verbatim), zero prime-specific types in the seam. Validations re-run: check ✓, 70/70 targeted ✓, smoke --no-live ✓. Two LOW advisories (backend-registry prototype key; no-op emitter) — first closed in G2 (Map registry), second awareness-only. Task done.
+
+### Execution review — Group 2 (PrimeBackend subprocess adapter) — 2026-08-16 — verdict: FIX-FIRST → fix → SHIP
+Round 1 (FIX-FIRST): one HIGH — context files passed as plain argv paths (prime runs each path as its own autonomous turn; verified live against the pinned binary's parser; `@`-prefix required). All 5 ACs otherwise green: contract test drives prime through the real runTurn pipeline (5 scenarios host-identical), base-prompt survival (argv + live probe: base RLM prompt first line quoted + appended ROLE_MARKER), process-TREE kills (shim + grandchild asserted dead; ceiling→isError false, deadline→TIMEOUT_ANSWER→isError true), version pin 0.7.2 fail-fast, no SDK/daemon (imports + package.json test-asserted). MEDIUM-1 (turn-cap budgetHit note) carried into the gate report. Fix loop 1 (commit db5c261): `@<abs path>` context args + spawn-time existence pre-check + test/contract updates (+2 tests). Re-review: SHIP — HIGH closed, hunk-by-hunk regression check clean, 107/107, full suite 599/599, dist byte-consistent. Task done.
+
+### Execution review — Group 3 (two-backend parity gate) — 2026-08-16 — verdict: FIX-FIRST → fix → SHIP
+Round 1 (FIX-FIRST): gate verdict FAIL adjudicated legitimate (legacy 1/6 generous / 0/6 strict, prime 0/6, bar ≥5/6, prime < legacy on the identical model; fallback written down). One HIGH — measurement rows 5–8/11 for legacy tasks 1/3/4 quoted the contaminated second-pass records (undisclosed, not re-derivable from committed commands). MEDIUMs: D9 unrecorded + D8 wording contradiction; prime contaminated records claimed-preserved but absent at HEAD. Fix loop 1 (commit 61bff13): rows re-derived from final scored records (legacy totals $0.0995, 336,974/120,718, P50 82.2s, cold median 75ms; `summarize.mjs runs` reproduces every cell), D9 recorded (scoring root + task-1 inline-FAIL→final-PASS re-score), prime contaminated records restored byte-identical from git history. Re-review: SHIP — 65/65 programmatic comparisons, setup section byte-preserved, no collateral, all validations green. Task done.
+
+### Final gate (whole-wish) — 2026-08-16 — verdict: SHIP
+`final-gate` reviewer, read-only, whole diff `main...HEAD` (15 commits, 87 files, +15,106/−151, all on-scope). All 7 wish-level success criteria evidenced; QA criteria evidenced by the diff (literal Claude Code host invocation remains dev-side post-merge, as stated); known gate findings carried in the report, not hidden; recorded-decision discipline verified (Decision 7 amendment, D1–D5 pre-run byte-preserved, D6–D9 timestamped); hygiene clean (no secrets, dist consistent, genie.db* untracked). Validations re-run: check ✓, 107/107 ✓, full suite 599/599 ✓, smoke-mcp --no-live ✓, smoke-explore live ✓, verdict grep ✓. Non-blocking LOWs: pre-flight mismatch is procedural not a hard assert; gate-report status line reads "measurements pending" (byte-preserved region); genie.db* not gitignored (pre-existing).
+
+### Outcome
+Gate verdict: **FAIL** — prime does not pass the frozen parity suite (0/6; bar ≥5/6) on the gate model; the host-visible contract held identically across backends on every run. Fallback applied as written: legacy engine stays default, prime remains the second backend behind the internal `backend: prime` field, no deletion, Option A not pursued. Pooled-RPC not triggered (cold-start 942ms < 2s; wall-clock limb confounded). Gate evidence: `.genie/wishes/rlmx-v2-prime-backend/gate-report.md` (PASS/FAIL verdict + fallback + all measurements with commands).
