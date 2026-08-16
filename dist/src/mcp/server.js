@@ -48,6 +48,7 @@ import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../rlm.js";
 import { VERSION } from "../version.js";
 import { discoverAgents, splitModel } from "./agents.js";
 import { LegacyRlmxBackend } from "./backends/legacy.js";
+import { PrimeBackend } from "./backends/prime.js";
 /** How often to tick when the run itself is emitting nothing. */
 const HEARTBEAT_MS = 15_000;
 /** Tool always present, so the server is useful before any agent is authored. */
@@ -511,16 +512,22 @@ export function isFailedRun(result) {
 }
 /**
  * Backends wired to this build, keyed by the agent-spec `backend` field
- * (internal and undocumented — `src/sdk/agent-spec.ts`).
- *
- * Group 2 (wish rlmx-v2-prime-backend) adds the prime backend here. Until
- * then a spec naming an unwired backend fails loudly at call time — the same
- * "no silent degradation" rule the spec parser applies to typos, because a
- * spec that says `backend: prime` must not silently run the legacy engine.
+ * (internal and undocumented — `src/sdk/agent-spec.ts`). A `Map`, not a
+ * plain object record: a forged `backend: "constructor"` must resolve to
+ * "not wired", never to a truthy prototype property that is not a backend.
  */
-const BACKENDS = {
-    rlmx: new LegacyRlmxBackend(),
-};
+const BACKENDS = new Map([
+    ["rlmx", new LegacyRlmxBackend()],
+]);
+/**
+ * The prime backend, constructed lazily on first selection. Its constructor
+ * runs the version-pin check (`prime-agent --version` === 0.7.2), and a
+ * server that never selects prime must not pay for that — nor fail to start
+ * on a machine without the binary. A spec naming a backend this build has
+ * not wired fails loudly at call time, the same "no silent degradation"
+ * rule the spec parser applies to typos.
+ */
+let primeBackend;
 /**
  * The backend a turn runs on.
  *
@@ -531,7 +538,8 @@ const BACKENDS = {
  */
 export function selectBackend(agent) {
     const selected = agent?.spec.backend ?? "rlmx";
-    const backend = BACKENDS[selected];
+    const backend = BACKENDS.get(selected) ??
+        (selected === "prime" ? (primeBackend ??= new PrimeBackend()) : undefined);
     if (!backend) {
         throw new Error(`agent "${agent?.name ?? "rlmx_query"}": backend "${selected}" is not wired into this build`);
     }
@@ -551,15 +559,15 @@ export function selectBackend(agent) {
  */
 export async function runTurn(backend, agent, config, label, query, sessionId, contextPath, cwd, progress, maxIterations) {
     let context = null;
-    if (contextPath) {
-        const resolved = resolve(cwd, contextPath);
+    const contextRoot = contextPath ? resolve(cwd, contextPath) : undefined;
+    if (contextRoot) {
         const contextOpts = config.contextConfig
             ? {
                 extensions: config.contextConfig.extensions,
                 exclude: config.contextConfig.exclude,
             }
             : undefined;
-        context = await loadContext(resolved, contextOpts);
+        context = await loadContext(contextRoot, contextOpts);
     }
     let lastProgressAt = Date.now();
     const emit = progress
@@ -590,6 +598,8 @@ export async function runTurn(backend, agent, config, label, query, sessionId, c
             query,
             context,
             config,
+            cwd,
+            contextRoot,
             ...(maxIterations !== undefined ? { maxIterations } : {}),
         }, emit);
         const footer = formatFooter(label, config, result, Date.now() - started, sessionId);

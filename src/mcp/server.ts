@@ -51,11 +51,11 @@ import { resolve } from "node:path";
 import { applyModelRef, loadConfig, type RlmxConfig } from "../config.js";
 import { loadContext, type LoadedContext } from "../context.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../rlm.js";
-import type { AgentSpec } from "../sdk/agent-spec.js";
 import { VERSION } from "../version.js";
 import { discoverAgents, splitModel, type Microagent } from "./agents.js";
 import type { MicroagentResult, RuntimeBackend } from "./backend.js";
 import { LegacyRlmxBackend } from "./backends/legacy.js";
+import { PrimeBackend } from "./backends/prime.js";
 
 /**
  * Emits `notifications/progress` for a single tool call.
@@ -656,16 +656,23 @@ export interface TurnOutcome {
 
 /**
  * Backends wired to this build, keyed by the agent-spec `backend` field
- * (internal and undocumented — `src/sdk/agent-spec.ts`).
- *
- * Group 2 (wish rlmx-v2-prime-backend) adds the prime backend here. Until
- * then a spec naming an unwired backend fails loudly at call time — the same
- * "no silent degradation" rule the spec parser applies to typos, because a
- * spec that says `backend: prime` must not silently run the legacy engine.
+ * (internal and undocumented — `src/sdk/agent-spec.ts`). A `Map`, not a
+ * plain object record: a forged `backend: "constructor"` must resolve to
+ * "not wired", never to a truthy prototype property that is not a backend.
  */
-const BACKENDS: Readonly<Partial<Record<NonNullable<AgentSpec["backend"]>, RuntimeBackend>>> = {
-  rlmx: new LegacyRlmxBackend(),
-};
+const BACKENDS: ReadonlyMap<string, RuntimeBackend> = new Map([
+  ["rlmx", new LegacyRlmxBackend()],
+]);
+
+/**
+ * The prime backend, constructed lazily on first selection. Its constructor
+ * runs the version-pin check (`prime-agent --version` === 0.7.2), and a
+ * server that never selects prime must not pay for that — nor fail to start
+ * on a machine without the binary. A spec naming a backend this build has
+ * not wired fails loudly at call time, the same "no silent degradation"
+ * rule the spec parser applies to typos.
+ */
+let primeBackend: PrimeBackend | undefined;
 
 /**
  * The backend a turn runs on.
@@ -677,7 +684,9 @@ const BACKENDS: Readonly<Partial<Record<NonNullable<AgentSpec["backend"]>, Runti
  */
 export function selectBackend(agent: Microagent | undefined): RuntimeBackend {
   const selected = agent?.spec.backend ?? "rlmx";
-  const backend = BACKENDS[selected];
+  const backend =
+    BACKENDS.get(selected) ??
+    (selected === "prime" ? (primeBackend ??= new PrimeBackend()) : undefined);
   if (!backend) {
     throw new Error(
       `agent "${agent?.name ?? "rlmx_query"}": backend "${selected}" is not wired into this build`
@@ -711,15 +720,15 @@ export async function runTurn(
   maxIterations?: number
 ): Promise<TurnOutcome> {
   let context: LoadedContext | null = null;
-  if (contextPath) {
-    const resolved = resolve(cwd, contextPath);
+  const contextRoot = contextPath ? resolve(cwd, contextPath) : undefined;
+  if (contextRoot) {
     const contextOpts = config.contextConfig
       ? {
           extensions: config.contextConfig.extensions,
           exclude: config.contextConfig.exclude,
         }
       : undefined;
-    context = await loadContext(resolved, contextOpts);
+    context = await loadContext(contextRoot, contextOpts);
   }
 
   let lastProgressAt = Date.now();
@@ -755,6 +764,8 @@ export async function runTurn(
         query,
         context,
         config,
+        cwd,
+        contextRoot,
         ...(maxIterations !== undefined ? { maxIterations } : {}),
       },
       emit

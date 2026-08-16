@@ -27,6 +27,19 @@ export interface BackendRequest {
     readonly config: RlmxConfig;
     /** Iteration cap implied by the agent's spec (`shape`/`budget`), if any. */
     readonly maxIterations?: number;
+    /**
+     * Server working directory the turn runs against (`--dir` / the server's
+     * cwd). The legacy backend has no use for it — context is already loaded
+     * and rlmLoop runs in-process — but a subprocess backend must know where
+     * the agent works: the prime backend maps it to prime-agent's `--cwd`.
+     */
+    readonly cwd: string;
+    /**
+     * Absolute path the caller's `context:` argument resolved to, when one was
+     * passed. Lets a backend that needs real files (prime's `@file` arguments)
+     * point at the caller's originals instead of the loaded snapshot.
+     */
+    readonly contextRoot?: string;
 }
 /**
  * The result of one backend run — exactly the fields the MCP layer consumes.
