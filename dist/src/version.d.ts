@@ -1,2 +1,2 @@
-export declare const VERSION = "0.260803.1";
+export declare const VERSION = "0.260817.1";
 //# sourceMappingURL=version.d.ts.map
