@@ -1007,10 +1007,12 @@ console.log(result.references);
 
 ## Versioning
 
-rlmx uses **calendar versioning**: `0.YYMMDD.N`, where `YYMMDD` is the UTC build
-date and `N` is a daily counter. A version records *when* a build was cut and
-carries **no compatibility promise** — read [`CHANGELOG.md`](CHANGELOG.md), not the version
-delta, to learn about breaking changes. The release boundary is a PR merge into
+rlmx uses **calendar versioning**: `1.YYMMDD.N`, where `YYMMDD` is the UTC build
+date and `N` is a daily counter. The `1.` major (bumped from `0.` on
+2026-08-17) declares the public surface production-ready; the rest of the
+version still records *when* a build was cut, not what changed — read
+[`CHANGELOG.md`](CHANGELOG.md), not the version delta, to learn about breaking
+changes. The release boundary is a PR merge into
 `main`, and the bump is **automatic** — CI derives the next version on merge and
 commits it, so do not hand-run `npm run bump-version` in a PR unless you intend
 that reviewed version to be the released one. See
