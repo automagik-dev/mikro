@@ -54,6 +54,14 @@ export interface AgentSpec {
     readonly thinking?: ThinkingLevel;
     readonly scope?: AgentScope;
     readonly budget?: AgentBudget;
+    /**
+     * Internal, undocumented: which runtime backend executes this agent's
+     * turns (wish rlmx-v2-prime-backend). Absent means `rlmx` — the legacy
+     * engine, which stays the default. Deliberately NOT part of the
+     * documented `agent.yaml` schema: it is a gate/experiment selector that
+     * may change without notice.
+     */
+    readonly backend?: "rlmx" | "prime";
     /** Preserved unrecognised keys — consumers layer their own schema. */
     readonly extras: Readonly<Record<string, unknown>>;
 }

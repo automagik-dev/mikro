@@ -33,14 +33,24 @@
  *   rebuilt per call and its state is deliberately not promised across turns.
  *
  * stdout discipline: MCP stdio frames JSON-RPC on stdout, so all human/
- * diagnostic logging is redirected to stderr and `rlmLoop` is run with
- * `output: "json"` to keep it off its stream-mode stdout path — the same
- * contract `src/acp/agent.ts` follows.
+ * diagnostic logging is redirected to stderr and the legacy backend runs
+ * `rlmLoop` with `output: "json"` to keep it off its stream-mode stdout path —
+ * the same contract `src/acp/agent.ts` follows.
  */
 import { type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { type RlmxConfig } from "../config.js";
-import type { RLMResult } from "../output.js";
 import { type Microagent } from "./agents.js";
+import type { MicroagentResult, RuntimeBackend } from "./backend.js";
+/**
+ * Emits `notifications/progress` for a single tool call.
+ *
+ * This is load-bearing, not cosmetic: MCP clients time a request out (the
+ * reference client defaults to 60s), and delegated rlmx work — a recursive run
+ * on a local model — routinely runs longer than that. Progress notifications
+ * are what let a conforming client extend its deadline, and they surface the
+ * delegated agent's iterations in the host transcript while it works.
+ */
+export type ProgressSink = (message: string) => void;
 /**
  * Output contract. Declaring it is what makes `structuredContent` a stated
  * promise rather than an undocumented extra a client may drop — but it cuts
@@ -230,7 +240,35 @@ export declare function sessionResult(text: string, sessionId: string, isError?:
  * a failure either: it forces a real final answer — a shorter report — and
  * stays `isError: false`.
  */
-export declare function isFailedRun(result: Pick<RLMResult, "answer" | "budgetHit">): boolean;
+export declare function isFailedRun(result: Pick<MicroagentResult, "answer" | "budgetHit">): boolean;
+export interface TurnOutcome {
+    readonly answer: string;
+    readonly text: string;
+    /** True when the run hit one of the backend's designed aborts (see {@link isFailedRun}). */
+    readonly failed: boolean;
+}
+/**
+ * The backend a turn runs on.
+ *
+ * `rlmx_query` (the generic tool) has no agent spec and therefore no
+ * `backend` field: it always runs on the legacy backend, unconditionally —
+ * there is no selection path for it. Agents default to `rlmx` unless their
+ * spec names another backend.
+ */
+export declare function selectBackend(agent: Microagent | undefined): RuntimeBackend;
+/**
+ * Run one turn on one backend. `query` is already the resume-folded prompt;
+ * `prompt` is the caller's own text, which is what gets recorded as the turn
+ * (a preamble must never be replayed inside the next preamble).
+ *
+ * `backend`/`agent` are the seam: the server no longer calls `rlmLoop` — it
+ * asks the selected backend to run, and the backend owns the engine. The
+ * backend emits bare progress messages ("iteration 3"); this wrapper owns the
+ * label prefix, the last-progress clock, and the idle heartbeat, so liveness
+ * and presentation stay server concerns while event translation stays the
+ * backend's.
+ */
+export declare function runTurn(backend: RuntimeBackend, agent: Microagent | undefined, config: RlmxConfig, label: string, query: string, sessionId: string, contextPath: string | undefined, cwd: string, progress?: ProgressSink, maxIterations?: number): Promise<TurnOutcome>;
 /**
  * Run the MCP server on stdio until the client disconnects.
  *

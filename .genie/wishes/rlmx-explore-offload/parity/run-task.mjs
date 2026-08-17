@@ -8,7 +8,10 @@
  * goes into a scratch HOME's `~/.rlmx/agents/explore/` (discovery root #1,
  * src/mcp/agents.ts:56-68) rather than into the task repo, because the task
  * repos are the user's other checkouts and the gate must not write in them.
- * No `RLMX_AGENTS_DIR` override: the discovery path stays the real one.
+ * No `RLMX_AGENTS_DIR` override by default: the discovery path stays the real
+ * one. (Gate extension: a caller-provided `RLMX_AGENTS_DIR` in the
+ * environment is honored and replaces the default roots entirely — used by
+ * the rlmx-v2-prime-backend gate, wish decision D5.)
  *
  *   node run-task.mjs <taskNumber> <model> <roundLabel>
  *        [--tasks-dir <dir>] [--recipe <dir>] [--agent <name>]
@@ -75,7 +78,17 @@ const argv = process.argv.slice(2);
  * the constant this script used before it was a flag — so the no-flag command
  * line is unchanged in every observable way.
  */
-const VALUE_FLAGS = { "--tasks-dir": "directory", "--recipe": "directory", "--agent": "name", "--out-dir": "directory" };
+const VALUE_FLAGS = {
+  "--tasks-dir": "directory",
+  "--recipe": "directory",
+  "--agent": "name",
+  "--out-dir": "directory",
+  // Gate extension (wish rlmx-v2-prime-backend, Group 3): override the task
+  // root extracted from the task file. The frozen suite records Linux-host
+  // roots that are re-pointed by a recorded gate decision (D1 in
+  // gate-report.md); the task files themselves stay untouched.
+  "--root": "directory",
+};
 const flags = {};
 for (;;) {
   const at = argv.findIndex((a) => a in VALUE_FLAGS);
@@ -97,7 +110,7 @@ const [taskArg, model, round] = argv;
 if (!taskArg || !model || !round) {
   console.error(
     "usage: run-task.mjs <taskNumber> <model> <roundLabel> [--tasks-dir <dir>] " +
-      "[--recipe <dir>] [--agent <name>] [--out-dir <dir>] [--pin-child-model]"
+      "[--recipe <dir>] [--agent <name>] [--out-dir <dir>] [--root <dir>] [--pin-child-model]"
   );
   process.exit(2);
 }
@@ -120,7 +133,11 @@ if (!existsSync(taskFile)) {
   process.exit(2);
 }
 const taskText = readFileSync(taskFile, "utf-8");
-const root = /\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|/.exec(taskText)?.[1];
+const rootFrozen = /\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|/.exec(taskText)?.[1];
+// Gate extension: `--root` re-points the task root (recorded gate decision,
+// never an edit of the task file). Without the flag the frozen root is used —
+// the command line is byte-for-byte what it always was.
+const root = flags["--root"] ? resolve(flags["--root"]) : rootFrozen;
 /**
  * Both suites' question headings, and only those two.
  *
@@ -195,7 +212,24 @@ writeFileSync(join(promptsDir, `${promptDigest}.md`), systemText, "utf-8");
 function gitState(dir) {
   const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf-8" }).trim();
   try {
-    return { head: git("rev-parse", "HEAD"), branch: git("rev-parse", "--abbrev-ref", "HEAD"), dirty: git("status", "--porcelain").length > 0 };
+    // Each probe is isolated: a checkout whose tree trips `git status`
+    // (e.g. a symlinked `docs` path git refuses) must not cost the head —
+    // the SHA is what makes a run re-resolvable.
+    const head = git("rev-parse", "HEAD");
+    let branch = null;
+    let dirty = null;
+    let statusError = null;
+    try {
+      branch = git("rev-parse", "--abbrev-ref", "HEAD");
+    } catch (e) {
+      branch = null;
+    }
+    try {
+      dirty = git("status", "--porcelain").length > 0;
+    } catch (e) {
+      statusError = e?.message ?? String(e);
+    }
+    return { head, branch, dirty, statusError };
   } catch (e) {
     return { head: null, error: e?.message ?? String(e) };
   }
@@ -208,6 +242,9 @@ const provenance = {
   // Digest of the installed (model-rewritten) agent.yaml — the file that ran.
   agentYamlSha256: sha(installedYaml),
   rootGit: gitState(root),
+  // Gate extension: the frozen root named in the task file, when `--root`
+  // re-pointed it (null = no re-pointing).
+  rootFrozen,
   rlmxGit: gitState(repo),
   // Which recipe ran, under which tool name, with which harness corrections.
   // The two timeouts are recorded rather than set here: they are environment
@@ -256,11 +293,20 @@ provenance.callTimeoutMs = CALL_TIMEOUT_MS;
 provenance.maxTotalTimeoutMs = MAX_TOTAL_TIMEOUT_MS;
 
 const progress = [];
+// Gate extension: callTool→first-progress and connect→tools-listed clocks,
+// recorded in the run JSON as serverReadyMs / firstProgressMs. Both backends'
+// first progress is "iteration 1" emitted before the first model reply, so
+// the delta is the per-leg run-startup overhead (server boot + engine start
+// for legacy; that plus the prime subprocess spawn for prime).
+let callStartedMs = 0;
 const LIVE_OPTS = {
   timeout: CALL_TIMEOUT_MS,
   resetTimeoutOnProgress: true,
   maxTotalTimeout: MAX_TOTAL_TIMEOUT_MS,
   onprogress: (p) => {
+    if (callStartedMs > 0 && !record.firstProgressMs) {
+      record.firstProgressMs = Date.now() - callStartedMs;
+    }
     progress.push(p.message ?? `progress ${p.progress}`);
     process.stderr.write(`[t${taskArg}] ${p.message ?? p.progress}\n`);
   },
@@ -270,7 +316,11 @@ const transport = new StdioClientTransport({
   command: process.execPath,
   args: [cli, "mcp", "--dir", root],
   cwd: tmpdir(),
-  env: { ...process.env, HOME: home, RLMX_AGENTS_DIR: "" },
+  // Gate extension (wish rlmx-v2-prime-backend, Group 3): honor a
+  // caller-provided RLMX_AGENTS_DIR, which replaces the default discovery
+  // roots entirely (src/mcp/agents.ts:83-90) and makes the run hermetic.
+  // Unset, the frozen-gate value "" is passed through exactly as before.
+  env: { ...process.env, HOME: home, RLMX_AGENTS_DIR: process.env.RLMX_AGENTS_DIR ?? "" },
   stderr: "pipe",
 });
 
@@ -292,6 +342,7 @@ let record = {
 
 const started = Date.now();
 try {
+  const connectStarted = Date.now();
   await client.connect(transport);
   let stderrBuf = "";
   transport.stderr?.on("data", (chunk) => {
@@ -299,12 +350,14 @@ try {
   });
 
   const { tools } = await client.listTools();
+  record.serverReadyMs = Date.now() - connectStarted;
   record.toolsListed = tools.map((t) => t.name);
   if (!tools.some((t) => t.name === tool)) {
     throw new Error(`${tool} not listed; got ${record.toolsListed.join(", ")}`);
   }
 
   const args = { prompt: question };
+  callStartedMs = Date.now();
   const res = await client.callTool({ name: tool, arguments: args }, undefined, LIVE_OPTS);
   const elapsed = Date.now() - started;
   const text = res?.content?.[0]?.text ?? "";

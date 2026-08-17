@@ -14,7 +14,7 @@
  * anchor file and whether it carries the term the fact was anchored on. The
  * scorer reads those signals plus the answer and decides.
  *
- *   node score-task.mjs <runJsonPath|--native> <taskNumber> [--tasks-dir <dir>]
+ *   node score-task.mjs <runJsonPath|--native> <taskNumber> [--tasks-dir <dir>] [--root <dir>]
  *
  * `--tasks-dir` defaults to the frozen eval suite, `<wish>/tasks`, so behaviour
  * without the flag is unchanged. **Nothing about the rubric or the conventions
@@ -47,9 +47,22 @@ if (tdAt >= 0) {
   }
   argv.splice(tdAt, 2);
 }
+// Gate extension (wish rlmx-v2-prime-backend, Group 3): score citations
+// against a re-pointed task root. The task file still supplies the frozen
+// root for the record; criterion 2/3 resolution, the basename index, and the
+// in-root checks all use the override (the tree the run actually read).
+const rAt = argv.indexOf("--root");
+const rootArg = rAt >= 0 ? argv[rAt + 1] : null;
+if (rAt >= 0) {
+  if (!rootArg) {
+    console.error("--root requires a directory");
+    process.exit(2);
+  }
+  argv.splice(rAt, 2);
+}
 const [source, taskArg] = argv;
 if (!source || !taskArg) {
-  console.error("usage: score-task.mjs <runJsonPath|--native> <taskNumber> [--tasks-dir <dir>]");
+  console.error("usage: score-task.mjs <runJsonPath|--native> <taskNumber> [--tasks-dir <dir>] [--root <dir>]");
   process.exit(2);
 }
 
@@ -84,7 +97,10 @@ if (source !== "--native") {
 }
 
 const taskText = readFileSync(taskFile, "utf-8");
-const root = /\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|/.exec(taskText)[1];
+const rootFrozen = /\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|/.exec(taskText)[1];
+// Gate extension: re-pointed root (see the --root flag above). Unset, the
+// frozen root is used — unchanged behavior for every pre-existing run.
+const root = rootArg ? resolve(rootArg) : rootFrozen;
 
 /** Out-of-scope trees: listed under "## Scope: trees outside the rubric". */
 const scopeSection = /## Scope: trees outside the rubric\n([\s\S]*?)\n## /.exec(taskText)?.[1] ?? "";
@@ -355,6 +371,10 @@ const factSignals = facts.map((f) => {
 const report = {
   ...meta,
   root,
+  // Gate extension: the frozen root the task file names, so a re-pointed
+  // score is traceable back to the frozen artifact.
+  rootFrozen,
+  rootOverride: rootArg ?? null,
   outOfScope,
   need,
   factTotal: facts.length,

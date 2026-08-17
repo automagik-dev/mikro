@@ -33,9 +33,9 @@
  *   rebuilt per call and its state is deliberately not promised across turns.
  *
  * stdout discipline: MCP stdio frames JSON-RPC on stdout, so all human/
- * diagnostic logging is redirected to stderr and `rlmLoop` is run with
- * `output: "json"` to keep it off its stream-mode stdout path — the same
- * contract `src/acp/agent.ts` follows.
+ * diagnostic logging is redirected to stderr and the legacy backend runs
+ * `rlmLoop` with `output: "json"` to keep it off its stream-mode stdout path —
+ * the same contract `src/acp/agent.ts` follows.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -44,10 +44,11 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { applyModelRef, loadConfig } from "../config.js";
 import { loadContext } from "../context.js";
-import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER, rlmLoop } from "../rlm.js";
-import { createEmitter } from "../sdk/emitter.js";
+import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../rlm.js";
 import { VERSION } from "../version.js";
 import { discoverAgents, splitModel } from "./agents.js";
+import { LegacyRlmxBackend } from "./backends/legacy.js";
+import { PrimeBackend } from "./backends/prime.js";
 /** How often to tick when the run itself is emitting nothing. */
 const HEARTBEAT_MS = 15_000;
 /** Tool always present, so the server is useful before any agent is authored. */
@@ -477,15 +478,6 @@ export function sessionResult(text, sessionId, isError = false) {
     };
 }
 /**
- * Resolve the run timeout. A delegated task can be long — especially a
- * recursive one — and the host owns cancellation, so allow lifting rlmLoop's
- * default wall-clock cap without touching rlm.ts.
- */
-function runTimeout() {
-    const ms = Number(process.env.RLMX_MCP_RUN_TIMEOUT_MS);
-    return Number.isFinite(ms) && ms > 0 ? { timeout: ms } : {};
-}
-/**
  * Did `rlmLoop` hand back a failure instead of an answer?
  *
  * Only rlmLoop's `throw` path reaches the catch in the call handler. Its two
@@ -519,59 +511,71 @@ export function isFailedRun(result) {
     return result.budgetHit === EMPTY_RESPONSES_BUDGET_HIT || result.answer === TIMEOUT_ANSWER;
 }
 /**
- * Run one turn. `query` is already the resume-folded prompt; `prompt` is the
- * caller's own text, which is what gets recorded as the turn (a preamble must
- * never be replayed inside the next preamble).
+ * Backends wired to this build, keyed by the agent-spec `backend` field
+ * (internal and undocumented — `src/sdk/agent-spec.ts`). A `Map`, not a
+ * plain object record: a forged `backend: "constructor"` must resolve to
+ * "not wired", never to a truthy prototype property that is not a backend.
  */
-async function runTurn(config, label, query, sessionId, contextPath, cwd, progress, maxIterations) {
+const BACKENDS = new Map([
+    ["rlmx", new LegacyRlmxBackend()],
+]);
+/**
+ * The prime backend, constructed lazily on first selection. Its constructor
+ * runs the version-pin check (`prime-agent --version` === 0.7.2), and a
+ * server that never selects prime must not pay for that — nor fail to start
+ * on a machine without the binary. A spec naming a backend this build has
+ * not wired fails loudly at call time, the same "no silent degradation"
+ * rule the spec parser applies to typos.
+ */
+let primeBackend;
+/**
+ * The backend a turn runs on.
+ *
+ * `rlmx_query` (the generic tool) has no agent spec and therefore no
+ * `backend` field: it always runs on the legacy backend, unconditionally —
+ * there is no selection path for it. Agents default to `rlmx` unless their
+ * spec names another backend.
+ */
+export function selectBackend(agent) {
+    const selected = agent?.spec.backend ?? "rlmx";
+    const backend = BACKENDS.get(selected) ??
+        (selected === "prime" ? (primeBackend ??= new PrimeBackend()) : undefined);
+    if (!backend) {
+        throw new Error(`agent "${agent?.name ?? "rlmx_query"}": backend "${selected}" is not wired into this build`);
+    }
+    return backend;
+}
+/**
+ * Run one turn on one backend. `query` is already the resume-folded prompt;
+ * `prompt` is the caller's own text, which is what gets recorded as the turn
+ * (a preamble must never be replayed inside the next preamble).
+ *
+ * `backend`/`agent` are the seam: the server no longer calls `rlmLoop` — it
+ * asks the selected backend to run, and the backend owns the engine. The
+ * backend emits bare progress messages ("iteration 3"); this wrapper owns the
+ * label prefix, the last-progress clock, and the idle heartbeat, so liveness
+ * and presentation stay server concerns while event translation stays the
+ * backend's.
+ */
+export async function runTurn(backend, agent, config, label, query, sessionId, contextPath, cwd, progress, maxIterations) {
     let context = null;
-    if (contextPath) {
-        const resolved = resolve(cwd, contextPath);
+    const contextRoot = contextPath ? resolve(cwd, contextPath) : undefined;
+    if (contextRoot) {
         const contextOpts = config.contextConfig
             ? {
                 extensions: config.contextConfig.extensions,
                 exclude: config.contextConfig.exclude,
             }
             : undefined;
-        context = await loadContext(resolved, contextOpts);
+        context = await loadContext(contextRoot, contextOpts);
     }
     let lastProgressAt = Date.now();
     const emit = progress
         ? (message) => {
             lastProgressAt = Date.now();
-            progress(message);
+            progress(`${label} · ${message}`);
         }
-        : undefined;
-    // Subscribe BEFORE the run so no early event is missed; rlmLoop closes the
-    // emitter when it finishes, which ends this loop.
-    let emitter;
-    if (progress) {
-        emitter = createEmitter();
-        const stream = emitter;
-        void (async () => {
-            let iterations = 0;
-            let spawns = 0;
-            try {
-                for await (const ev of stream) {
-                    switch (ev.type) {
-                        case "IterationStart":
-                            iterations += 1;
-                            emit?.(`${label} · iteration ${iterations}`);
-                            break;
-                        case "Recurse":
-                            spawns += 1;
-                            emit?.(`${label} · iteration ${iterations} · ${spawns} recursive spawn${spawns === 1 ? "" : "s"}`);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-            catch {
-                // A broken progress stream must never fail the run itself.
-            }
-        })();
-    }
+        : (_message) => { };
     const started = Date.now();
     // Heartbeat. Event-driven progress alone is not enough: a `single-step`
     // agent emits exactly one IterationStart and then goes quiet for the whole
@@ -585,19 +589,19 @@ async function runTurn(config, label, query, sessionId, contextPath, cwd, progre
             const idleMs = Date.now() - lastProgressAt;
             if (idleMs < HEARTBEAT_MS)
                 return; // real events already kept it alive
-            emit?.(`${label} · working ${Math.round((Date.now() - started) / 1000)}s`);
+            emit(`working ${Math.round((Date.now() - started) / 1000)}s`);
         }, HEARTBEAT_MS);
         heartbeat.unref();
     }
     try {
-        // output: "json" keeps rlmLoop off its stream-mode stdout path, which the
-        // MCP transport owns.
-        const result = await rlmLoop(query, context, config, {
-            output: "json",
-            ...(emitter ? { emitter } : {}),
+        const result = await backend.run(agent, {
+            query,
+            context,
+            config,
+            cwd,
+            contextRoot,
             ...(maxIterations !== undefined ? { maxIterations } : {}),
-            ...runTimeout(),
-        });
+        }, emit);
         const footer = formatFooter(label, config, result, Date.now() - started, sessionId);
         return {
             answer: result.answer,
@@ -734,12 +738,12 @@ export async function runMcp(cwd = process.cwd()) {
             const query = buildResumeQuery(session.turns, prompt);
             let outcome;
             if (agent) {
-                outcome = await runTurn(applyAgent(baseConfig, agent), `agent=${agent.name}`, query, session.id, contextPath, cwd, progress, agentMaxIterations(agent));
+                outcome = await runTurn(selectBackend(agent), agent, applyAgent(baseConfig, agent), `agent=${agent.name}`, query, session.id, contextPath, cwd, progress, agentMaxIterations(agent));
             }
             else {
                 const override = readArg(args?.model);
                 const config = override ? applyModelOverride(baseConfig, override) : baseConfig;
-                outcome = await runTurn(config, "query", query, session.id, contextPath, cwd, progress);
+                outcome = await runTurn(selectBackend(undefined), undefined, config, "query", query, session.id, contextPath, cwd, progress);
             }
             // The turn is recorded either way: an aborted turn is still history the
             // follow-up may need to reference, and the caller was told it happened.

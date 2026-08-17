@@ -101,6 +101,13 @@ export function parseAgentSpec(yamlText, dir) {
         throw new Error(`agent.yaml: thinking must be one of ${THINKING_LEVELS.join(" | ")}, ` +
             `got "${thinkingRaw}"`);
     }
+    // Same validate-don't-ignore rule as `thinking:`: a typo'd backend would
+    // silently fall back to the legacy engine and look like it worked, which
+    // is exactly the silent degradation a selection field must not allow.
+    const backendRaw = asString(r.backend);
+    if (backendRaw !== undefined && backendRaw !== "rlmx" && backendRaw !== "prime") {
+        throw new Error(`agent.yaml: backend must be one of rlmx | prime, got "${backendRaw}"`);
+    }
     // Build the "extras" bag by stripping the known keys from r.
     const known = new Set([
         "schema_version",
@@ -114,6 +121,7 @@ export function parseAgentSpec(yamlText, dir) {
         "thinking",
         "scope",
         "budget",
+        "backend",
     ]);
     const extras = {};
     for (const [k, v] of Object.entries(r)) {
@@ -131,6 +139,7 @@ export function parseAgentSpec(yamlText, dir) {
         thinking: thinkingRaw,
         scope: parseScope(r.scope),
         budget: parseBudget(r.budget),
+        backend: backendRaw,
         extras,
     };
 }
