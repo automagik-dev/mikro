@@ -3,10 +3,13 @@
 /**
  * Version bump script for rlmx.
  *
- * Format: 0.YYMMDD.N
- *   - 0       fixed major prefix
+ * Format: 1.YYMMDD.N
+ *   - 1       fixed major prefix (bumped from 0 on 2026-08-17 — v1 declares
+ *             the public surface production-ready; versions remain calendar
+ *             cuts and CHANGELOG.md remains the compatibility source. Old
+ *             v0.* tags stay in history; npm orders every 1.* above them.)
  *   - YYMMDD  today's date (UTC)
- *   - N       1-based daily build counter (highest existing v0.YYMMDD.* tag + 1)
+ *   - N       1-based daily build counter (highest existing v1.YYMMDD.* tag + 1)
  *
  * Env override: RLMX_BUILD_NUMBER — forces N to the given value.
  *
@@ -41,7 +44,7 @@ const root = join(__dirname, '..');
 // would make a count-based N collide with an existing tag forever after, and a
 // collision means `gh release create` fails and main ships without a release.
 function getHighestBuildNumber(datePrefix) {
-  const tagPrefix = `v0.${datePrefix}.`;
+  const tagPrefix = `v1.${datePrefix}.`;
   try {
     const output = execSync(`git tag --list "${tagPrefix}*"`, {
       encoding: 'utf-8',
@@ -67,7 +70,7 @@ function generateVersion() {
   const envBuild = process.env.RLMX_BUILD_NUMBER;
   const n = envBuild ? Number(envBuild) : getHighestBuildNumber(datePrefix) + 1;
 
-  return `0.${datePrefix}.${n}`;
+  return `1.${datePrefix}.${n}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -9,9 +9,10 @@ RLMX follows the Hermes/Genie install/update shape:
 
 ## Versioning
 
-rlmx uses **calendar versioning**, not semantic versioning: `0.YYMMDD.N`, where
+rlmx uses **calendar versioning**, not semantic versioning: `1.YYMMDD.N`, where
 `YYMMDD` is the **UTC** date of the build and `N` is one past the highest
-existing `v0.YYMMDD.*` tag. `scripts/version.mjs` computes it and syncs every
+existing `v1.YYMMDD.*` tag. (The fixed major was bumped `0` → `1` on
+2026-08-17; `v0.*` tags remain in history and every `1.*` orders above them.) `scripts/version.mjs` computes it and syncs every
 committed version location: `package.json`, `package-lock.json`,
 `src/version.ts`, and the committed build output `dist/src/version.js` and
 `dist/src/version.d.ts`.
