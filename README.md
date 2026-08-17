@@ -271,6 +271,9 @@ assumed:
 rlmx · agent=triage · station/Qwen3.6-35B-A3B-MTP-GGUF · 3 iterations · 307 in / 36 out · $0.00 · 3.9s
 ```
 
+(`$0.00` is correct, not broken: `station/` models run locally and have no
+per-token cost.)
+
 Protocol and recipe smokes, run manually — CI does not:
 `node scripts/smoke-mcp.mjs` (protocol) and `node scripts/smoke-explore.mjs`
 (the `explore` recipe end to end, citations resolved against this checkout).
@@ -1006,7 +1009,7 @@ console.log(result.references);
 
 rlmx uses **calendar versioning**: `0.YYMMDD.N`, where `YYMMDD` is the UTC build
 date and `N` is a daily counter. A version records *when* a build was cut and
-carries **no compatibility promise** — read `CHANGELOG.md`, not the version
+carries **no compatibility promise** — read [`CHANGELOG.md`](CHANGELOG.md), not the version
 delta, to learn about breaking changes. The release boundary is a PR merge into
 `main`, and the bump is **automatic** — CI derives the next version on merge and
 commits it, so do not hand-run `npm run bump-version` in a PR unless you intend
@@ -1015,4 +1018,4 @@ that reviewed version to be the released one. See
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for the full text.

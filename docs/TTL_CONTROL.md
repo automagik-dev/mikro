@@ -18,7 +18,7 @@ Anthropic supports explicit cache control via the `cache_control` header on mess
 - **`short`** (retention) → TTL rounds to **300 seconds** (5 minutes)
 - **`long`** (retention) → TTL rounds to **3600 seconds** (1 hour)
 
-Anthropic rounds all TTL values to the nearest supported increment (300s or 3600s). Setting `cache.ttl: 1800` in your config will be rounded up to 3600s by Anthropic.
+Anthropic rounds all TTL values to the nearest supported increment (300s or 3600s). Note: the `cache.ttl` field is parsed by config but **not yet wired through to the provider call** — only `retention` (as `cacheRetention`) and `sessionId` reach pi/ai (`src/llm.ts`); `ttl` is used only by the `rlmx cache --estimate` display.
 
 Cache hits return tokens in `usage.cacheRead`; initial caching reports tokens in `usage.cacheWrite`.
 
@@ -73,7 +73,7 @@ For fine-grained control, Google's `cachedContents` API allows creating named ca
 - **Format:** ISO 8601 duration or timestamp (e.g., `"2026-03-27T12:00:00Z"`)
 - Values outside the 1h–24h range will be rejected by Google's API.
 
-Explicit caching requires the `onPayload` hook in pi/ai to inject `cachedContent` references. This is an optional stretch goal for v0.3 MVP.
+Explicit caching requires the `onPayload` hook in pi/ai to inject `cachedContent` references. The hook exists and is used for other Gemini features (`src/llm.ts`), but `cachedContent` injection is not yet implemented — a future enhancement.
 
 ### Example config
 
@@ -131,8 +131,8 @@ cache:
   strategy: full             # Cache strategy — only "full" supported (default: full)
   retention: long            # "short" or "long" (default: long)
   session-prefix: my-project # Optional prefix for sessionId (default: none)
-  ttl: 3600                  # TTL in seconds — provider-specific (optional)
-  expire-time: "..."         # ISO 8601 expiry — Google explicit caching (optional)
+  ttl: 3600                  # Parsed but NOT yet wired to provider calls — only the cache --estimate display reads it
+  expire-time: "..."         # Parsed but NOT yet wired to provider calls (Google explicit caching is unimplemented)
 ```
 
 ## How sessionId Works
