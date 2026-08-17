@@ -14,3 +14,9 @@ rlmx v0.260817.1 dogfood, user `/goal` directive.
 - readme-polish: ok · 12 iter · $0.0059 — ```repl
 - total: $0.0159 across 3 agents
 
+## cycle-002 — 2026-08-17T02:06:47.994Z
+- agent-coach: ok · 12 iter · $0.0300 — ---
+- docs-drift: ok · 7 iter · $0.0100 — Target: docs/TTL_CONTROL.md
+- readme-polish: ERROR · 0 iter · $0.0200 — Error: RLM query timed out
+- total: $0.0600 across 3 agents
+
