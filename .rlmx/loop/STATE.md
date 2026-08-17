@@ -25,4 +25,8 @@ rlmx v0.260817.1 dogfood, user `/goal` directive.
 - docs-drift: ok · 12 iter · $0.0048 — Verdict: The document is largely accurate against the current source tree; all checked claims resolve correctly, with no
 - readme-polish: ok · 3 iter · $0.0000 — Verdict: A carefully maintained, accurate README — every concrete claim I spot-checked (models, paths, flags, exit codes
 - total: $0.0148 across 3 agents
+- CORRECTION (PR #126 review): readme-polish was actually 8 iter · $0.0095, cycle total
+  $0.0243 — the runner's footer regex matched a footer-shaped example QUOTED inside the
+  report (README.md:271's "3 iterations … $0.00") instead of the terminal footer. True
+  values are in the report file itself; the parser now takes the last match.
 

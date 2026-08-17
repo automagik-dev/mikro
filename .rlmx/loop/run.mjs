@@ -70,6 +70,11 @@ env.RLMX_REPL_TIMEOUT_MS ??= "120000";
 // task grew past-report re-verification. 480s stays under the runner's own
 // 560s per-call rail (src/mcp/backends/prime.ts primeDeadlineMs).
 env.RLMX_MCP_RUN_TIMEOUT_MS ??= "480000";
+// PR #126 review: pin the server's discovery to this colony's agent dir.
+// An inherited RLMX_AGENTS_DIR would REPLACE the default roots entirely
+// (src/mcp/agents.ts agentRoots), making every member call an unknown tool
+// while the runner still enumerates .rlmx/agents locally.
+env.RLMX_AGENTS_DIR = AGENTS_DIR;
 
 // ── members: active agent dirs that carry a TASK.md ─────────────────────────
 const members = readdirSync(AGENTS_DIR, { withFileTypes: true })
@@ -114,7 +119,11 @@ const FOOTER_RE =
 const rows = [];
 for (const name of members) {
   const task = readFileSync(join(AGENTS_DIR, name, "TASK.md"), "utf8").trim();
-  const tool = `rlmx_${name}`;
+  // Mirror the server's toToolName() (src/mcp/agents.ts): fold anything
+  // outside [a-z0-9_-] to "_" — a raw directory name like "Foo.Bar" is
+  // exposed as rlmx_foo_bar, not rlmx_Foo.Bar (PR #126 review).
+  const cleaned = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  const tool = `rlmx_${(cleaned || "agent").slice(0, 96)}`;
   console.error(`colony: → ${tool}`);
   let text = "";
   let isError = false;
@@ -135,7 +144,10 @@ for (const name of members) {
     text = `RUNNER ERROR: ${err?.message ?? err}`;
   }
   const wall = ((Date.now() - t0) / 1000).toFixed(1);
-  const f = FOOTER_RE.exec(text);
+  // Take the LAST footer-shaped match: reports may quote footer examples in
+  // their body (cycle-003 readme-polish quoted the README's own example and
+  // the journal recorded 3 iter / $0.00 instead of 8 / $0.0095 — PR #126).
+  const f = [...text.matchAll(new RegExp(FOOTER_RE, "g"))].at(-1);
   const usage = f
     ? { iter: +f[1], tokIn: f[2], tokOut: f[3], cost: +f[4], secs: +f[5] }
     : { iter: null, tokIn: "?", tokOut: "?", cost: 0, secs: +wall };
@@ -183,14 +195,19 @@ if (dryRun) {
 }
 const git = (...args) => execFileSync("git", ["-C", ROOT, ...args], { encoding: "utf8" });
 git("add", ".rlmx");
-const staged = git("diff", "--cached", "--name-only").trim();
+const staged = git("diff", "--cached", "--name-only", "--", ".rlmx").trim();
 if (!staged) {
   console.error("colony: nothing to commit");
   process.exit(0);
 }
 const subject = `chore(colony): ${cycleName} — ${rows.length} agents · $${total.toFixed(4)}`;
+// commitlint body-max-line-length is 100; prefix + slice(0, 72) stays under
+// it (the cycle-003 commit broke CI with full-width verdict lines — PR #126).
 const body = rows
-  .map((r) => `${r.name}: ${r.isError ? "ERROR" : "ok"} — ${r.firstLine.slice(0, 100)}`)
+  .map((r) => `${r.name}: ${r.isError ? "ERROR" : "ok"} — ${r.firstLine.slice(0, 72)}`)
   .join("\n");
-git("commit", "-m", subject, "-m", body);
+// Pathspec-limited commit: records ONLY .rlmx paths even if the caller had
+// unrelated work staged, and leaves that other index state untouched
+// (PR #126 review; the boundary .rlmx/loop/README.md promises).
+git("commit", "-m", subject, "-m", body, "--", ".rlmx");
 console.error(`colony: committed — ${git("log", "--oneline", "-1").trim()}`);
