@@ -69,12 +69,18 @@ def exists(*paths):
     for p in paths:
         print(f"{'OK  ' if os.path.exists(p) else 'MISSING'} {p}")
 
-# Rotation: audited targets come from your own past committed reports.
+# Rotation: audited targets come from your own past committed reports. Scan
+# every line for `Target:` — the loop runner prepends its own header to the
+# saved file, so your report's first line is not the file's first line
+# (cycle-002 re-audited an already-covered doc exactly because an earlier
+# version of this block read only line 1).
 audited = []
 for r in sorted(glob.glob(".rlmx/loop/reports/cycle-*/docs-drift.md")):
-    first = open(r, errors="replace").readline().strip()
-    m = re.match(r"Target:\s*(\S+)", first)
-    if m: audited.append(m.group(1))
+    for _line in open(r, errors="replace").read().split("\n"):
+        m = re.match(r"Target:\s*(\S+)", _line.strip())
+        if m:
+            audited.append(m.group(1))
+            break
 alldocs = sorted(glob.glob("docs/*.md"))
 pending = [d for d in alldocs if d not in audited] or alldocs
 target = pending[0]

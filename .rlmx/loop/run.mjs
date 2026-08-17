@@ -66,6 +66,10 @@ if (existsSync(gateEnv)) {
 // 120s covers exclusion-guarded greps with margin; explore-r-style recursion
 // would need 600000 (docs/agent-yaml-schema.md), but no member recurses.
 env.RLMX_REPL_TIMEOUT_MS ??= "120000";
+// cycle-002 lesson: readme-polish hit the 300s default run deadline once its
+// task grew past-report re-verification. 480s stays under the runner's own
+// 560s per-call rail (src/mcp/backends/prime.ts primeDeadlineMs).
+env.RLMX_MCP_RUN_TIMEOUT_MS ??= "480000";
 
 // ── members: active agent dirs that carry a TASK.md ─────────────────────────
 const members = readdirSync(AGENTS_DIR, { withFileTypes: true })

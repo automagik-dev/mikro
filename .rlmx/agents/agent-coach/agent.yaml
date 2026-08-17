@@ -31,9 +31,11 @@ description: >-
 system: SYSTEM.md
 
 budget:
-  # 12, same shape as readme-polish: read two documents in slices (a SYSTEM.md
-  # and a report), re-resolve sampled citations, verify, answer.
-  max_iterations: 12
+  # 14, raised from 12 on cycle-002 evidence: the first successful-status run
+  # burned 12/12 on reading (91,384 in / 44,489 out) and returned an EMPTY
+  # final answer — the same ran-to-rail-without-FINAL class readme-polish hit
+  # in cycle-001. Two more turns is the same remedy. A rail, not a target.
+  max_iterations: 14
   # 0.50 — the standard single-process rail (see readme-polish/agent.yaml).
   max_cost: 0.50
   # DECLARATIVE ONLY — NOT ENFORCED (applyAgent copies model/system/maxCost;
