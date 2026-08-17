@@ -55,7 +55,7 @@ repository, so it can never be the source of a line number.
 Copy this out as your **first** repl block, whole.
 
 ```repl
-import os, re, glob
+import os, re, glob, subprocess
 
 def read(path, start=1, end=None, limit=8000):
     """Print path[start:end] with real line numbers. Returns the lines."""
@@ -73,6 +73,17 @@ def latest_report(agent):
     hits = sorted(glob.glob(f".rlmx/loop/reports/cycle-*/{agent}.md"))
     print(hits[-1] if hits else f"(no report yet for {agent})")
     return hits[-1] if hits else None
+
+def grep(pattern, where=".", limit=6000):
+    """Search read-only — ALWAYS through this helper. A bare grep over the
+    tree walks node_modules and .git and is how a run dies on the REPL
+    timeout (cycle-001 killed the first agent-coach run exactly this way)."""
+    p = subprocess.run(["grep", "-rniE", "--exclude-dir=node_modules",
+                       "--exclude-dir=.git", "--exclude-dir=dist", pattern, where],
+                      capture_output=True, text=True)
+    out = p.stdout or p.stderr or "(no match)"
+    print(out[:limit] + (f"\n[truncated at {limit} of {len(out)} chars]" if len(out) > limit else ""))
+    return out
 
 def check_patch(path, old):
     """A PATCH is only proposable if its old text is verbatim in the file."""

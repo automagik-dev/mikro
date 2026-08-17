@@ -62,6 +62,10 @@ if (existsSync(gateEnv)) {
     env[m[1]] ??= m[2].trim().replace(/^["']|["']$/g, "");
   }
 }
+// cycle-001 lesson: the REPL's 30s default killed agent-coach mid-block.
+// 120s covers exclusion-guarded greps with margin; explore-r-style recursion
+// would need 600000 (docs/agent-yaml-schema.md), but no member recurses.
+env.RLMX_REPL_TIMEOUT_MS ??= "120000";
 
 // ── members: active agent dirs that carry a TASK.md ─────────────────────────
 const members = readdirSync(AGENTS_DIR, { withFileTypes: true })
@@ -132,7 +136,8 @@ for (const name of members) {
     ? { iter: +f[1], tokIn: f[2], tokOut: f[3], cost: +f[4], secs: +f[5] }
     : { iter: null, tokIn: "?", tokOut: "?", cost: 0, secs: +wall };
   const firstLine =
-    text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "(empty)";
+    text.split("\n").map((l) => l.trim())
+      .find((l) => l.length > 0 && !l.startsWith("```") && !/^FINAL\(/.test(l)) ?? "(empty)";
   rows.push({ name, isError, usage, firstLine });
 
   const header = [

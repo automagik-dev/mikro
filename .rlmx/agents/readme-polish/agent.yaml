@@ -39,12 +39,12 @@ description: >-
 system: SYSTEM.md
 
 budget:
-  # 12, from git-historian's 10 plus two turns of extra reading. Its path was
-  # orient, read, verify, answer over one log. This path reads a long document
-  # in slices (the README in this repo is ~1,000 lines) AND cross-checks its
-  # claims against source before the verification block, so two more turns of
-  # slack is the honest sizing. It is a rail, not a target.
-  max_iterations: 12
+  # 14, raised from 12 on cycle-001 evidence: TASK.md now adds re-verifying
+  # past findings from .rlmx/loop/reports/ (~2 turns), and the cycle-001 run
+  # consumed 12/12 and shipped its verification + FINAL blocks unexecuted —
+  # the report arrived wrapped in raw ```repl fences. 14 restores the slack
+  # the original sizing note called for. It is a rail, not a target.
+  max_iterations: 14
 
   # 0.50, unchanged from the skill default and git-historian's sizing: one
   # process, no children, ~order-30x headroom on khal/deepseek-v4-flash while
