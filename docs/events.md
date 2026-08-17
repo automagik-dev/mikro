@@ -33,7 +33,7 @@ for await (const ev of em) {
 }
 ```
 
-## Event catalogue (12 types)
+## Event catalogue (13 types)
 
 | `type`            | Emitted when                                          |
 | ----------------- | ----------------------------------------------------- |
@@ -122,7 +122,7 @@ if (!result.ok && sdk.shouldRetry(result, attempt)) {
 ## `runAgent()` — the wire (Group 2b)
 
 `runAgent(config)` takes an `AgentConfig` and returns an `EventStream`.
-Internally it drives an iteration loop, emits the 12 events, runs the
+Internally it drives an iteration loop, emits the 13 events, runs the
 permission chain before tool calls, validates `emit_done` payloads
 (with retry-once), and checkpoints to the session store.
 
