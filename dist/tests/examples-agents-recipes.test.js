@@ -10,8 +10,8 @@
  *      added later is covered without editing this file, and a recipe that is
  *      committed broken fails here rather than in a user's session.
  *   2. The three **archived** recipes — `changelog`, `codebase-qa`,
- *      `log-triage`, copied out of `~/.rlmx/agents/` on 2026-07-27 by wish
- *      `rlmx-microagent-plugin` (B5) — load with the exact shape, model and
+ *      `log-triage`, copied out of `~/.mikro/agents/` on 2026-07-27 by wish
+ *      `mikro-microagent-plugin` (B5) — load with the exact shape, model and
  *      budget they were archived with. These have no other gate: no smoke
  *      test, no parity arm, no scored suite covers them. Pinning the spec is
  *      the only regression floor they have, and an archive whose contents
@@ -65,7 +65,7 @@ describe("examples/agents — the recipe tree", () => {
             assert.equal(spec.model, STATION_MODEL, `${name}: model drifted`);
             assert.equal(spec.budget?.maxIterations, want.maxIterations, `${name}: budget.max_iterations drifted`);
             assert.equal(spec.systemPath, "SYSTEM.md", `${name}: system: drifted`);
-            // `shape: loop` is load-bearing for all three: rlmx externalizes
+            // `shape: loop` is load-bearing for all three: mikro externalizes
             // context into the REPL, so `single-step` answers before it has read
             // anything. Asserted by name so the failure says why.
             assert.notEqual(spec.shape, "single-step", `${name}: single-step answers before reading the input`);

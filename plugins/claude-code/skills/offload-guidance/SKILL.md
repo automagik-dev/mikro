@@ -1,13 +1,13 @@
 ---
 name: offload-guidance
-description: "ROUTING RULE — when the question asks where something lives, how something works, what handles X, or how Y flows through a repository you have not already read into context, call the rlmx microagent tool `rlmx_explore-r` (namespaced `mcp__plugin_rlmx_rlmx__rlmx_explore-r`) with the question as `prompt`, BEFORE running Grep/Glob/Read/Bash searches and BEFORE launching an Explore subagent. This rule outranks the habit of grepping first: it applies to multi-part questions even when each part looks small on its own, and the offloaded run costs this session almost none of its context, which is the entire reason to make it. Its citations are leads you then verify yourself. Read this skill for the protocol: the call shape and session resume, how to read the answer, and the three measured conditions that force escalation back to your own tools (citations that do not resolve; an errored or timed-out run; work where completeness matters more than cost). Read it also when an rlmx result comes back errored, uncited, or thin. Does not apply when the answer is already in context, the question is about one known line or a diff you just made, or the work is a mutation."
+description: "ROUTING RULE — when the question asks where something lives, how something works, what handles X, or how Y flows through a repository you have not already read into context, call the mikro microagent tool `mikro_explore-r` (namespaced `mcp__plugin_mikro_mikro__mikro_explore-r`) with the question as `prompt`, BEFORE running Grep/Glob/Read/Bash searches and BEFORE launching an Explore subagent. This rule outranks the habit of grepping first: it applies to multi-part questions even when each part looks small on its own, and the offloaded run costs this session almost none of its context, which is the entire reason to make it. Its citations are leads you then verify yourself. Read this skill for the protocol: the call shape and session resume, how to read the answer, and the three measured conditions that force escalation back to your own tools (citations that do not resolve; an errored or timed-out run; work where completeness matters more than cost). Read it also when an mikro result comes back errored, uncited, or thin. Does not apply when the answer is already in context, the question is about one known line or a diff you just made, or the work is a mutation."
 ---
 
-# Offloading exploration to rlmx
+# Offloading exploration to mikro
 
 ## The rule
 
-**Explore-class question → call `rlmx_explore-r` first. Treat its answer as a
+**Explore-class question → call `mikro_explore-r` first. Treat its answer as a
 lead, not as a finding. Escalate to your own tools the moment any of the three
 triggers below fires.**
 
@@ -17,7 +17,7 @@ triggers below fires.**
 pass does not have to be a verdict: it has to be cheaper than reading the tree
 yourself and honest about where it stops. Everything claimed below comes from
 that report, at the report's own scoping. Read
-`docs/parity-explore.md` in the rlmx repository before quoting any of it; if it
+`docs/parity-explore.md` in the mikro repository before quoting any of it; if it
 and this file disagree, the report wins.
 
 ## When to route
@@ -41,7 +41,7 @@ Do **not** route when:
 
 ## How to call it
 
-Tool: **`rlmx_explore-r`** (namespaced `mcp__plugin_rlmx_rlmx__rlmx_explore-r`
+Tool: **`mikro_explore-r`** (namespaced `mcp__plugin_mikro_mikro__mikro_explore-r`
 when it comes from this plugin). It explores the project directory the server
 was started with — the plugin passes `--dir ${CLAUDE_PROJECT_DIR}`, so that is
 your project root.
@@ -99,7 +99,7 @@ The recorded signature looks like this, verbatim from a real run record
 (`parity/round2/optimizer/gens/gen-4/rep-2/runs/task-5.json`):
 
 ```
-rlmx rlmx_explore-r failed: REPL execution timed out after 600000ms
+mikro mikro_explore-r failed: REPL execution timed out after 600000ms
 ```
 
 Sixty-seven characters, zero citations, after 650 seconds of wall clock. Lost
@@ -162,7 +162,7 @@ footer shows near-zero work is a run that did not explore.
 
 ## Provenance of these numbers
 
-Every figure above traces to `docs/parity-explore.md` in the rlmx repository at
+Every figure above traces to `docs/parity-explore.md` in the mikro repository at
 the line given, with that report's own scoping, and none is rounded up. The
 campaign evaluated **four generations and rejected a fifth** — gen-4, rejected
 because four training anchoring terms sit verbatim in its own prompt, so its one

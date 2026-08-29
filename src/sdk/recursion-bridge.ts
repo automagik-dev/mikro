@@ -142,7 +142,7 @@ export function createRecursionBridge(
 						phase: "recurse",
 						error: {
 							name: "ChildRlmError",
-							message: data.errorMessage ?? "child rlmx run failed",
+							message: data.errorMessage ?? "child mikro run failed",
 						},
 					}),
 				);

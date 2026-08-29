@@ -1,12 +1,12 @@
 /**
- * Stats query functions for rlmx observability data.
+ * Stats query functions for mikro observability data.
  *
- * Connects to the persistent pgserve data at ~/.rlmx/data to query
- * rlmx_sessions and rlmx_events tables. Starts pgserve temporarily,
+ * Connects to the persistent pgserve data at ~/.mikro/data to query
+ * mikro_sessions and mikro_events tables. Starts pgserve temporarily,
  * queries, then stops.
  */
 import { PgStorage } from "./storage.js";
-/** A session row from rlmx_sessions */
+/** A session row from mikro_sessions */
 export interface SessionRow {
     id: string;
     query: string;
@@ -21,7 +21,7 @@ export interface SessionRow {
     ended_at: string | null;
     duration_ms: number | null;
 }
-/** An event row from rlmx_events */
+/** An event row from mikro_events */
 export interface EventRow {
     id: number;
     iteration: number | null;

@@ -4,16 +4,16 @@
  * pi-ai ships a static registry of providers. Anything outside it — a
  * zero-data-retention gateway, a first-party endpoint pi-ai has not caught up
  * with, a self-hosted OpenAI-compatible server — used to be unreachable from
- * rlmx: `resolveModel` consulted the registry, two hand-coded special cases,
+ * mikro: `resolveModel` consulted the registry, two hand-coded special cases,
  * and then threw `Unknown model`.
  *
  * This module closes that gap. A provider declared under `providers:` in
- * `.rlmx/rlmx.yaml` (or `"providers"` in `~/.rlmx/settings.json`) becomes a
+ * `.mikro/mikro.yaml` (or `"providers"` in `~/.mikro/settings.json`) becomes a
  * first-class pi-ai provider — `<id>/<model>` resolves like any built-in —
  * with the base URL, API flavour, key env var, extra headers and model
  * catalog the operator wrote down. Nothing is hard-coded per vendor.
  *
- * Shape (rlmx.yaml — kebab-case; settings.json accepts the same keys or
+ * Shape (mikro.yaml — kebab-case; settings.json accepts the same keys or
  * camelCase):
  *
  * ```yaml
@@ -207,7 +207,7 @@ function parseModels(raw, source, path) {
 }
 /**
  * Parse the `providers:` block of a config file. `source` names the file for
- * error messages ("rlmx.yaml", "settings.json"). Returns an empty list for an
+ * error messages ("mikro.yaml", "settings.json"). Returns an empty list for an
  * absent block.
  */
 export function parseCustomProviders(raw, source) {
@@ -250,7 +250,7 @@ export function parseCustomProviders(raw, source) {
 }
 /**
  * Merge provider lists by id; a later list overrides an earlier one entirely
- * for the same id (a project's rlmx.yaml beats the global settings.json).
+ * for the same id (a project's mikro.yaml beats the global settings.json).
  */
 export function mergeCustomProviders(...lists) {
     const byId = new Map();
@@ -367,6 +367,6 @@ providerKnown = false) {
             `Check the model id against the provider's catalog, or declare it under providers.${provider}.models in config.`);
     }
     return (`Provider "${provider}" is not a built-in pi-ai provider and is not declared in config. ` +
-        `Declare it under providers: in .rlmx/rlmx.yaml or ~/.rlmx/settings.json, or run \`rlmx doctor\`.`);
+        `Declare it under providers: in .mikro/mikro.yaml or ~/.mikro/settings.json, or run \`mikro doctor\`.`);
 }
 //# sourceMappingURL=custom-providers.js.map

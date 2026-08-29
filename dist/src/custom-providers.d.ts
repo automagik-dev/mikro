@@ -4,16 +4,16 @@
  * pi-ai ships a static registry of providers. Anything outside it — a
  * zero-data-retention gateway, a first-party endpoint pi-ai has not caught up
  * with, a self-hosted OpenAI-compatible server — used to be unreachable from
- * rlmx: `resolveModel` consulted the registry, two hand-coded special cases,
+ * mikro: `resolveModel` consulted the registry, two hand-coded special cases,
  * and then threw `Unknown model`.
  *
  * This module closes that gap. A provider declared under `providers:` in
- * `.rlmx/rlmx.yaml` (or `"providers"` in `~/.rlmx/settings.json`) becomes a
+ * `.mikro/mikro.yaml` (or `"providers"` in `~/.mikro/settings.json`) becomes a
  * first-class pi-ai provider — `<id>/<model>` resolves like any built-in —
  * with the base URL, API flavour, key env var, extra headers and model
  * catalog the operator wrote down. Nothing is hard-coded per vendor.
  *
- * Shape (rlmx.yaml — kebab-case; settings.json accepts the same keys or
+ * Shape (mikro.yaml — kebab-case; settings.json accepts the same keys or
  * camelCase):
  *
  * ```yaml
@@ -66,7 +66,7 @@ export interface CustomModelConfig {
     /** Optional per-model header overrides (merged over provider headers). */
     headers?: Record<string, string>;
 }
-/** A provider declared in rlmx.yaml / settings.json. */
+/** A provider declared in mikro.yaml / settings.json. */
 export interface CustomProviderConfig {
     id: string;
     name: string;
@@ -79,13 +79,13 @@ export interface CustomProviderConfig {
 }
 /**
  * Parse the `providers:` block of a config file. `source` names the file for
- * error messages ("rlmx.yaml", "settings.json"). Returns an empty list for an
+ * error messages ("mikro.yaml", "settings.json"). Returns an empty list for an
  * absent block.
  */
 export declare function parseCustomProviders(raw: unknown, source: string): CustomProviderConfig[];
 /**
  * Merge provider lists by id; a later list overrides an earlier one entirely
- * for the same id (a project's rlmx.yaml beats the global settings.json).
+ * for the same id (a project's mikro.yaml beats the global settings.json).
  */
 export declare function mergeCustomProviders(...lists: readonly (readonly CustomProviderConfig[] | undefined)[]): CustomProviderConfig[];
 /** Convert a declared model to the pi-ai `Model` shape. */

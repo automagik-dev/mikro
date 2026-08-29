@@ -1,5 +1,5 @@
 """
-batteries.py — rlmx built-in power tools.
+batteries.py — mikro built-in power tools.
 
 Convenience functions that save the LLM 1-2 iterations of boilerplate.
 Stdlib only — no external dependencies.
@@ -265,7 +265,7 @@ def reduce_query(results, prompt):
 def run_cli(cmd, *args, timeout=10, check=False, input=None):
     """Run a CLI command, auto-prefixing `rtk` when available + enabled.
 
-    When RTK (Rust Token Killer) is installed and `rtk.enabled` in rlmx.yaml
+    When RTK (Rust Token Killer) is installed and `rtk.enabled` in mikro.yaml
     resolves to "on" for this session, the command is silently wrapped as
     `rtk <cmd> <args...>` to gain 60-90% token compression on captured output.
     Otherwise the command runs directly.
@@ -278,7 +278,7 @@ def run_cli(cmd, *args, timeout=10, check=False, input=None):
     import os
     import subprocess
 
-    mode = os.environ.get("_RLMX_RTK_MODE", "off")
+    mode = os.environ.get("_MIKRO_RTK_MODE", "off")
     prefixed = mode == "on" and cmd != "rtk"
     full_cmd = ["rtk", cmd, *args] if prefixed else [cmd, *args]
 

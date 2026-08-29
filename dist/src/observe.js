@@ -1,8 +1,8 @@
 /**
  * ObservabilityRecorder — fire-and-forget event recording to pgserve.
  *
- * Records every LLM call, REPL execution, and sub-call into rlmx_sessions
- * and rlmx_events tables. All methods are fire-and-forget: errors are logged
+ * Records every LLM call, REPL execution, and sub-call into mikro_sessions
+ * and mikro_events tables. All methods are fire-and-forget: errors are logged
  * to stderr but never thrown or block the main RLM loop.
  */
 export class ObservabilityRecorder {
@@ -27,7 +27,7 @@ export class ObservabilityRecorder {
             const client = this.storage.getClient();
             if (!client)
                 return;
-            await client.query(`INSERT INTO rlmx_sessions (id, query, context_path, model, provider, config)
+            await client.query(`INSERT INTO mikro_sessions (id, query, context_path, model, provider, config)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (id) DO NOTHING`, [runId, query, contextPath ?? null, model, provider, config ? JSON.stringify(config) : null]);
         });
@@ -45,7 +45,7 @@ export class ObservabilityRecorder {
             const client = this.storage.getClient();
             if (!client || !capturedSessionId)
                 return;
-            await client.query(`INSERT INTO rlmx_events (session_id, iteration, kind, input_tokens, output_tokens, cost, model, duration_ms)
+            await client.query(`INSERT INTO mikro_events (session_id, iteration, kind, input_tokens, output_tokens, cost, model, duration_ms)
          VALUES ($1, $2, 'llm_call', $3, $4, $5, $6, $7)`, [capturedSessionId, iteration, usage.inputTokens, usage.outputTokens, usage.cost, model, durationMs]);
         });
     }
@@ -60,7 +60,7 @@ export class ObservabilityRecorder {
             const client = this.storage.getClient();
             if (!client || !capturedSessionId)
                 return;
-            await client.query(`INSERT INTO rlmx_events (session_id, iteration, kind, code, stdout, stderr, duration_ms, is_error, error_message)
+            await client.query(`INSERT INTO mikro_events (session_id, iteration, kind, code, stdout, stderr, duration_ms, is_error, error_message)
          VALUES ($1, $2, 'repl_exec', $3, $4, $5, $6, $7, $8)`, [
                 capturedSessionId, iteration,
                 code.slice(0, 10000), stdout.slice(0, 10000), stderr.slice(0, 5000),
@@ -79,7 +79,7 @@ export class ObservabilityRecorder {
             const client = this.storage.getClient();
             if (!client || !capturedSessionId)
                 return;
-            await client.query(`INSERT INTO rlmx_events (session_id, iteration, kind, request_type, prompt_preview, duration_ms, is_error, error_message)
+            await client.query(`INSERT INTO mikro_events (session_id, iteration, kind, request_type, prompt_preview, duration_ms, is_error, error_message)
          VALUES ($1, $2, 'sub_call', $3, $4, $5, $6, $7)`, [
                 capturedSessionId, iteration,
                 requestType, promptPreview.slice(0, 500),
@@ -103,7 +103,7 @@ export class ObservabilityRecorder {
             const client = this.storage.getClient();
             if (!client || !capturedSessionId)
                 return;
-            await client.query(`UPDATE rlmx_sessions SET
+            await client.query(`UPDATE mikro_sessions SET
            status = 'completed',
            ended_at = now(),
            iterations = $2,
@@ -131,7 +131,7 @@ export class ObservabilityRecorder {
             const client = this.storage.getClient();
             if (!client || !capturedSessionId)
                 return;
-            await client.query(`UPDATE rlmx_sessions SET status = 'failed', ended_at = now(), budget_hit = $2 WHERE id = $1`, [capturedSessionId, errorMessage.slice(0, 500)]);
+            await client.query(`UPDATE mikro_sessions SET status = 'failed', ended_at = now(), budget_hit = $2 WHERE id = $1`, [capturedSessionId, errorMessage.slice(0, 500)]);
         });
     }
     /**
@@ -141,7 +141,7 @@ export class ObservabilityRecorder {
      */
     fire(fn) {
         this.writeQueue = this.writeQueue.then(fn).catch((err) => {
-            process.stderr.write(`rlmx: observability recording error: ${err instanceof Error ? err.message : String(err)}\n`);
+            process.stderr.write(`mikro: observability recording error: ${err instanceof Error ? err.message : String(err)}\n`);
         });
     }
     /**

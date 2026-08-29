@@ -1,5 +1,5 @@
 /**
- * Microagent discovery gate — `rlmx mcp`.
+ * Microagent discovery gate — `mikro mcp`.
  *
  * Deterministic, no-LLM proofs for the discovery contract that a live MCP
  * smoke cannot pin down precisely:
@@ -53,12 +53,12 @@ describe("toToolName", () => {
         for (const name of hostile) {
             const tool = toToolName(name);
             assert.match(tool, MCP_TOOL_NAME, `${JSON.stringify(name)} produced illegal tool name ${JSON.stringify(tool)}`);
-            assert.ok(tool.startsWith("rlmx_"), `${tool} lost its prefix`);
+            assert.ok(tool.startsWith("mikro_"), `${tool} lost its prefix`);
         }
     });
     it("never collapses to a bare prefix", () => {
         // "___" sanitizes to empty; it must still yield a usable tool name.
-        assert.equal(toToolName("___"), "rlmx_agent");
+        assert.equal(toToolName("___"), "mikro_agent");
     });
 });
 describe("splitModel", () => {
@@ -83,9 +83,9 @@ describe("discoverAgents", () => {
     let tmp;
     let globalRoot;
     let projectRoot;
-    const prevEnv = process.env.RLMX_AGENTS_DIR;
+    const prevEnv = process.env.MIKRO_AGENTS_DIR;
     before(() => {
-        tmp = mkdtempSync(join(tmpdir(), "rlmx-mcp-agents-"));
+        tmp = mkdtempSync(join(tmpdir(), "mikro-mcp-agents-"));
         globalRoot = join(tmp, "global");
         projectRoot = join(tmp, "project");
         mkdirSync(globalRoot, { recursive: true });
@@ -100,13 +100,13 @@ describe("discoverAgents", () => {
         writeFileSync(join(brokenDir, "agent.yaml"), "shape: [unclosed\n", "utf-8");
         // A directory with no agent.yaml at all is simply not an agent.
         mkdirSync(join(projectRoot, "not-an-agent"), { recursive: true });
-        process.env.RLMX_AGENTS_DIR = `${globalRoot}:${projectRoot}`;
+        process.env.MIKRO_AGENTS_DIR = `${globalRoot}:${projectRoot}`;
     });
     after(() => {
         if (prevEnv === undefined)
-            delete process.env.RLMX_AGENTS_DIR;
+            delete process.env.MIKRO_AGENTS_DIR;
         else
-            process.env.RLMX_AGENTS_DIR = prevEnv;
+            process.env.MIKRO_AGENTS_DIR = prevEnv;
         rmSync(tmp, { recursive: true, force: true });
     });
     it("skips broken and non-agent directories without failing", async () => {
@@ -138,7 +138,7 @@ describe("discoverAgents", () => {
         const writer = agents.find((a) => a.name === "test writer");
         assert.ok(writer);
         assert.equal(writer.summary, "Writes unit tests for a module.");
-        assert.equal(writer.toolName, "rlmx_test_writer");
+        assert.equal(writer.toolName, "mikro_test_writer");
     });
     it("falls back to the system prompt, skipping a heading that repeats the name", async () => {
         const agents = await discoverAgents(tmp);
@@ -162,7 +162,7 @@ describe("isProposedDir", () => {
     });
 });
 /**
- * The propose-only boundary (wish `rlmx-microagent-plugin`, decision 3).
+ * The propose-only boundary (wish `mikro-microagent-plugin`, decision 3).
  *
  * `/microagent-create` mines transcripts and writes a *draft* agent it must
  * not be able to run. Approval is the user renaming the directory, which only
@@ -179,54 +179,54 @@ describe("isProposedDir", () => {
 describe("discoverAgents — .proposed drafts", () => {
     let tmp;
     let root;
-    const prevEnv = process.env.RLMX_AGENTS_DIR;
+    const prevEnv = process.env.MIKRO_AGENTS_DIR;
     /** A complete, loadable agent — the kind `/microagent-create` writes. */
     const DRAFT_YAML = "schema_version: 1\ntools_api: 1\nshape: loop\nmodel: khal/deepseek-v4-flash\n" +
         "description: Draft mined from transcripts; awaiting approval.\nsystem: SYSTEM.md\n";
     before(() => {
-        tmp = mkdtempSync(join(tmpdir(), "rlmx-proposed-"));
+        tmp = mkdtempSync(join(tmpdir(), "mikro-proposed-"));
         root = join(tmp, "agents");
         mkdirSync(root, { recursive: true });
         writeAgent(root, "review-lite.proposed", DRAFT_YAML, "# review-lite\n\nDrafted.\n");
         // An approved agent alongside it: the skip must be surgical, not a
         // blanket refusal to discover anything in a root that holds a draft.
         writeAgent(root, "explore-r", "schema_version: 1\nshape: recurse\ndescription: Approved explorer.\n");
-        process.env.RLMX_AGENTS_DIR = root;
+        process.env.MIKRO_AGENTS_DIR = root;
     });
     after(() => {
         if (prevEnv === undefined)
-            delete process.env.RLMX_AGENTS_DIR;
+            delete process.env.MIKRO_AGENTS_DIR;
         else
-            process.env.RLMX_AGENTS_DIR = prevEnv;
+            process.env.MIKRO_AGENTS_DIR = prevEnv;
         rmSync(tmp, { recursive: true, force: true });
     });
     it("does not list a valid draft, and still lists its approved neighbour", async () => {
         const agents = await discoverAgents(tmp);
         assert.deepEqual(agents.map((a) => a.name), ["explore-r"], "a .proposed draft must not appear in the tool list");
-        assert.ok(!agents.some((a) => a.toolName === "rlmx_review-lite_proposed"), "the leak this rule closes is the draft surfacing as rlmx_<name>_proposed");
+        assert.ok(!agents.some((a) => a.toolName === "mikro_review-lite_proposed"), "the leak this rule closes is the draft surfacing as mikro_<name>_proposed");
     });
     it("does not make a valid draft callable", async () => {
         // `byToolName` IS the dispatch lookup: server.ts:771 answers tools/call
         // from it, so absence here is what "not callable" means mechanically.
         const registry = createAgentRegistry(() => discoverAgents(tmp));
         const scan = await registry.refresh();
-        assert.equal(scan.byToolName.has("rlmx_review-lite_proposed"), false, "an unapproved draft must not be dispatchable");
+        assert.equal(scan.byToolName.has("mikro_review-lite_proposed"), false, "an unapproved draft must not be dispatchable");
         assert.equal(scan.byToolName.size, scan.agents.length);
-        assert.ok(scan.byToolName.has("rlmx_explore-r"), "the approved agent stays callable");
+        assert.ok(scan.byToolName.has("mikro_explore-r"), "the approved agent stays callable");
     });
     it("activates the draft on rename, live, without a reconnect", async () => {
         // One registry, never re-created — the same object a connected server
         // holds for the life of the connection (src/mcp/server.ts:704).
         const registry = createAgentRegistry(() => discoverAgents(tmp));
         const asDraft = await registry.refresh();
-        assert.equal(asDraft.byToolName.has("rlmx_review-lite"), false);
+        assert.equal(asDraft.byToolName.has("mikro_review-lite"), false);
         // The approval step, and the only one: a rename performed by the user.
         renameSync(join(root, "review-lite.proposed"), join(root, "review-lite"));
         const approved = await registry.refresh();
         assert.ok(approved.agents.some((a) => a.name === "review-lite"), "renaming a draft must publish it");
-        assert.ok(approved.byToolName.has("rlmx_review-lite"), "and must make it callable on that same scan");
+        assert.ok(approved.byToolName.has("mikro_review-lite"), "and must make it callable on that same scan");
         assert.equal(approved.changed, true, "the set changed, so the server emits tools/list_changed rather than waiting for a reconnect");
-        assert.equal(approved.byToolName.get("rlmx_review-lite")?.spec.model, "khal/deepseek-v4-flash", "the approved agent is the very file that was drafted");
+        assert.equal(approved.byToolName.get("mikro_review-lite")?.spec.model, "khal/deepseek-v4-flash", "the approved agent is the very file that was drafted");
         // Restore the fixture so this suite's tests stay order-independent.
         renameSync(join(root, "review-lite"), join(root, "review-lite.proposed"));
     });
@@ -248,21 +248,21 @@ describe("discoverAgents — .proposed drafts", () => {
 describe("discoverAgents — thinking:", () => {
     let tmp;
     let root;
-    const prevEnv = process.env.RLMX_AGENTS_DIR;
+    const prevEnv = process.env.MIKRO_AGENTS_DIR;
     before(() => {
-        tmp = mkdtempSync(join(tmpdir(), "rlmx-mcp-thinking-"));
+        tmp = mkdtempSync(join(tmpdir(), "mikro-mcp-thinking-"));
         root = join(tmp, "agents");
         mkdirSync(root, { recursive: true });
         writeAgent(root, "deep", "schema_version: 1\nshape: loop\nthinking: high\n", "Deep.\n");
         writeAgent(root, "cheap", "schema_version: 1\nshape: single-step\n", "Cheap.\n");
         writeAgent(root, "typo", "schema_version: 1\nshape: loop\nthinking: hgih\n", "Typo.\n");
-        process.env.RLMX_AGENTS_DIR = root;
+        process.env.MIKRO_AGENTS_DIR = root;
     });
     after(() => {
         if (prevEnv === undefined)
-            delete process.env.RLMX_AGENTS_DIR;
+            delete process.env.MIKRO_AGENTS_DIR;
         else
-            process.env.RLMX_AGENTS_DIR = prevEnv;
+            process.env.MIKRO_AGENTS_DIR = prevEnv;
         rmSync(tmp, { recursive: true, force: true });
     });
     /**
@@ -329,7 +329,7 @@ describe("discoverAgents — thinking:", () => {
 describe("agentMaxIterations", () => {
     const asAgent = (shape, maxIterations) => ({
         name: "t",
-        toolName: "rlmx_t",
+        toolName: "mikro_t",
         dir: "/tmp/t",
         summary: "t",
         spec: {
@@ -359,7 +359,7 @@ describe("agentMaxIterations", () => {
  *
  * The regression: `applyAgent` spread the ambient `config.model` and replaced
  * only provider + model, so an agent on `khal/deepseek-v4-flash` under a root
- * whose rlmx.yaml sets `sub-call-model: gemini-3.1-flash-lite-preview` ran
+ * whose mikro.yaml sets `sub-call-model: gemini-3.1-flash-lite-preview` ran
  * with `provider: khal` and a Google sub-call id. A bare `llm_query(p)` inside
  * the agent then died with `Unknown model "gemini-3.1-flash-lite-preview" for
  * provider "khal"` — and, because the REPL turns handler throws into ordinary
@@ -380,7 +380,7 @@ describe("applyAgent model inheritance", () => {
     });
     const agentWith = (spec) => ({
         name: "explore-r",
-        toolName: "rlmx_explore-r",
+        toolName: "mikro_explore-r",
         dir: "/tmp/explore-r",
         summary: "explore-r",
         spec: { dir: "/tmp/explore-r", schemaVersion: 1, toolsApi: 1, shape: "recurse", tools: [], extras: {}, ...spec },
@@ -444,7 +444,7 @@ describe("applyAgent model inheritance", () => {
             assert.equal(next.gemini.thinkingLevel, "medium");
             assert.equal(next.gemini, config.gemini, "should not clone needlessly");
         });
-        it("outranks an ambient rlmx.yaml level, like the CLI flag does", () => {
+        it("outranks an ambient mikro.yaml level, like the CLI flag does", () => {
             const config = ambient();
             config.gemini.thinkingLevel = "minimal";
             const next = applyAgent(config, agentWith({ thinking: "high" }));
@@ -493,7 +493,7 @@ describe("createAgentRegistry", () => {
             assert.equal(scan.byToolName.get(agent.toolName), agent, `${agent.toolName} is advertised but missing from the call lookup`);
         }
         assert.equal(scan.byToolName.size, scan.agents.length);
-        assert.ok(scan.byToolName.has("rlmx_explore"), "the new agent must be callable at once");
+        assert.ok(scan.byToolName.has("mikro_explore"), "the new agent must be callable at once");
     });
     it("reports an added agent once, then goes quiet", async () => {
         let agents = [fakeAgent("triage")];
@@ -510,8 +510,8 @@ describe("createAgentRegistry", () => {
         agents = [fakeAgent("triage")];
         const scan = await registry.refresh();
         assert.equal(scan.changed, true);
-        assert.deepEqual(scan.removed, ["rlmx_explore"]);
-        assert.equal(scan.byToolName.has("rlmx_explore"), false, "a deleted agent must stop dispatching");
+        assert.deepEqual(scan.removed, ["mikro_explore"]);
+        assert.equal(scan.byToolName.has("mikro_explore"), false, "a deleted agent must stop dispatching");
     });
     it("treats a modified spec as unchanged — the set is the same", async () => {
         let agents = [fakeAgent("triage", "station/Brain-35B")];
@@ -521,7 +521,7 @@ describe("createAgentRegistry", () => {
         const scan = await registry.refresh();
         assert.equal(scan.changed, false, "an edited agent.yaml is not a tool-set change");
         // …but the current spec is what gets dispatched.
-        assert.equal(scan.byToolName.get("rlmx_triage")?.spec.model, "khal/deepseek-v4-flash");
+        assert.equal(scan.byToolName.get("mikro_triage")?.spec.model, "khal/deepseek-v4-flash");
     });
     it("reports a concurrent double-scan of the same change only once", async () => {
         let agents = [fakeAgent("triage")];
@@ -576,7 +576,7 @@ describe("createAgentRegistry", () => {
         }
         assert.equal([a, b].filter((s) => s.changed).length, 1, "the added agent must be reported exactly once");
         assert.equal(after.changed, false, "no duplicate re-announcement on the next refresh");
-        assert.ok(after.byToolName.has("rlmx_explore"), "the newest scan must win the baseline");
+        assert.ok(after.byToolName.has("mikro_explore"), "the newest scan must win the baseline");
     });
 });
 /**
@@ -587,15 +587,15 @@ describe("createAgentRegistry", () => {
 describe("McpSessionStore", () => {
     it("binds a session to the tool that created it", () => {
         const store = new McpSessionStore();
-        const session = store.create("rlmx_explore");
-        assert.equal(session.toolName, "rlmx_explore");
-        assert.equal(store.get(session.id)?.toolName, "rlmx_explore");
+        const session = store.create("mikro_explore");
+        assert.equal(session.toolName, "mikro_explore");
+        assert.equal(store.get(session.id)?.toolName, "mikro_explore");
         assert.match(session.id, /^sess_[0-9a-f]{16}$/);
     });
     it("expires a session once its TTL has passed", () => {
         let now = 1_000;
         const store = new McpSessionStore({ ttlMs: 100, now: () => now });
-        const session = store.create("rlmx_query");
+        const session = store.create("mikro_query");
         now = 1_099;
         assert.ok(store.get(session.id), "a session inside its TTL must survive");
         now = 1_300;
@@ -605,7 +605,7 @@ describe("McpSessionStore", () => {
     it("keeps a session alive while it is being used", () => {
         let now = 1_000;
         const store = new McpSessionStore({ ttlMs: 100, now: () => now });
-        const session = store.create("rlmx_query");
+        const session = store.create("mikro_query");
         now = 1_050;
         store.get(session.id); // a use refreshes the clock
         now = 1_120;
@@ -616,9 +616,9 @@ describe("McpSessionStore", () => {
         const ids = [];
         const store = new McpSessionStore({ maxSessions: 3, now: () => ++now });
         for (let i = 0; i < 3; i++)
-            ids.push(store.create("rlmx_query").id);
+            ids.push(store.create("mikro_query").id);
         store.get(ids[1]); // touch the middle one so the oldest is ids[0]
-        const fresh = store.create("rlmx_query");
+        const fresh = store.create("mikro_query");
         assert.equal(store.size, 3, "the cap must hold");
         assert.equal(store.get(ids[0]), undefined, "the least-recently-used session goes first");
         assert.ok(store.get(ids[1]), "a recently-touched session survives");
@@ -627,32 +627,32 @@ describe("McpSessionStore", () => {
     it("never evicts a session with a call in flight", () => {
         let now = 0;
         const store = new McpSessionStore({ maxSessions: 2, now: () => ++now });
-        const busy = store.create("rlmx_query");
+        const busy = store.create("mikro_query");
         busy.busy = true;
-        const idle = store.create("rlmx_query");
-        store.create("rlmx_query");
+        const idle = store.create("mikro_query");
+        store.create("mikro_query");
         assert.ok(store.get(busy.id), "an in-flight session must not be evicted under it");
         assert.equal(store.get(idle.id), undefined, "the idle session is the eviction candidate");
     });
     it("does not expire a session while its call is in flight", () => {
         let now = 1_000;
         const store = new McpSessionStore({ ttlMs: 10, now: () => now });
-        const session = store.create("rlmx_query");
+        const session = store.create("mikro_query");
         session.busy = true;
         now = 5_000;
         assert.ok(store.get(session.id), "a long call must not have its own session swept");
     });
     it("evicts orphans when their agent disappears", () => {
         const store = new McpSessionStore();
-        const gone = store.create("rlmx_explore");
-        const kept = store.create("rlmx_query");
-        assert.equal(store.evictTools(["rlmx_explore"]), 1);
+        const gone = store.create("mikro_explore");
+        const kept = store.create("mikro_query");
+        assert.equal(store.evictTools(["mikro_explore"]), 1);
         assert.equal(store.get(gone.id), undefined, "a deleted agent's sessions are unreachable");
         assert.ok(store.get(kept.id), "sessions on surviving tools are untouched");
     });
     it("bounds the turn history it retains", () => {
         const store = new McpSessionStore({ maxTurns: 2 });
-        const session = store.create("rlmx_query");
+        const session = store.create("mikro_query");
         for (const n of ["one", "two", "three"]) {
             store.record(session, { prompt: n, answer: `${n}!` });
         }
@@ -735,7 +735,7 @@ describe("tool output contract", () => {
     it("declares that same contract on every advertised tool", () => {
         const agent = {
             name: "triage",
-            toolName: "rlmx_triage",
+            toolName: "mikro_triage",
             dir: "/tmp/triage",
             summary: "Classifies inbound issues.",
             spec: {
@@ -748,24 +748,24 @@ describe("tool output contract", () => {
             },
         };
         const tools = buildToolList([agent]);
-        assert.deepEqual(tools.map((t) => t.name), ["rlmx_query", "rlmx_triage"], "the generic tool plus one tool per agent");
+        assert.deepEqual(tools.map((t) => t.name), ["mikro_query", "mikro_triage"], "the generic tool plus one tool per agent");
         for (const tool of tools) {
             assert.deepEqual(tool.outputSchema, toolOutputSchema(), `${tool.name} must advertise the same output contract as every other tool`);
         }
     });
     it("carries the answer in structuredContent on a successful call", () => {
         const text = "Two call sites: src/a.ts:10, src/b.ts:20.\n\n---\n" +
-            `rlmx · query · station/Brain-4B · 2 iterations · 900 in / 40 out · $0.00 · 3.1s · session ${SESSION_ID}`;
+            `mikro · query · station/Brain-4B · 2 iterations · 900 in / 40 out · $0.00 · 3.1s · session ${SESSION_ID}`;
         const result = sessionResult(text, SESSION_ID);
         assert.equal(result.isError, false);
         assert.equal(result.structuredContent?.answer, text, "a host reading only structuredContent must still get the answer");
         assert.equal(result.structuredContent?.session_id, SESSION_ID);
         assert.equal(result.structuredContent?.answer, textOf(result), "the structured answer and the text block must not drift");
-        assert.match(String(result.structuredContent?.answer), /rlmx · /, "the cost footer rides along, so the offload stays visible on either channel");
+        assert.match(String(result.structuredContent?.answer), /mikro · /, "the cost footer rides along, so the offload stays visible on either channel");
         assertSatisfiesOutputSchema(result, "success");
     });
     it("carries the failure message in structuredContent on a failed call", () => {
-        const text = "rlmx rlmx_triage failed: connect ECONNREFUSED 127.0.0.1:8080";
+        const text = "mikro mikro_triage failed: connect ECONNREFUSED 127.0.0.1:8080";
         const result = sessionResult(text, SESSION_ID, true);
         assert.equal(result.isError, true);
         assert.equal(result.structuredContent?.answer, text, "a host reading only structuredContent must still learn why the call failed");
@@ -774,7 +774,7 @@ describe("tool output contract", () => {
         assertSatisfiesOutputSchema(result, "error");
     });
     it("omits structuredContent only where no session exists to report", () => {
-        const result = textResult('rlmx_query: "prompt" is required', true);
+        const result = textResult('mikro_query: "prompt" is required', true);
         assert.equal(result.structuredContent, undefined, "a pre-session failure has no session_id, and the schema requires one");
         assert.equal(result.isError, true, "omitting structuredContent is legal only on an error result");
     });

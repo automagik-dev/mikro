@@ -12,12 +12,12 @@ import { rlmLoop } from "../../rlm.js";
 import type { Microagent } from "../agents.js";
 import type { BackendRequest, MicroagentResult, RuntimeBackend } from "../backend.js";
 /** Test seam: alternate engine loop (the contract test injects a stub). */
-export interface LegacyRlmxBackendOptions {
+export interface LegacyMikroBackendOptions {
     readonly loop?: typeof rlmLoop;
 }
-export declare class LegacyRlmxBackend implements RuntimeBackend {
+export declare class LegacyMikroBackend implements RuntimeBackend {
     private readonly loop;
-    constructor(options?: LegacyRlmxBackendOptions);
+    constructor(options?: LegacyMikroBackendOptions);
     run(_agent: Microagent | undefined, request: BackendRequest, emit: (message: string) => void): Promise<MicroagentResult>;
 }
 //# sourceMappingURL=legacy.d.ts.map

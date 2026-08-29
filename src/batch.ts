@@ -8,7 +8,7 @@
 
 import { readFile } from "node:fs/promises";
 import { rlmLoop, type RLMOptions } from "./rlm.js";
-import type { RlmxConfig } from "./config.js";
+import type { MikroConfig } from "./config.js";
 import type { LoadedContext } from "./context.js";
 import { isGoogleProvider } from "./gemini.js";
 import { validateContextSize } from "./cache.js";
@@ -51,7 +51,7 @@ export interface BatchOptions extends Partial<RLMOptions> {
 export async function runBatch(
   questionsFile: string,
   context: LoadedContext | null,
-  config: RlmxConfig,
+  config: MikroConfig,
   options: BatchOptions = {}
 ): Promise<void> {
   // Read questions from file (one per line, skip empty lines and comments)
@@ -62,7 +62,7 @@ export async function runBatch(
     .filter((q) => q.length > 0 && !q.startsWith("#"));
 
   if (questions.length === 0) {
-    console.error("rlmx batch: no questions found in file");
+    console.error("mikro batch: no questions found in file");
     process.exit(1);
   }
 
@@ -70,19 +70,19 @@ export async function runBatch(
   if (options.batchApi) {
     if (!isGoogleProvider(config.model.provider)) {
       console.error(
-        `rlmx batch: --batch-api requires provider: google. Current provider: ${config.model.provider}`
+        `mikro batch: --batch-api requires provider: google. Current provider: ${config.model.provider}`
       );
       process.exit(1);
     }
     console.error(
-      `rlmx batch: Gemini Batch API mode — ${questions.length} questions will be submitted as a batch job`
+      `mikro batch: Gemini Batch API mode — ${questions.length} questions will be submitted as a batch job`
     );
     // TODO: Implement Gemini Batch API integration via @google/genai BatchClient
     // The Batch API submits all questions as a single job and polls for results,
     // providing 50% cost reduction on input/output tokens.
     // For now, fall through to standard batching with a cost discount note.
     console.error(
-      "rlmx batch: Gemini Batch API is not yet fully implemented. Using standard batching."
+      "mikro batch: Gemini Batch API is not yet fully implemented. Using standard batching."
     );
   }
 
@@ -94,7 +94,7 @@ export async function runBatch(
     // Check budget — stop if cumulative cost exceeds maxCost
     if (options.maxCost && totalCost >= options.maxCost) {
       console.error(
-        `rlmx batch: budget exceeded ($${totalCost.toFixed(4)} >= $${options.maxCost.toFixed(4)}), stopping after ${completed}/${questions.length} questions`
+        `mikro batch: budget exceeded ($${totalCost.toFixed(4)} >= $${options.maxCost.toFixed(4)}), stopping after ${completed}/${questions.length} questions`
       );
       break;
     }

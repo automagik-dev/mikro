@@ -4,7 +4,7 @@
  * Exposes `rtk` (Rust Token Killer) as a first-class entry in the
  * SDK tool registry. When the `rtk` binary is on PATH, the plugin
  * shells out to it; otherwise the registration is a no-op and the
- * registry never gains the tool. This mirrors the existing rlmx
+ * registry never gains the tool. This mirrors the existing mikro
  * `rtk.enabled: auto` policy (`rlm.ts` + `rtk-detect.ts`): agents
  * that declare `rtk` in `agent.yaml` get it for free on machines
  * with rtk installed, and silently degrade on machines without.
@@ -80,7 +80,7 @@ function makeRtkHandler(): ToolHandler {
 		const t0 = Date.now();
 		const [bin, ...rest] = args.cmd;
 		// cmd[0] shadows the rtk binary on PATH — spawn it directly.
-		// This matches the "auto-prefix" behaviour rlmx's run_cli uses
+		// This matches the "auto-prefix" behaviour mikro's run_cli uses
 		// (cf. rlm.ts). Consumers that want literal `rtk <subcmd>`
 		// invocations should pass `cmd: ["rtk", ...]` explicitly.
 		try {

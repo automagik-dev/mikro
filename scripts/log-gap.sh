@@ -75,7 +75,7 @@ entry = {
     'v03_group': int(sys.argv[4]),
     'task': sys.argv[5],
     'native_tool': sys.argv[6],
-    'rlmx_query': sys.argv[7],
+    'mikro_query': sys.argv[7],
     'answer': sys.argv[8],
     'expected': sys.argv[9],
     'gap_type': sys.argv[10],

@@ -92,7 +92,7 @@ export function formatModelRef(provider, modelId) {
  * `providers` are the config-declared providers riding on the model config;
  * they are registered on the shared runtime before lookup so a declared
  * `<id>/<model>` resolves exactly like a built-in. Exported so the MCP server
- * and `rlmx doctor` can validate a pin without making a call.
+ * and `mikro doctor` can validate a pin without making a call.
  */
 export function resolveModel(provider, modelId, providers) {
     ensureCustomProviders(models, providers);
@@ -225,7 +225,7 @@ export async function llmComplete(messages, modelConfig, options) {
     // OpenRouter's OpenAI-compatible Chat Completions endpoint still rejects the
     // newer `developer` role for several non-OpenAI routes (including DeepSeek
     // V4 Flash). pi-ai may emit `developer` for reasoning models, so normalize
-    // it back to `system` at the RLMX boundary instead of letting the provider
+    // it back to `system` at the MIKRO boundary instead of letting the provider
     // fail with an empty/zero-token response.
     if (modelConfig.provider === "openrouter") {
         payloadHooks.push(normalizeOpenRouterDeveloperRole);
@@ -359,15 +359,15 @@ export function buildRlmChildArgs(prompt, options = {}) {
 }
 /** Build env inheritance for child process with explicit recursive ancestry. */
 export function buildChildEnv(env, parentRunId, correlationId) {
-    const depth = Number.parseInt(env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
+    const depth = Number.parseInt(env.MIKRO_RECURSION_DEPTH ?? "0", 10) || 0;
     return {
         ...env,
-        RLMX_PARENT_RUN_ID: parentRunId,
-        RLMX_CHILD_CORRELATION_ID: correlationId,
-        RLMX_RECURSION_DEPTH: String(depth + 1),
+        MIKRO_PARENT_RUN_ID: parentRunId,
+        MIKRO_CHILD_CORRELATION_ID: correlationId,
+        MIKRO_RECURSION_DEPTH: String(depth + 1),
     };
 }
-/** Parse stdout from a child rlmx --output json --stats run. */
+/** Parse stdout from a child mikro --output json --stats run. */
 export function parseRlmChildOutput(stdout) {
     try {
         const result = JSON.parse(stdout);
@@ -380,7 +380,7 @@ export function parseRlmChildOutput(stdout) {
         };
     }
     catch {
-        return { answer: stdout.trim() || "Error: empty response from child rlmx" };
+        return { answer: stdout.trim() || "Error: empty response from child mikro" };
     }
 }
 /** Last `maxChars` of a child's stderr, whitespace-collapsed, for error text. */
@@ -391,7 +391,7 @@ export function stderrTail(stderr, maxChars = 400) {
     return `…${collapsed.slice(-maxChars)}`;
 }
 /**
- * Classify a finished child rlmx process into the answer the REPL caller sees.
+ * Classify a finished child mikro process into the answer the REPL caller sees.
  *
  * A child that cannot reach a model — wrong provider, missing key, empty
  * completion — still exits 0 and still prints `{"answer":""}`. Handing that
@@ -406,18 +406,18 @@ export function stderrTail(stderr, maxChars = 400) {
  */
 export function classifyRlmChildResult(code, stdout, stderr) {
     if (code !== 0) {
-        const errorMessage = `Error: child rlmx exited with code ${code}. ${stderr}`.trim();
+        const errorMessage = `Error: child mikro exited with code ${code}. ${stderr}`.trim();
         return { result: { answer: errorMessage }, isError: true, errorMessage };
     }
     const parsed = parseRlmChildOutput(stdout);
     const tail = stderrTail(stderr);
     const suffix = tail ? ` — ${tail}` : "";
     if (parsed.raw === undefined) {
-        const errorMessage = `Error: rlm_query failed: child rlmx exited 0 without parseable JSON output${suffix}`;
+        const errorMessage = `Error: rlm_query failed: child mikro exited 0 without parseable JSON output${suffix}`;
         return { result: { ...parsed, answer: errorMessage }, isError: true, errorMessage };
     }
     if (parsed.answer.trim() === "") {
-        const errorMessage = `Error: rlm_query failed: child rlmx exited 0 with an empty answer${suffix}`;
+        const errorMessage = `Error: rlm_query failed: child mikro exited 0 with an empty answer${suffix}`;
         return { result: { ...parsed, answer: errorMessage }, isError: true, errorMessage };
     }
     return { result: parsed, isError: false };
@@ -433,15 +433,15 @@ function isUsageStats(value) {
         typeof v.llmCalls === "number";
 }
 /**
- * Spawn a child rlmx process for rlm_query() recursive sub-calls.
+ * Spawn a child mikro process for rlm_query() recursive sub-calls.
  * The child inherits the parent's cwd (and thus .md configs).
  */
 export async function rlmQuery(prompt, cwd, signal, options = {}) {
     return new Promise((resolve) => {
         const correlationId = uuidv7();
-        const parentRunId = options.parentRunId ?? process.env.RLMX_PARENT_RUN_ID ?? "root";
-        const depth = (Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0) + 1;
-        const currentDepth = Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
+        const parentRunId = options.parentRunId ?? process.env.MIKRO_PARENT_RUN_ID ?? "root";
+        const depth = (Number.parseInt(process.env.MIKRO_RECURSION_DEPTH ?? "0", 10) || 0) + 1;
+        const currentDepth = Number.parseInt(process.env.MIKRO_RECURSION_DEPTH ?? "0", 10) || 0;
         if (options.maxDepth !== undefined && currentDepth >= options.maxDepth) {
             const error = `Error: max recursive rlm_query depth ${options.maxDepth} reached`;
             const result = { answer: error };
@@ -530,7 +530,7 @@ export async function rlmQuery(prompt, cwd, signal, options = {}) {
         });
         child.on("error", (err) => {
             const durationMs = Date.now() - startMs;
-            const errorMessage = `Error: failed to spawn child rlmx: ${err.message}`;
+            const errorMessage = `Error: failed to spawn child mikro: ${err.message}`;
             const result = { answer: errorMessage };
             options.logger?.childEnd({
                 child_correlation_id: correlationId,
@@ -572,7 +572,7 @@ export async function rlmQueryBatched(prompts, cwd, signal, options = {}) {
  * config, only the model id is swappable.
  *
  * With no kwarg the child is pinned to the parent's *primary* model rather
- * than its sub-call model: a child is a full rlmx run, not a single
+ * than its sub-call model: a child is a full mikro run, not a single
  * completion, and the sub-call model is chosen to be a cheap one-shot.
  */
 export function resolveChildModelRef(config, requestedModel) {

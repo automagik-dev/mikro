@@ -35,44 +35,44 @@ const SHIM_BODY = `
 const fs = require("node:fs");
 const argv = process.argv.slice(2);
 if (argv.includes("--version")) {
-  const v = process.env.RLMX_STUB_VERSION ?? "0.7.2";
-  if (process.env.RLMX_STUB_VERSION_STREAM === "stdout") fs.writeSync(1, v);
+  const v = process.env.MIKRO_STUB_VERSION ?? "0.7.2";
+  if (process.env.MIKRO_STUB_VERSION_STREAM === "stdout") fs.writeSync(1, v);
   else fs.writeSync(2, v);
   process.exit(0);
 }
-if (process.env.RLMX_STUB_ARGV_FILE) {
-  fs.writeFileSync(process.env.RLMX_STUB_ARGV_FILE, JSON.stringify(argv));
+if (process.env.MIKRO_STUB_ARGV_FILE) {
+  fs.writeFileSync(process.env.MIKRO_STUB_ARGV_FILE, JSON.stringify(argv));
 }
-if (process.env.RLMX_STUB_SELF_PID_FILE) {
-  fs.writeFileSync(process.env.RLMX_STUB_SELF_PID_FILE, String(process.pid));
+if (process.env.MIKRO_STUB_SELF_PID_FILE) {
+  fs.writeFileSync(process.env.MIKRO_STUB_SELF_PID_FILE, String(process.pid));
 }
-if (process.env.RLMX_STUB_STDERR_LINE) {
-  fs.writeSync(2, process.env.RLMX_STUB_STDERR_LINE + "\\n");
+if (process.env.MIKRO_STUB_STDERR_LINE) {
+  fs.writeSync(2, process.env.MIKRO_STUB_STDERR_LINE + "\\n");
 }
-if (process.env.RLMX_STUB_STDERR_BYTES) {
-  const bytes = Number(process.env.RLMX_STUB_STDERR_BYTES);
+if (process.env.MIKRO_STUB_STDERR_BYTES) {
+  const bytes = Number(process.env.MIKRO_STUB_STDERR_BYTES);
   setInterval(() => { fs.writeSync(2, "x".repeat(bytes)); }, 20);
 }
 // Hang setup FIRST: a kill can land the moment the breaching event is
 // written, and the grandchild + pid file must already exist for the
 // tree-kill assertion to observe them.
-if (process.env.RLMX_STUB_HANG === "1") {
+if (process.env.MIKRO_STUB_HANG === "1") {
   const { spawn } = require("node:child_process");
   // No detached: the grandchild stays in the shim's process group, so the
   // backend's group kill must reach it — that is the tree-kill assertion.
   const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1e3)"], { stdio: "ignore" });
-  if (process.env.RLMX_STUB_CHILD_PID_FILE) {
-    fs.writeFileSync(process.env.RLMX_STUB_CHILD_PID_FILE, String(child.pid));
+  if (process.env.MIKRO_STUB_CHILD_PID_FILE) {
+    fs.writeFileSync(process.env.MIKRO_STUB_CHILD_PID_FILE, String(child.pid));
   }
   setInterval(() => {}, 1e3);
 }
-const events = JSON.parse(process.env.RLMX_STUB_EVENTS ?? "[]");
+const events = JSON.parse(process.env.MIKRO_STUB_EVENTS ?? "[]");
 for (const e of events) fs.writeSync(1, JSON.stringify(e) + "\\n");
-if (process.env.RLMX_STUB_HANG !== "1") {
-  process.exit(Number(process.env.RLMX_STUB_EXIT ?? "0"));
+if (process.env.MIKRO_STUB_HANG !== "1") {
+  process.exit(Number(process.env.MIKRO_STUB_EXIT ?? "0"));
 }`;
 async function scratch() {
-    return mkdtemp(join(tmpdir(), "rlmx-prime-test-"));
+    return mkdtemp(join(tmpdir(), "mikro-prime-test-"));
 }
 async function makeShim(dir) {
     const path = join(dir, "prime-agent");
@@ -191,7 +191,7 @@ const CONFIG = {
 function fakeAgent() {
     return {
         name: "triage",
-        toolName: "rlmx_triage",
+        toolName: "mikro_triage",
         dir: "/tmp/triage",
         summary: "triage agent",
         spec: {
@@ -210,7 +210,7 @@ function requestOf(over = {}) {
         query: "Find the two call sites.",
         context: null,
         config: CONFIG,
-        cwd: "/tmp/rlmx-prime-test",
+        cwd: "/tmp/mikro-prime-test",
         ...over,
     };
 }
@@ -247,7 +247,7 @@ describe("prime backend — version pin", () => {
         const dir = await scratch();
         try {
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS }, async () => {
                 const { result } = await runOnce(backend);
                 assert.equal(result.answer, "The call sites are A and B.");
             });
@@ -259,7 +259,7 @@ describe("prime backend — version pin", () => {
     it("accepts the version on stdout as well as stderr", async () => {
         const dir = await scratch();
         try {
-            await withEnv({ RLMX_STUB_VERSION_STREAM: "stdout" }, async () => {
+            await withEnv({ MIKRO_STUB_VERSION_STREAM: "stdout" }, async () => {
                 assert.ok(new PrimeBackend({ binaryPath: await makeShim(dir) }));
             });
         }
@@ -270,7 +270,7 @@ describe("prime backend — version pin", () => {
     it("fails fast with an actionable report when the binary is a different version", async () => {
         const dir = await scratch();
         try {
-            await withEnv({ RLMX_STUB_VERSION: "0.7.3" }, async () => {
+            await withEnv({ MIKRO_STUB_VERSION: "0.7.3" }, async () => {
                 const binaryPath = await makeShim(dir);
                 assert.throws(() => new PrimeBackend({ binaryPath }), (err) => {
                     assert.ok(err instanceof Error);
@@ -307,13 +307,13 @@ describe("prime backend — argv assembly", () => {
         try {
             const argvFile = join(dir, "argv.json");
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS, RLMX_STUB_ARGV_FILE: argvFile }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS, MIKRO_STUB_ARGV_FILE: argvFile }, async () => {
                 await runOnce(backend, { config: { ...CONFIG, system: "SYSTEM-ROLE-CONTENT" } });
             });
             const argv = JSON.parse(await readFile(argvFile, "utf8"));
             assertHasArgs(argv, ["--mode", "json", "-p"], "mode");
             assert.ok(argv.includes("--no-session"), "session");
-            assertHasArgs(argv, ["--cwd", "/tmp/rlmx-prime-test"], "cwd");
+            assertHasArgs(argv, ["--cwd", "/tmp/mikro-prime-test"], "cwd");
             for (const flag of ["-nc", "-ne", "-ns", "-np"]) {
                 assert.ok(argv.includes(flag), `isolation flag ${flag}`);
             }
@@ -343,7 +343,7 @@ describe("prime backend — argv assembly", () => {
         });
         assertHasArgs(calls[0].argv, ["--provider", "prime-inference", "--model", "google/gemini-2.5-flash-lite"], "lite model");
     });
-    it("passes rlmx's deepseek models through verbatim", async () => {
+    it("passes mikro's deepseek models through verbatim", async () => {
         const calls = [];
         const backend = new PrimeBackend({ engine: recordingEngine(calls) });
         await runOnce(backend, {
@@ -397,7 +397,7 @@ describe("prime backend — argv assembly", () => {
             };
             const argvFile = join(dir, "argv.json");
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS, RLMX_STUB_ARGV_FILE: argvFile }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS, MIKRO_STUB_ARGV_FILE: argvFile }, async () => {
                 await runOnce(backend, { context, contextRoot: ctxDir });
             });
             const argv = JSON.parse(await readFile(argvFile, "utf8"));
@@ -417,7 +417,7 @@ describe("prime backend — argv assembly", () => {
             const context = { type: "string", content: "LOG", metadata: "" };
             const argvFile = join(dir, "argv.json");
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS, RLMX_STUB_ARGV_FILE: argvFile }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS, MIKRO_STUB_ARGV_FILE: argvFile }, async () => {
                 await runOnce(backend, { context, contextRoot: ctxFile });
             });
             const argv = JSON.parse(await readFile(argvFile, "utf8"));
@@ -432,12 +432,12 @@ describe("prime backend — argv assembly", () => {
 describe("prime backend — loud failures", () => {
     const cases = [
         {
-            name: "rlmx model providers prime cannot address (khal)",
+            name: "mikro model providers prime cannot address (khal)",
             over: { config: { ...CONFIG, model: { provider: "khal", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" } } },
             pattern: /khal\/deepseek-v4-flash/,
         },
         {
-            name: "rlmx model providers prime cannot address (station)",
+            name: "mikro model providers prime cannot address (station)",
             over: { config: { ...CONFIG, model: { provider: "station", model: "Qwen3.6-35B-A3B-MTP-GGUF", subCallModel: "Qwen3.6-35B-A3B-MTP-GGUF" } } },
             pattern: /station\/Qwen3\.6-35B-A3B-MTP-GGUF/,
         },
@@ -478,7 +478,7 @@ describe("prime backend — loud failures", () => {
             await assert.rejects(() => runOnce(backend, c.over), (err) => {
                 assert.ok(err instanceof Error);
                 assert.match(err.message, c.pattern);
-                assert.match(err.message, /backend: rlmx/, "the message must name the escape hatch");
+                assert.match(err.message, /backend: mikro/, "the message must name the escape hatch");
                 return true;
             });
         });
@@ -498,7 +498,7 @@ describe("prime backend — loud failures", () => {
                 assert.match(err.message, /context file/);
                 assert.ok(err.message.includes(join(dir, "gone.md")), `the error must name the missing file: ${err.message}`);
                 assert.match(err.message, /does not exist/);
-                assert.match(err.message, /backend: rlmx/, "the message must name the escape hatch");
+                assert.match(err.message, /backend: mikro/, "the message must name the escape hatch");
                 return true;
             });
             assert.equal(calls.length, 0, "the existence check fires before the engine is ever invoked");
@@ -514,7 +514,7 @@ describe("prime backend — event mapping", () => {
         const dir = await scratch();
         try {
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS }, async () => {
                 const { result, progress } = await runOnce(backend);
                 assert.equal(result.answer, "The call sites are A and B.");
                 assert.equal(result.iterations, 1);
@@ -536,7 +536,7 @@ describe("prime backend — event mapping", () => {
             const u2 = { input: 200, output: 50, total: 0.05 };
             const events = fullRun([turnEvents("first report", u1), turnEvents("final report", u2)], "final report", u2);
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { result, progress } = await runOnce(backend);
                 assert.equal(result.answer, "final report");
                 assert.equal(result.iterations, 2);
@@ -555,7 +555,7 @@ describe("prime backend — event mapping", () => {
         try {
             const events = fullRun([turnEvents("done", USAGE, { tools: ["ipython"], partialText: "thinking…" })], "done", USAGE);
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { progress } = await runOnce(backend);
                 assert.deepEqual(progress, ["iteration 1", "tool ipython"]);
             });
@@ -578,7 +578,7 @@ describe("prime backend — event mapping", () => {
                 { type: "agent_end", messages: [USER_MESSAGE, assistantMessage("direct answer", USAGE)] },
             ];
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { result } = await runOnce(backend);
                 assert.equal(result.answer, "direct answer");
             });
@@ -592,7 +592,7 @@ describe("prime backend — event mapping", () => {
         try {
             const events = [SESSION, { type: "agent_start" }, { type: "turn_start" }];
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 await assert.rejects(() => runOnce(backend), (err) => {
                     assert.ok(err instanceof Error);
                     assert.match(err.message, /exited before reporting agent_end/);
@@ -608,7 +608,7 @@ describe("prime backend — event mapping", () => {
         const dir = await scratch();
         try {
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: JSON.stringify([SESSION]), RLMX_STUB_EXIT: "3", RLMX_STUB_STDERR_LINE: "stub exploded" }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify([SESSION]), MIKRO_STUB_EXIT: "3", MIKRO_STUB_STDERR_LINE: "stub exploded" }, async () => {
                 await assert.rejects(() => runOnce(backend), (err) => {
                     assert.ok(err instanceof Error);
                     assert.match(err.message, /exited before reporting agent_end/);
@@ -640,10 +640,10 @@ describe("prime backend — budget enforcement", () => {
             ];
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
             await withEnv({
-                RLMX_STUB_EVENTS: JSON.stringify(events),
-                RLMX_STUB_HANG: "1",
-                RLMX_STUB_SELF_PID_FILE: selfPidFile,
-                RLMX_STUB_CHILD_PID_FILE: childPidFile,
+                MIKRO_STUB_EVENTS: JSON.stringify(events),
+                MIKRO_STUB_HANG: "1",
+                MIKRO_STUB_SELF_PID_FILE: selfPidFile,
+                MIKRO_STUB_CHILD_PID_FILE: childPidFile,
             }, async () => {
                 const { result } = await runOnce(backend, {
                     config: { ...CONFIG, budget: { maxCost: 1.5, maxTokens: null, maxDepth: null } },
@@ -672,9 +672,9 @@ describe("prime backend — budget enforcement", () => {
             ];
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
             await withEnv({
-                RLMX_STUB_EVENTS: JSON.stringify(events),
-                RLMX_STUB_HANG: "1",
-                RLMX_STUB_CHILD_PID_FILE: childPidFile,
+                MIKRO_STUB_EVENTS: JSON.stringify(events),
+                MIKRO_STUB_HANG: "1",
+                MIKRO_STUB_CHILD_PID_FILE: childPidFile,
             }, async () => {
                 const { result } = await runOnce(backend, {
                     config: { ...CONFIG, budget: { maxCost: null, maxTokens: 1000, maxDepth: null } },
@@ -698,7 +698,7 @@ describe("prime backend — budget enforcement", () => {
                 ...turnEvents("", { input: 10, output: 10, total: 5.0 }),
             ];
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
+            await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { result } = await runOnce(backend, {
                     config: { ...CONFIG, budget: { maxCost: 2.0, maxTokens: null, maxDepth: null } },
                 });
@@ -718,14 +718,14 @@ describe("prime backend — budget enforcement", () => {
             const childPidFile = join(dir, "child.pid");
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
             await withEnv({
-                RLMX_MCP_RUN_TIMEOUT_MS: "250",
-                RLMX_STUB_EVENTS: JSON.stringify([SESSION, { type: "agent_start" }]),
-                RLMX_STUB_HANG: "1",
-                RLMX_STUB_SELF_PID_FILE: selfPidFile,
-                RLMX_STUB_CHILD_PID_FILE: childPidFile,
+                MIKRO_MCP_RUN_TIMEOUT_MS: "250",
+                MIKRO_STUB_EVENTS: JSON.stringify([SESSION, { type: "agent_start" }]),
+                MIKRO_STUB_HANG: "1",
+                MIKRO_STUB_SELF_PID_FILE: selfPidFile,
+                MIKRO_STUB_CHILD_PID_FILE: childPidFile,
                 // The parent must keep draining stderr — a full pipe buffer would
                 // block the child and stall the kill path.
-                RLMX_STUB_STDERR_BYTES: "65536",
+                MIKRO_STUB_STDERR_BYTES: "65536",
             }, async () => {
                 const { result } = await runOnce(backend);
                 assert.equal(result.answer, TIMEOUT_ANSWER);
@@ -739,14 +739,14 @@ describe("prime backend — budget enforcement", () => {
             await rm(dir, { recursive: true, force: true });
         }
     });
-    it("defaults the deadline to rlmLoop's 300s and honors RLMX_MCP_RUN_TIMEOUT_MS", async () => {
+    it("defaults the deadline to rlmLoop's 300s and honors MIKRO_MCP_RUN_TIMEOUT_MS", async () => {
         const calls = [];
         const backend = new PrimeBackend({ engine: recordingEngine(calls) });
-        await withEnv({ RLMX_MCP_RUN_TIMEOUT_MS: undefined }, async () => {
+        await withEnv({ MIKRO_MCP_RUN_TIMEOUT_MS: undefined }, async () => {
             await runOnce(backend);
             assert.equal(calls[0].limits.deadlineMs, DEFAULT_PRIME_DEADLINE_MS);
         });
-        await withEnv({ RLMX_MCP_RUN_TIMEOUT_MS: "123456" }, async () => {
+        await withEnv({ MIKRO_MCP_RUN_TIMEOUT_MS: "123456" }, async () => {
             await runOnce(backend);
             assert.equal(calls[1].limits.deadlineMs, 123456);
         });
@@ -763,9 +763,9 @@ describe("prime backend — budget enforcement", () => {
             ];
             const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
             await withEnv({
-                RLMX_STUB_EVENTS: JSON.stringify(events),
-                RLMX_STUB_HANG: "1",
-                RLMX_STUB_CHILD_PID_FILE: childPidFile,
+                MIKRO_STUB_EVENTS: JSON.stringify(events),
+                MIKRO_STUB_HANG: "1",
+                MIKRO_STUB_CHILD_PID_FILE: childPidFile,
             }, async () => {
                 const { result } = await runOnce(backend, { maxIterations: 1 });
                 assert.equal(result.budgetHit, "max-iterations");

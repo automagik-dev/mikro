@@ -1,12 +1,12 @@
 /**
  * RTK (Rust Token Killer) detection.
  *
- * Probes for `rtk` on the user's PATH once per rlmx process and caches the
+ * Probes for `rtk` on the user's PATH once per mikro process and caches the
  * result. Used by the REPL to decide whether the `run_cli` battery should
  * auto-prefix `rtk` for 60-90% token savings on captured CLI output.
  *
  * Fail-open: if rtk is absent, detection returns `{ available: false }` and
- * rlmx continues to work identically without it.
+ * mikro continues to work identically without it.
  */
 export interface RtkStatus {
     available: boolean;

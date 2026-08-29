@@ -113,10 +113,10 @@ system: SYSTEM.md            # Relative to agent dir. Consumer loads
 thinking: high
 ```
 
-The `agent.yaml` twin of `rlmx --thinking`. Under `rlmx mcp`, `applyAgent`
+The `agent.yaml` twin of `mikro --thinking`. Under `mikro mcp`, `applyAgent`
 writes it to the single field the whole stack already reads —
 `config.gemini.thinkingLevel` → `llmComplete({ thinkingLevel })` → pi-ai's
-`reasoning` option — so a declared level outranks the ambient `rlmx.yaml`'s
+`reasoning` option — so a declared level outranks the ambient `mikro.yaml`'s
 `gemini.thinking-level` exactly the way the CLI flag does. There is no
 separate per-agent channel to keep in sync.
 
@@ -160,7 +160,7 @@ direction. They carry `reasoning: true` +
 | no `thinking:` | `enable_thinking: false` | answers directly — **the QA'd baseline** |
 | any `thinking:` level | `enable_thinking: true` | streams into `reasoning_content`, emits no `content` delta, parses as **empty** |
 
-Three consecutive empty turns abort the run (`src/rlm.ts`), which `rlmx mcp`
+Three consecutive empty turns abort the run (`src/rlm.ts`), which `mikro mcp`
 reports as `isError`. So reasoning-off is not an accident inherited from the
 "omitting it is not a provider default" rule above — for these models it is the
 deliberate, live-QA'd compat workaround documented in the
@@ -195,18 +195,18 @@ const spec = await sdk.loadAgentSpec("/path/to/agent");
 ## Reserved directory suffix: `.proposed`
 
 A directory whose name ends **`.proposed`** (matched case-insensitively) is a
-*draft* awaiting human approval, and `rlmx mcp` discovery skips it outright —
+*draft* awaiting human approval, and `mikro mcp` discovery skips it outright —
 see `isProposedDir` in `src/mcp/agents.ts`. Because `tools/call` dispatches from
 the same scan that builds `tools/list`, a draft is **neither listed nor
 callable**; calling it by its would-be tool name answers
-`Unknown tool: rlmx_<name>_proposed`.
+`Unknown tool: mikro_<name>_proposed`.
 
-This is the propose-only boundary behind `/rlmx:microagent-create`, which writes
-candidate agents into `.rlmx/agents/<name>.proposed/` and stops. Activation is a
+This is the propose-only boundary behind `/mikro:microagent-create`, which writes
+candidate agents into `.mikro/agents/<name>.proposed/` and stops. Activation is a
 rename performed by the user:
 
 ```bash
-mv .rlmx/agents/<name>.proposed .rlmx/agents/<name>
+mv .mikro/agents/<name>.proposed .mikro/agents/<name>
 ```
 
 The tool appears on the next request — live refresh, no reconnect — and renaming
@@ -230,7 +230,7 @@ Non-strings, non-finite numbers, and other type drift default
 silently — the parser aims to be forgiving where there's no risk of
 surprise.
 
-### How `rlmx mcp` reports them
+### How `mikro mcp` reports them
 
 Discovery must not let one bad agent take down the server, so `loadOne` skips
 any directory whose `agent.yaml` fails to parse. It does **not** skip quietly:
@@ -239,7 +239,7 @@ written to **stderr** once per directory (discovery re-runs on every request, so
 repeating it would flood the log), naming the agent and its path:
 
 ```
-rlmx: skipping agent "triage" (/repo/.rlmx/agents/triage): agent.yaml: thinking must be one of minimal | low | medium | high, got "hgih"
+mikro: skipping agent "triage" (/repo/.mikro/agents/triage): agent.yaml: thinking must be one of minimal | low | medium | high, got "hgih"
 ```
 
 A directory with *no* `agent.yaml` is not an error and stays silent — that is
@@ -253,7 +253,7 @@ When you need to validate additional fields — e.g. brain's
 `AgentSpec.extras`. The SDK's parser is a floor, not a ceiling:
 
 ```ts
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const spec = await sdk.loadAgentSpec(path);
 validateBrainExtras(spec.extras); // your layer; throws if non-compliant.

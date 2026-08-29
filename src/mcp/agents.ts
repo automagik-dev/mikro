@@ -1,20 +1,20 @@
 /**
- * Microagent discovery for `rlmx mcp`.
+ * Microagent discovery for `mikro mcp`.
  *
  * A "microagent" is an existing `agent.yaml` folder (see
  * `docs/agent-yaml-schema.md`). This module finds them on disk and turns each
  * into a description an MCP client can render as a callable tool, so a host
- * like Claude Code sees `rlmx_test_writer` rather than one opaque escape
+ * like Claude Code sees `mikro_test_writer` rather than one opaque escape
  * hatch.
  *
  * Discovery roots, lowest precedence first — a later root wins on name
  * collision, so a project can shadow a global agent:
  *
- *   1. ~/.rlmx/agents/<name>/agent.yaml     (global)
+ *   1. ~/.mikro/agents/<name>/agent.yaml     (global)
  *   2. <cwd>/.agents/<name>/agent.yaml      (project, the documented convention)
- *   3. <cwd>/.rlmx/agents/<name>/agent.yaml (project)
+ *   3. <cwd>/.mikro/agents/<name>/agent.yaml (project)
  *
- * `RLMX_AGENTS_DIR` (colon-separated) replaces the defaults entirely.
+ * `MIKRO_AGENTS_DIR` (colon-separated) replaces the defaults entirely.
  *
  * One name is reserved: a directory whose name ends `.proposed` is a draft
  * awaiting human approval and is skipped everywhere — see `PROPOSED_SUFFIX`.
@@ -31,7 +31,7 @@ import { loadAgentSpec, resolveAgentPath, type AgentSpec } from "../sdk/agent-sp
 export interface Microagent {
   /** Directory name on disk — the human identity. */
   readonly name: string;
-  /** MCP tool name: `rlmx_<sanitized name>`. */
+  /** MCP tool name: `mikro_<sanitized name>`. */
   readonly toolName: string;
   /** Absolute path to the agent directory. */
   readonly dir: string;
@@ -53,7 +53,7 @@ export interface Microagent {
  * Reserved directory suffix for propose-only drafts.
  *
  * `/microagent-create` writes a candidate agent it mined from transcripts into
- * `.rlmx/agents/<name>.proposed/` and stops there. Activation is a rename, and
+ * `.mikro/agents/<name>.proposed/` and stops there. Activation is a rename, and
  * the rename is the user's — that is the whole approval step, so it only means
  * something if an un-renamed draft can do nothing at all.
  */
@@ -82,13 +82,13 @@ export function toToolName(agentName: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "_")
     .replace(/^_+|_+$/g, "");
-  // `rlmx_` prefix + a non-empty remainder, capped well under the 128 limit.
-  return `rlmx_${(cleaned || "agent").slice(0, 96)}`;
+  // `mikro_` prefix + a non-empty remainder, capped well under the 128 limit.
+  return `mikro_${(cleaned || "agent").slice(0, 96)}`;
 }
 
 /** Discovery roots in precedence order (later wins). */
 export function agentRoots(cwd: string): string[] {
-  const override = process.env.RLMX_AGENTS_DIR?.trim();
+  const override = process.env.MIKRO_AGENTS_DIR?.trim();
   if (override) {
     return override
       .split(":")
@@ -96,9 +96,9 @@ export function agentRoots(cwd: string): string[] {
       .filter(Boolean);
   }
   return [
-    join(homedir(), ".rlmx", "agents"),
+    join(homedir(), ".mikro", "agents"),
     join(cwd, ".agents"),
-    join(cwd, ".rlmx", "agents"),
+    join(cwd, ".mikro", "agents"),
   ];
 }
 
@@ -128,7 +128,7 @@ function deriveSummary(
     }
   }
 
-  return `rlmx microagent "${name}" (${spec.shape})`;
+  return `mikro microagent "${name}" (${spec.shape})`;
 }
 
 /**
@@ -163,7 +163,7 @@ async function loadOne(dir: string, name: string): Promise<Microagent | null> {
     if (!isMissingFile(err) && !reportedBroken.has(dir)) {
       reportedBroken.add(dir);
       const reason = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`rlmx: skipping agent "${name}" (${dir}): ${reason}\n`);
+      process.stderr.write(`mikro: skipping agent "${name}" (${dir}): ${reason}\n`);
     }
     return null;
   }
@@ -211,7 +211,7 @@ export async function discoverAgents(cwd: string): Promise<Microagent[]> {
       // dispatches from `byToolName`, which is built from this same list
       // (src/mcp/server.ts:252, src/mcp/server.ts:771), so "not listed" and
       // "not callable" cannot drift apart. Without it a perfectly valid
-      // `x.proposed/agent.yaml` becomes the live tool `rlmx_x_proposed` on the
+      // `x.proposed/agent.yaml` becomes the live tool `mikro_x_proposed` on the
       // very next request, since every request re-scans: an agent nobody
       // approved would be executable with no user action at all.
       if (isProposedDir(entry.name)) continue;

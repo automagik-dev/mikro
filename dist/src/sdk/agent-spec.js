@@ -95,7 +95,7 @@ export function parseAgentSpec(yamlText, dir) {
     // arbitrary supported level instead of being rejected, so `thinking: hgih`
     // would run at whatever effort the model happens to floor at and look like
     // it worked. Fail loudly at parse time — which is discovery time for
-    // `rlmx mcp` — the way `shape` does.
+    // `mikro mcp` — the way `shape` does.
     const thinkingRaw = asString(r.thinking);
     if (thinkingRaw !== undefined && !isValidThinkingLevel(thinkingRaw)) {
         throw new Error(`agent.yaml: thinking must be one of ${THINKING_LEVELS.join(" | ")}, ` +
@@ -105,8 +105,8 @@ export function parseAgentSpec(yamlText, dir) {
     // silently fall back to the legacy engine and look like it worked, which
     // is exactly the silent degradation a selection field must not allow.
     const backendRaw = asString(r.backend);
-    if (backendRaw !== undefined && backendRaw !== "rlmx" && backendRaw !== "prime") {
-        throw new Error(`agent.yaml: backend must be one of rlmx | prime, got "${backendRaw}"`);
+    if (backendRaw !== undefined && backendRaw !== "mikro" && backendRaw !== "prime") {
+        throw new Error(`agent.yaml: backend must be one of mikro | prime, got "${backendRaw}"`);
     }
     // Build the "extras" bag by stripping the known keys from r.
     const known = new Set([

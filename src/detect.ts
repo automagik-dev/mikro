@@ -69,7 +69,7 @@ export async function checkPythonVersion(
           "sudo apt install python3 (Debian/Ubuntu) or sudo dnf install python3 (Fedora)";
       }
       throw new Error(
-        `Python not found at "${pythonPath}". rlmx requires Python 3.10+.\nInstall: ${guidance}`
+        `Python not found at "${pythonPath}". mikro requires Python 3.10+.\nInstall: ${guidance}`
       );
     }
     throw err;

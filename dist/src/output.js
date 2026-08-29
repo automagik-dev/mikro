@@ -132,6 +132,6 @@ export function emitStreamEvent(event) {
  * Log verbose iteration progress to stderr.
  */
 export function logVerbose(iteration, message) {
-    process.stderr.write(`rlmx [iter ${iteration}]: ${message}\n`);
+    process.stderr.write(`mikro [iter ${iteration}]: ${message}\n`);
 }
 //# sourceMappingURL=output.js.map

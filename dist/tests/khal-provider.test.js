@@ -211,13 +211,13 @@ describe("khal /v1/models fallback", () => {
 describe("khal catalog fetch", () => {
     const realFetch = globalThis.fetch;
     const realKey = process.env.KHAL_API_KEY;
-    const realAltKey = process.env.RLMX_KHAL_API_KEY;
+    const realAltKey = process.env.MIKRO_KHAL_API_KEY;
     let stderr;
     let restoreStderr = null;
     beforeEach(() => {
         resetKhalModelsCache();
         process.env.KHAL_API_KEY = "sk-test";
-        delete process.env.RLMX_KHAL_API_KEY;
+        delete process.env.MIKRO_KHAL_API_KEY;
         stderr = "";
         const original = process.stderr.write.bind(process.stderr);
         process.stderr.write = ((chunk) => {
@@ -237,9 +237,9 @@ describe("khal catalog fetch", () => {
         else
             process.env.KHAL_API_KEY = realKey;
         if (realAltKey === undefined)
-            delete process.env.RLMX_KHAL_API_KEY;
+            delete process.env.MIKRO_KHAL_API_KEY;
         else
-            process.env.RLMX_KHAL_API_KEY = realAltKey;
+            process.env.MIKRO_KHAL_API_KEY = realAltKey;
         resetKhalModelsCache();
     });
     function stubFetch(handler) {
@@ -307,11 +307,11 @@ describe("khal catalog fetch", () => {
         assert.deepEqual(seen.map((u) => u.replace(KHAL_BASE_URL, "")), ["/model/info"]);
         assert.equal(stderr, "", "a rejected key is not a pricing warning");
     });
-    it("names RLMX_KHAL_API_KEY when the fallback env var supplied the key", async () => {
+    it("names MIKRO_KHAL_API_KEY when the fallback env var supplied the key", async () => {
         delete process.env.KHAL_API_KEY;
-        process.env.RLMX_KHAL_API_KEY = "sk-fallback";
+        process.env.MIKRO_KHAL_API_KEY = "sk-fallback";
         stubFetch(() => ({ ok: false, status: 403 }));
-        await assert.rejects(fetchKhalModels(), /khal gateway rejected RLMX_KHAL_API_KEY \(HTTP 403\)/);
+        await assert.rejects(fetchKhalModels(), /khal gateway rejected MIKRO_KHAL_API_KEY \(HTTP 403\)/);
     });
     it("treats a rejected key on the fallback endpoint as auth, not outage", async () => {
         stubFetch((url) => url.endsWith("/model/info") ? { ok: false, status: 404 } : { ok: false, status: 401 });
@@ -327,11 +327,11 @@ describe("khal catalog fetch", () => {
 describe("ensureKhalModels — no-key guard", () => {
     const realFetch = globalThis.fetch;
     const realKey = process.env.KHAL_API_KEY;
-    const realAltKey = process.env.RLMX_KHAL_API_KEY;
+    const realAltKey = process.env.MIKRO_KHAL_API_KEY;
     beforeEach(() => {
         resetKhalModelsCache();
         delete process.env.KHAL_API_KEY;
-        delete process.env.RLMX_KHAL_API_KEY;
+        delete process.env.MIKRO_KHAL_API_KEY;
     });
     afterEach(() => {
         globalThis.fetch = realFetch;
@@ -340,9 +340,9 @@ describe("ensureKhalModels — no-key guard", () => {
         else
             process.env.KHAL_API_KEY = realKey;
         if (realAltKey === undefined)
-            delete process.env.RLMX_KHAL_API_KEY;
+            delete process.env.MIKRO_KHAL_API_KEY;
         else
-            process.env.RLMX_KHAL_API_KEY = realAltKey;
+            process.env.MIKRO_KHAL_API_KEY = realAltKey;
         resetKhalModelsCache();
     });
     it("throws the exact message naming KHAL_API_KEY", async () => {
@@ -365,13 +365,13 @@ describe("ensureKhalModels — no-key guard", () => {
         await assert.rejects(() => ensureKhalModels(models), /khal provider requires KHAL_API_KEY/);
         assert.equal(called, false, "no key must mean no request");
     });
-    it("accepts the RLMX_KHAL_API_KEY fallback, and reports which var it used", () => {
+    it("accepts the MIKRO_KHAL_API_KEY fallback, and reports which var it used", () => {
         assert.equal(khalApiKey(), undefined);
         assert.equal(khalApiKeySource(), undefined);
-        process.env.RLMX_KHAL_API_KEY = "sk-fallback";
+        process.env.MIKRO_KHAL_API_KEY = "sk-fallback";
         assert.equal(khalApiKey(), "sk-fallback");
         // Failure messages name this, so an operator is not sent to the wrong var.
-        assert.equal(khalApiKeySource(), "RLMX_KHAL_API_KEY");
+        assert.equal(khalApiKeySource(), "MIKRO_KHAL_API_KEY");
         process.env.KHAL_API_KEY = "sk-primary";
         assert.equal(khalApiKey(), "sk-primary");
         assert.equal(khalApiKeySource(), "KHAL_API_KEY");
@@ -391,12 +391,12 @@ describe("ensureKhalModels — no-key guard", () => {
 describe("ensureKhalModels — rejected key and dead gateway", () => {
     const realFetch = globalThis.fetch;
     const realKey = process.env.KHAL_API_KEY;
-    const realAltKey = process.env.RLMX_KHAL_API_KEY;
+    const realAltKey = process.env.MIKRO_KHAL_API_KEY;
     let restoreStderr = null;
     beforeEach(() => {
         resetKhalModelsCache();
         process.env.KHAL_API_KEY = "sk-totally-invalid-key";
-        delete process.env.RLMX_KHAL_API_KEY;
+        delete process.env.MIKRO_KHAL_API_KEY;
         const original = process.stderr.write.bind(process.stderr);
         process.stderr.write = (() => true);
         restoreStderr = () => {
@@ -412,9 +412,9 @@ describe("ensureKhalModels — rejected key and dead gateway", () => {
         else
             process.env.KHAL_API_KEY = realKey;
         if (realAltKey === undefined)
-            delete process.env.RLMX_KHAL_API_KEY;
+            delete process.env.MIKRO_KHAL_API_KEY;
         else
-            process.env.RLMX_KHAL_API_KEY = realAltKey;
+            process.env.MIKRO_KHAL_API_KEY = realAltKey;
         resetKhalModelsCache();
     });
     function stubStatus(status, onCall) {
@@ -560,9 +560,9 @@ describe("khalProvider — registration", () => {
         assert.equal(await auth.resolve({ ctx: ctx({}), credential: undefined }), undefined);
         assert.deepEqual(await auth.resolve({ ctx: ctx({ KHAL_API_KEY: "sk-primary" }), credential: undefined }), { auth: { apiKey: "sk-primary" }, source: "KHAL_API_KEY" });
         assert.deepEqual(await auth.resolve({
-            ctx: ctx({ RLMX_KHAL_API_KEY: "sk-fallback" }),
+            ctx: ctx({ MIKRO_KHAL_API_KEY: "sk-fallback" }),
             credential: undefined,
-        }), { auth: { apiKey: "sk-fallback" }, source: "RLMX_KHAL_API_KEY" });
+        }), { auth: { apiKey: "sk-fallback" }, source: "MIKRO_KHAL_API_KEY" });
     });
     it("serves a supplied catalog so gateway models resolve", () => {
         const models = builtinModels();
@@ -571,7 +571,7 @@ describe("khalProvider — registration", () => {
         assert.ok(models.getModel(KHAL_PROVIDER_ID, "deepseek-v4-flash"));
     });
     it("sends the gateway alias on the wire, not the catalog id", async () => {
-        // The catalog must be keyed by the bare id (every rlmx path strips the
+        // The catalog must be keyed by the bare id (every mikro path strips the
         // `khal/` prefix before lookup) but LiteLLM 400s on a bare model name, so
         // the transport has to put the alias back. Regression guard for both.
         const realFetch = globalThis.fetch;

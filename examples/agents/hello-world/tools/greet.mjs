@@ -1,5 +1,5 @@
 /**
- * tools/greet.mjs — the minimum-viable rlmx tool.
+ * tools/greet.mjs — the minimum-viable mikro tool.
  *
  * Demonstrates the default-export-is-an-async-function contract the
  * SDK's plugin loader resolves. Runs in-process (no subprocess), so

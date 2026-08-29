@@ -2,7 +2,7 @@
  * Config-declared providers (src/custom-providers.ts).
  *
  * The bug these guard against: a microagent pinned to a provider pi-ai has
- * never heard of (`wafer/GLM-5.3-Flash`) was advertised by `rlmx mcp` and
+ * never heard of (`wafer/GLM-5.3-Flash`) was advertised by `mikro mcp` and
  * then died on its first call with `Unknown model … Try updating MODEL.md` —
  * a file that does not exist. Everything below is offline: the provider is
  * registered on a real pi-ai runtime and resolved, but nothing is called.
@@ -47,12 +47,12 @@ providers:
 
 function wafer(): CustomProviderConfig {
   const raw = yaml.load(WAFER_YAML) as { providers: unknown };
-  return parseCustomProviders(raw.providers, "rlmx.yaml")[0];
+  return parseCustomProviders(raw.providers, "mikro.yaml")[0];
 }
 
 describe("parseCustomProviders", () => {
-  it("parses the kebab-case rlmx.yaml shape", () => {
-    const [p] = parseCustomProviders((yaml.load(WAFER_YAML) as { providers: unknown }).providers, "rlmx.yaml");
+  it("parses the kebab-case mikro.yaml shape", () => {
+    const [p] = parseCustomProviders((yaml.load(WAFER_YAML) as { providers: unknown }).providers, "mikro.yaml");
     assert.equal(p.id, "wafer");
     assert.equal(p.api, "openai-completions");
     assert.equal(p.baseUrl, "https://pass.wafer.ai/v1");
@@ -90,8 +90,8 @@ describe("parseCustomProviders", () => {
   });
 
   it("returns an empty list when the block is absent", () => {
-    assert.deepEqual(parseCustomProviders(undefined, "rlmx.yaml"), []);
-    assert.deepEqual(parseCustomProviders(null, "rlmx.yaml"), []);
+    assert.deepEqual(parseCustomProviders(undefined, "mikro.yaml"), []);
+    assert.deepEqual(parseCustomProviders(null, "mikro.yaml"), []);
   });
 
   it("supports the anthropic-messages and openai-responses wire formats", () => {
@@ -100,43 +100,43 @@ describe("parseCustomProviders", () => {
         a: { "base-url": "https://a.example/v1", api: "anthropic-messages", models: ["m"] },
         b: { "base-url": "https://b.example/v1", api: "openai-responses", models: ["m"] },
       },
-      "rlmx.yaml"
+      "mikro.yaml"
     );
     assert.deepEqual(list.map((p) => p.api), ["anthropic-messages", "openai-responses"]);
   });
 
   it("rejects a provider without base-url, naming the path", () => {
     assert.throws(
-      () => parseCustomProviders({ wafer: { models: ["x"] } }, "rlmx.yaml"),
-      /Invalid providers\.wafer\.base-url in rlmx\.yaml: is required/
+      () => parseCustomProviders({ wafer: { models: ["x"] } }, "mikro.yaml"),
+      /Invalid providers\.wafer\.base-url in mikro\.yaml: is required/
     );
   });
 
   it("rejects an unsupported api", () => {
     assert.throws(
-      () => parseCustomProviders({ w: { "base-url": "https://x", api: "grpc" } }, "rlmx.yaml"),
+      () => parseCustomProviders({ w: { "base-url": "https://x", api: "grpc" } }, "mikro.yaml"),
       /providers\.w\.api.*not supported.*openai-completions, anthropic-messages, openai-responses/
     );
   });
 
   it("rejects a malformed base-url, a duplicate model, and a bad input list", () => {
     assert.throws(
-      () => parseCustomProviders({ w: { "base-url": "not a url" } }, "rlmx.yaml"),
+      () => parseCustomProviders({ w: { "base-url": "not a url" } }, "mikro.yaml"),
       /providers\.w\.base-url.*not a valid URL/
     );
     assert.throws(
-      () => parseCustomProviders({ w: { "base-url": "https://x", models: ["m", "m"] } }, "rlmx.yaml"),
+      () => parseCustomProviders({ w: { "base-url": "https://x", models: ["m", "m"] } }, "mikro.yaml"),
       /declared twice/
     );
     assert.throws(
-      () => parseCustomProviders({ w: { "base-url": "https://x", models: { m: { input: ["audio"] } } } }, "rlmx.yaml"),
+      () => parseCustomProviders({ w: { "base-url": "https://x", models: { m: { input: ["audio"] } } } }, "mikro.yaml"),
       /providers\.w\.models\.m\.input.*\[text, image\]/
     );
   });
 
   it("rejects a provider id that cannot be a model-ref prefix", () => {
     assert.throws(
-      () => parseCustomProviders({ "bad id/": { "base-url": "https://x" } }, "rlmx.yaml"),
+      () => parseCustomProviders({ "bad id/": { "base-url": "https://x" } }, "mikro.yaml"),
       /provider id must match/
     );
   });
@@ -148,7 +148,7 @@ describe("mergeCustomProviders", () => {
       { wafer: { "base-url": "https://old.example/v1", models: ["a"] }, other: { "base-url": "https://o/v1" } },
       "settings.json"
     );
-    const local = parseCustomProviders({ wafer: { "base-url": "https://new.example/v1", models: ["b"] } }, "rlmx.yaml");
+    const local = parseCustomProviders({ wafer: { "base-url": "https://new.example/v1", models: ["b"] } }, "mikro.yaml");
     const merged = mergeCustomProviders(global, local);
     assert.deepEqual(merged.map((p) => p.id), ["wafer", "other"]);
     assert.equal(merged[0].baseUrl, "https://new.example/v1");
@@ -230,7 +230,7 @@ describe("key status and hints", () => {
   it("points an undeclared provider at config, not at MODEL.md", () => {
     const hint = describeProviderHint(undefined, "wafer");
     assert.match(hint, /not declared in config/);
-    assert.match(hint, /providers: in \.rlmx\/rlmx\.yaml/);
+    assert.match(hint, /providers: in \.mikro\/mikro\.yaml/);
     assert.doesNotMatch(hint, /MODEL\.md/);
   });
 
@@ -279,12 +279,12 @@ describe("loadConfig providers block", () => {
   const originalHome = process.env.HOME;
 
   before(async () => {
-    home = await mkdtemp(join(tmpdir(), "rlmx-home-"));
-    dir = await mkdtemp(join(tmpdir(), "rlmx-prov-"));
+    home = await mkdtemp(join(tmpdir(), "mikro-home-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-prov-"));
     process.env.HOME = home;
-    await mkdir(join(home, ".rlmx"), { recursive: true });
+    await mkdir(join(home, ".mikro"), { recursive: true });
     await writeFile(
-      join(home, ".rlmx", "settings.json"),
+      join(home, ".mikro", "settings.json"),
       JSON.stringify({
         providers: {
           deepseek: { baseUrl: "https://api.deepseek.com/v1", apiKeyEnv: "DEEPSEEK_API_KEY", models: ["deepseek-chat"] },
@@ -292,8 +292,8 @@ describe("loadConfig providers block", () => {
         },
       })
     );
-    await mkdir(join(dir, ".rlmx"), { recursive: true });
-    await writeFile(join(dir, ".rlmx", "rlmx.yaml"), `model:\n  provider: wafer\n  model: GLM-5.3-Flash\n${WAFER_YAML}`);
+    await mkdir(join(dir, ".mikro"), { recursive: true });
+    await writeFile(join(dir, ".mikro", "mikro.yaml"), `model:\n  provider: wafer\n  model: GLM-5.3-Flash\n${WAFER_YAML}`);
   });
 
   after(async () => {
@@ -302,7 +302,7 @@ describe("loadConfig providers block", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("merges settings.json providers under rlmx.yaml, yaml winning per id", async () => {
+  it("merges settings.json providers under mikro.yaml, yaml winning per id", async () => {
     const cfg = await loadConfig(dir);
     assert.deepEqual(cfg.providers.map((p) => p.id).sort(), ["deepseek", "wafer"]);
     const w = cfg.providers.find((p) => p.id === "wafer")!;
@@ -311,8 +311,8 @@ describe("loadConfig providers block", () => {
     assert.equal(checkModelConfig(cfg.model), null, "the configured model resolves");
   });
 
-  it("serves global providers to a directory with no rlmx.yaml", async () => {
-    const bare = await mkdtemp(join(tmpdir(), "rlmx-bare-"));
+  it("serves global providers to a directory with no mikro.yaml", async () => {
+    const bare = await mkdtemp(join(tmpdir(), "mikro-bare-"));
     try {
       const cfg = await loadConfig(bare);
       assert.equal(cfg.configSource, "defaults");
@@ -327,7 +327,7 @@ describe("loadConfig providers block", () => {
     const agent = (model: string) =>
       ({
         name: "wendy",
-        toolName: "rlmx_wendy",
+        toolName: "mikro_wendy",
         dir: join(dir, ".agents", "wendy"),
         summary: "Tilt check.",
         spec: { dir: join(dir, ".agents", "wendy"), schemaVersion: 1, toolsApi: 1, shape: "loop", model, tools: [], extras: {} },

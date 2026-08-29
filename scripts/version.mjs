@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Version bump script for rlmx.
+ * Version bump script for mikro.
  *
  * Format: 1.YYMMDD.N
  *   - 1       fixed major prefix (bumped from 0 on 2026-08-17 — v1 declares
@@ -11,7 +11,7 @@
  *   - YYMMDD  today's date (UTC)
  *   - N       1-based daily build counter (highest existing v1.YYMMDD.* tag + 1)
  *
- * Env override: RLMX_BUILD_NUMBER — forces N to the given value.
+ * Env override: MIKRO_BUILD_NUMBER — forces N to the given value.
  *
  * Syncs the computed version into every committed version location, so a tag
  * cut on the bump commit cannot lie about package contents (see the coherence
@@ -67,7 +67,7 @@ function generateVersion() {
   const dd = String(now.getUTCDate()).padStart(2, '0');
   const datePrefix = `${yy}${mm}${dd}`;
 
-  const envBuild = process.env.RLMX_BUILD_NUMBER;
+  const envBuild = process.env.MIKRO_BUILD_NUMBER;
   const n = envBuild ? Number(envBuild) : getHighestBuildNumber(datePrefix) + 1;
 
   return `1.${datePrefix}.${n}`;

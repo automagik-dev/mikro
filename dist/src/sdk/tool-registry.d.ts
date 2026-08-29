@@ -1,5 +1,5 @@
 /**
- * Tool registry — Wish B Group 3a + rlmx#78.
+ * Tool registry — Wish B Group 3a + mikro#78.
  *
  * Maps tool names declared in `agent.yaml` (`tools: [...]`) to
  * in-process handler functions the SDK can dispatch to. Both
@@ -7,7 +7,7 @@
  * handlers (TS plugins from `<agent-dir>/tools/<name>.ts`) land in
  * the same registry.
  *
- * Each handler may carry an optional `ToolSchema` (rlmx#78) — the
+ * Each handler may carry an optional `ToolSchema` (mikro#78) — the
  * description + JSON-Schema parameters the rlmDriver feeds into the
  * LLM's native function-calling channel. Handlers without schemas are
  * still dispatchable (via explicit `tool_call` steps emitted by a
@@ -20,7 +20,7 @@
  * not here.
  *
  * Spec: `.genie/wishes/rlmx-sdk-upgrade/WISH.md` L24, L164-168;
- * rlmx#78 (tool dispatch in rlmDriver).
+ * mikro#78 (tool dispatch in rlmDriver).
  */
 import type { ToolResolver } from "./agent.js";
 export interface ToolContext {

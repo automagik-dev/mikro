@@ -1,5 +1,5 @@
 /**
- * Durable ACP session persistence — wish rlmx-acp-adapter, Group 3.
+ * Durable ACP session persistence — wish mikro-acp-adapter, Group 3.
  *
  * The Group 1 agent kept sessions in an in-memory `Map`. That is the exact
  * shape of the multi-turn bug the pi-in-Tidewave patches fixed: a host restarts
@@ -10,12 +10,12 @@
  * (RESTORE-ON-EMPTY) and a follow-up `session/prompt` resumes with the prior
  * turns' context instead of throwing.
  *
- * ── STORE LOCATION (rlmx convention) ─────────────────────────────────────────
- * rlmx already persists per-run artifacts under `~/.rlmx/sessions/<runId>/`
- * (see `src/session.ts`) and global settings under `~/.rlmx/settings.json`
+ * ── STORE LOCATION (mikro convention) ─────────────────────────────────────────
+ * mikro already persists per-run artifacts under `~/.mikro/sessions/<runId>/`
+ * (see `src/session.ts`) and global settings under `~/.mikro/settings.json`
  * (see `src/settings.ts`). ACP sessions follow the same root: one JSON file per
- * ACP session at `~/.rlmx/acp-sessions/<sessionId>.json`. The base directory is
- * overridable via `RLMX_ACP_SESSIONS_DIR` (hermetic tests + the multiturn smoke
+ * ACP session at `~/.mikro/acp-sessions/<sessionId>.json`. The base directory is
+ * overridable via `MIKRO_ACP_SESSIONS_DIR` (hermetic tests + the multiturn smoke
  * point it at a temp dir so the two agent spawns share a store without touching
  * the real home).
  *
@@ -52,8 +52,8 @@ export interface StoredTurn {
 /**
  * A durable ACP session record. Carries everything needed to resume a session
  * after an agent-process restart: the conversation history (turns), the cwd the
- * session was created in (config is reloaded from there — the rlmx source of
- * truth), the host-supplied MCP server config (STORE/advertise only — rlmx has
+ * session was created in (config is reloaded from there — the mikro source of
+ * truth), the host-supplied MCP server config (STORE/advertise only — mikro has
  * no MCP client; execution is a documented follow-on), and a config snapshot
  * for the record.
  */
@@ -78,7 +78,7 @@ export declare function storeDir(): string;
 /** True iff `id` is a canonical UUID string (a path-safe session id). */
 export declare function isValidSessionId(id: string): boolean;
 /**
- * A durable store over `~/.rlmx/acp-sessions/`. One instance per agent process;
+ * A durable store over `~/.mikro/acp-sessions/`. One instance per agent process;
  * cheap to construct (no I/O until a method is called).
  */
 export declare class SessionStore {

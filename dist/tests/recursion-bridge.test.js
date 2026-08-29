@@ -56,7 +56,7 @@ describe("recursion bridge — RecurseEvent production + correlationId ancestry"
             result: childResult(0, 0, 0),
             durationMs: 9,
             isError: true,
-            errorMessage: "child rlmx exited with code 1",
+            errorMessage: "child mikro exited with code 1",
         });
         emitter.close();
         const all = await drained;
@@ -126,7 +126,7 @@ describe("recursion bridge — RecurseEvent production + correlationId ancestry"
         });
         // Force child.on("error") by spawning into a cwd that does not exist —
         // the real spawn-failure path, no live model needed.
-        await rlmQuery("q", "/nonexistent-rlmx-spawn-dir-xyz", undefined, {
+        await rlmQuery("q", "/nonexistent-mikro-spawn-dir-xyz", undefined, {
             onChildStart: ({ correlationId, prompt, depth }) => {
                 bridge.onChildStart({ correlationId, prompt, depth });
                 return undefined;

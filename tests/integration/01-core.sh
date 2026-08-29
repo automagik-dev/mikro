@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# rlmx Integration Tests — Group 1: Core Verification (Tests 1-9)
+# mikro Integration Tests — Group 1: Core Verification (Tests 1-9)
 #
 # Prerequisites:
 #   - GEMINI_API_KEY environment variable set
 #   - Node.js >= 18, Python 3.10+ installed
 #
-# Usage: cd /path/to/rlmx && bash tests/integration/01-core.sh
+# Usage: cd /path/to/mikro && bash tests/integration/01-core.sh
 
 set -euo pipefail
 
@@ -33,7 +33,7 @@ if [ -z "${GEMINI_API_KEY:-}" ]; then
   exit 1
 fi
 
-TMPDIR="/tmp/rlmx-integration-$$"
+TMPDIR="/tmp/mikro-integration-$$"
 mkdir -p "$TMPDIR"
 cleanup() { rm -rf "$TMPDIR"; }
 trap cleanup EXIT
@@ -41,7 +41,7 @@ trap cleanup EXIT
 pass() { PASSED=$((PASSED + 1)); echo "  PASS: $1"; }
 fail() { FAILED=$((FAILED + 1)); echo "  FAIL: $1 — $2"; }
 
-echo "=== rlmx Integration Tests — Group 1: Core ==="
+echo "=== mikro Integration Tests — Group 1: Core ==="
 echo ""
 
 # ─── Test 1: npm run build ───────────────────────────────────────────
@@ -52,13 +52,13 @@ else
   fail "build" "tsc compilation failed"
 fi
 
-# ─── Test 2: rlmx init ──────────────────────────────────────────────
-echo "[2/9] rlmx init --dir"
+# ─── Test 2: mikro init ──────────────────────────────────────────────
+echo "[2/9] mikro init --dir"
 INIT_DIR="$TMPDIR/init-test"
-if $CLI init --dir "$INIT_DIR" > /dev/null 2>&1 && [ -f "$INIT_DIR/rlmx.yaml" ]; then
-  pass "init creates rlmx.yaml"
+if $CLI init --dir "$INIT_DIR" > /dev/null 2>&1 && [ -f "$INIT_DIR/mikro.yaml" ]; then
+  pass "init creates mikro.yaml"
 else
-  fail "init" "rlmx.yaml not created"
+  fail "init" "mikro.yaml not created"
 fi
 
 # ─── Test 3: basic query → JSON answer ──────────────────────────────

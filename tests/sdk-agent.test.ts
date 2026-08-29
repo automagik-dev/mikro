@@ -293,7 +293,7 @@ describe("runAgent — validate retry wire (WISH.md G2 criterion 3)", () => {
 
 describe("runAgent — session + abort + resume (WISH.md G2 criteria 1, 4)", () => {
 	it("budget is preserved across pause → resume end-to-end", async () => {
-		const dir = await mkdtemp(join(tmpdir(), "rlmx-agent-budget-"));
+		const dir = await mkdtemp(join(tmpdir(), "mikro-agent-budget-"));
 		try {
 			const store = createFileSessionStore(dir);
 
@@ -328,7 +328,7 @@ describe("runAgent — session + abort + resume (WISH.md G2 criteria 1, 4)", () 
 	});
 
 	it("abort mid-iteration → resume reaches identical final output", async () => {
-		const dir = await mkdtemp(join(tmpdir(), "rlmx-agent-resume-"));
+		const dir = await mkdtemp(join(tmpdir(), "mikro-agent-resume-"));
 		try {
 			const store = createFileSessionStore(dir);
 			const sessionId = "s-resume";
@@ -422,7 +422,7 @@ describe("runAgent — session + abort + resume (WISH.md G2 criteria 1, 4)", () 
 	});
 
 	it("SessionOpen fires with resumed:true when session id exists", async () => {
-		const dir = await mkdtemp(join(tmpdir(), "rlmx-agent-resumed-"));
+		const dir = await mkdtemp(join(tmpdir(), "mikro-agent-resumed-"));
 		try {
 			const store = createFileSessionStore(dir);
 			const sessionId = "s-resumed-flag";

@@ -10,7 +10,7 @@
  */
 import { createEmitter } from "../../sdk/emitter.js";
 import { rlmLoop } from "../../rlm.js";
-export class LegacyRlmxBackend {
+export class LegacyMikroBackend {
     loop;
     constructor(options = {}) {
         this.loop = options.loop ?? rlmLoop;
@@ -69,7 +69,7 @@ export class LegacyRlmxBackend {
  * default wall-clock cap without touching rlm.ts.
  */
 function runTimeout() {
-    const ms = Number(process.env.RLMX_MCP_RUN_TIMEOUT_MS);
+    const ms = Number(process.env.MIKRO_MCP_RUN_TIMEOUT_MS);
     return Number.isFinite(ms) && ms > 0 ? { timeout: ms } : {};
 }
 //# sourceMappingURL=legacy.js.map

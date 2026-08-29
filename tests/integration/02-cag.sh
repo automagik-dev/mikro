@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# rlmx Integration Tests — Group 2: CAG Verification (Tests 10-14)
+# mikro Integration Tests — Group 2: CAG Verification (Tests 10-14)
 #
 # Prerequisites:
 #   - GEMINI_API_KEY environment variable set
 #   - Node.js >= 18, Python 3.10+ installed
 #   - Project built (npm run build)
 #
-# Usage: cd /path/to/rlmx && bash tests/integration/02-cag.sh
+# Usage: cd /path/to/mikro && bash tests/integration/02-cag.sh
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ if [ -z "${GEMINI_API_KEY:-}" ]; then
   exit 1
 fi
 
-TMPDIR="/tmp/rlmx-cag-$$"
+TMPDIR="/tmp/mikro-cag-$$"
 mkdir -p "$TMPDIR"
 cleanup() { rm -rf "$TMPDIR"; }
 trap cleanup EXIT
@@ -42,7 +42,7 @@ trap cleanup EXIT
 pass() { PASSED=$((PASSED + 1)); echo "  PASS: $1"; }
 fail() { FAILED=$((FAILED + 1)); echo "  FAIL: $1 — $2"; }
 
-echo "=== rlmx Integration Tests — Group 2: CAG ==="
+echo "=== mikro Integration Tests — Group 2: CAG ==="
 echo ""
 
 # ─── Test 10: --cache increases input token count ────────────────────
@@ -134,11 +134,11 @@ else
   fail "estimate" "no token count found"
 fi
 
-# ─── Test 14: cache TTL in rlmx.yaml ────────────────────────────────
+# ─── Test 14: cache TTL in mikro.yaml ────────────────────────────────
 echo "[14/14] cache TTL config parsed without error"
 TTL_DIR="$TMPDIR/ttl-test"
 mkdir -p "$TTL_DIR"
-cat > "$TTL_DIR/rlmx.yaml" << 'YAML'
+cat > "$TTL_DIR/mikro.yaml" << 'YAML'
 model:
   provider: google
   model: gemini-3.1-flash-lite-preview

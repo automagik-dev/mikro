@@ -32,7 +32,7 @@ export interface AgentSpec {
     readonly systemPath?: string;
     /**
      * Reasoning effort for this agent's own model calls — the `agent.yaml`
-     * equivalent of `rlmx --thinking`. `undefined` means "not declared".
+     * equivalent of `mikro --thinking`. `undefined` means "not declared".
      *
      * Consumers apply it by writing `config.gemini.thinkingLevel`, the single
      * field `llmComplete` turns into pi-ai's `reasoning` option (see
@@ -56,12 +56,12 @@ export interface AgentSpec {
     readonly budget?: AgentBudget;
     /**
      * Internal, undocumented: which runtime backend executes this agent's
-     * turns (wish rlmx-v2-prime-backend). Absent means `rlmx` — the legacy
+     * turns (wish mikro-v2-prime-backend). Absent means `mikro` — the legacy
      * engine, which stays the default. Deliberately NOT part of the
      * documented `agent.yaml` schema: it is a gate/experiment selector that
      * may change without notice.
      */
-    readonly backend?: "rlmx" | "prime";
+    readonly backend?: "mikro" | "prime";
     /** Preserved unrecognised keys — consumers layer their own schema. */
     readonly extras: Readonly<Record<string, unknown>>;
 }

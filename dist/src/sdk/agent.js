@@ -164,7 +164,7 @@ async function drive(config, em) {
                     continue;
                 // Re-check abort AFTER the driver yielded — the driver
                 // itself may have triggered the abort in its yield
-                // prelude. Matches the pre-rlmx#78 `for await` semantics
+                // prelude. Matches the pre-mikro#78 `for await` semantics
                 // which checked before processing each step.
                 if (ac.signal.aborted)
                     break iterationLoop;

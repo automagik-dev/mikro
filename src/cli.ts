@@ -16,29 +16,29 @@ import { detectRtk } from "./rtk-detect.js";
 import { estimateTokens, validateContextSize } from "./cache.js";
 import { runBatch } from "./batch.js";
 import { loadSettings, saveSettings, injectApiKeysToEnv, formatValue, parseSettingValue, getSettingsPath, type GlobalSettings } from "./settings.js";
-import { printRlmxCliSchema } from "./schema.js";
+import { printMikroCliSchema } from "./schema.js";
 import { checkModelConfig, formatModelRef } from "./llm.js";
 import { customProviderKeySource } from "./custom-providers.js";
-import type { RlmxConfig } from "./config.js";
+import type { MikroConfig } from "./config.js";
 
 /**
- * Apply model overrides from global settings (~/.rlmx/settings.json).
- * Priority: CLI flags > settings.json > rlmx.yaml > hardcoded defaults.
+ * Apply model overrides from global settings (~/.mikro/settings.json).
+ * Priority: CLI flags > settings.json > mikro.yaml > hardcoded defaults.
  *
- * This ensures `rlmx config set model.provider openai` actually takes effect
- * even when a local rlmx.yaml exists with its own model defaults.
+ * This ensures `mikro config set model.provider openai` actually takes effect
+ * even when a local mikro.yaml exists with its own model defaults.
  */
 /** Module-level ref so helper functions can apply overrides without re-loading. */
 let _globalSettings: GlobalSettings = {};
 
 /**
- * Apply model overrides from global settings (~/.rlmx/settings.json).
- * Priority: CLI flags > settings.json > rlmx.yaml > hardcoded defaults.
+ * Apply model overrides from global settings (~/.mikro/settings.json).
+ * Priority: CLI flags > settings.json > mikro.yaml > hardcoded defaults.
  *
- * This ensures `rlmx config set model.provider openai` actually takes effect
- * even when a local rlmx.yaml exists with its own model defaults.
+ * This ensures `mikro config set model.provider openai` actually takes effect
+ * even when a local mikro.yaml exists with its own model defaults.
  */
-function applySettingsModelOverrides(config: RlmxConfig, settings?: GlobalSettings): void {
+function applySettingsModelOverrides(config: MikroConfig, settings?: GlobalSettings): void {
   const s = settings ?? _globalSettings;
   const provider = s["model.provider"];
   const model = s["model.model"];
@@ -54,19 +54,19 @@ function applySettingsModelOverrides(config: RlmxConfig, settings?: GlobalSettin
   }
 }
 
-const HELP = `rlmx — RLM algorithm CLI for coding agents
+const HELP = `mikro — RLM algorithm CLI for coding agents
 
 Usage:
-  rlmx "query" [options]          Run an RLM query
-  rlmx init [--template default|code] [--dir <path>]  Scaffold .rlmx/ config
-  rlmx cache [options]           Pre-warm cache or estimate context size
-  rlmx batch <file> [options]    Bulk interrogation from questions file
-  rlmx benchmark <mode> [options]  Run benchmarks (cost or oolong)
-  rlmx stats [options]           Query run history and cost breakdowns
-  rlmx doctor                    Health check: providers, RTK, config
-  rlmx update [--force]          Fetch latest main commit for a git install
-  rlmx acp                       Run as a stdio ACP agent (EXPERIMENTAL)
-  rlmx mcp [--dir <path>]        Run as a stdio MCP server (agents as tools)
+  mikro "query" [options]          Run an RLM query
+  mikro init [--template default|code] [--dir <path>]  Scaffold .mikro/ config
+  mikro cache [options]           Pre-warm cache or estimate context size
+  mikro batch <file> [options]    Bulk interrogation from questions file
+  mikro benchmark <mode> [options]  Run benchmarks (cost or oolong)
+  mikro stats [options]           Query run history and cost breakdowns
+  mikro doctor                    Health check: providers, RTK, config
+  mikro update [--force]          Fetch latest main commit for a git install
+  mikro acp                       Run as a stdio ACP agent (EXPERIMENTAL)
+  mikro mcp [--dir <path>]        Run as a stdio MCP server (agents as tools)
 
 Options:
   --context <path>        Path to context (directory or file)
@@ -95,30 +95,30 @@ Options:
   --batch-api             Use Gemini Batch API for 50% cost reduction (batch command)
 
 Config:
-  .rlmx/                   Config directory (run "rlmx init" to create)
-    rlmx.yaml              Config (model, budget, context, storage, etc.)
+  .mikro/                   Config directory (run "mikro init" to create)
+    mikro.yaml              Config (model, budget, context, storage, etc.)
     SYSTEM.md              System prompt
     CRITERIA.md            Output criteria
     TOOLS.md               Custom Python tools
 
 Examples:
-  rlmx "How does IPC work?" --context ./docs/
-  rlmx "Summarize this" --context paper.md --output json --stats
-  rlmx "Analyze code" --context ./src/ --tools full --ext .ts,.js
-  rlmx "Quick question" --max-cost 0.10 --max-tokens 5000
-  rlmx init --template code --dir ./my-project
-  echo "data" | rlmx "Analyze this" --log run.jsonl
-  rlmx cache --context ./docs/ --estimate
-  rlmx cache --context ./docs/
-  rlmx batch questions.txt --context ./docs/ --cache --max-cost 1.00
-  rlmx batch questions.txt --context ./src/ --max-iterations 3
+  mikro "How does IPC work?" --context ./docs/
+  mikro "Summarize this" --context paper.md --output json --stats
+  mikro "Analyze code" --context ./src/ --tools full --ext .ts,.js
+  mikro "Quick question" --max-cost 0.10 --max-tokens 5000
+  mikro init --template code --dir ./my-project
+  echo "data" | mikro "Analyze this" --log run.jsonl
+  mikro cache --context ./docs/ --estimate
+  mikro cache --context ./docs/
+  mikro batch questions.txt --context ./docs/ --cache --max-cost 1.00
+  mikro batch questions.txt --context ./src/ --max-iterations 3
 
-  rlmx config set GEMINI_API_KEY <key>   Set API key
-  rlmx config set model.provider google  Set default provider
-  rlmx config get model.provider         Get a setting
-  rlmx config list                       Show all settings
-  rlmx config delete <key>               Remove a setting
-  rlmx config path                       Show settings file path
+  mikro config set GEMINI_API_KEY <key>   Set API key
+  mikro config set model.provider google  Set default provider
+  mikro config get model.provider         Get a setting
+  mikro config list                       Show all settings
+  mikro config delete <key>               Remove a setting
+  mikro config path                       Show settings file path
 `;
 
 interface CliOptions {
@@ -287,7 +287,7 @@ async function runInit(dir: string, template: string): Promise<void> {
     if (created.length === 0) {
       console.log("Config already exists in", dir);
     } else {
-      console.log(`Created ${created.join(", ")} in .rlmx/ (${dir})`);
+      console.log(`Created ${created.join(", ")} in .mikro/ (${dir})`);
     }
   } catch (err: unknown) {
     console.error(err instanceof Error ? err.message : String(err));
@@ -304,7 +304,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
     const pyVersion = await checkPythonVersion();
     if (!pyVersion.valid) {
       console.error(
-        `Error: rlmx requires Python 3.10+, found ${pyVersion.version}.\n` +
+        `Error: mikro requires Python 3.10+, found ${pyVersion.version}.\n` +
         `Please upgrade Python and try again.`
       );
       process.exit(1);
@@ -317,7 +317,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
   // Auto-scaffold on first run
   if (await needsScaffold(configDir)) {
     if (opts.verbose) {
-      console.error("rlmx: auto-scaffolding config files...");
+      console.error("mikro: auto-scaffolding config files...");
     }
     const created = await scaffold(configDir, "default");
     if (opts.verbose && created.length > 0) {
@@ -329,7 +329,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
   const config = await loadConfig(configDir);
   applySettingsModelOverrides(config);
 
-  // --model outranks settings.json and rlmx.yaml. This is also how a parent
+  // --model outranks settings.json and mikro.yaml. This is also how a parent
   // pins a recursive child: buildRlmChildArgs emits --model on the child argv,
   // so rlm_query() no longer depends on the child re-deriving a model from
   // whatever config happens to sit at its cwd or in its inherited HOME.
@@ -351,7 +351,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
   // Warn about future flags
   const futureWarnings = checkFutureFlags(config.gemini);
   for (const w of futureWarnings) {
-    console.error(`rlmx: ${w}`);
+    console.error(`mikro: ${w}`);
   }
 
   if (opts.maxCost !== null) {
@@ -384,7 +384,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
         : undefined;
     context = await loadContext(contextPath, contextOpts);
     if (opts.verbose) {
-      console.error(`rlmx: loaded context — ${context.metadata}`);
+      console.error(`mikro: loaded context — ${context.metadata}`);
     }
   }
 
@@ -396,7 +396,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
       // Context exceeds model limit — disable cache mode if it was enabled
       if (opts.cache || config.cache.enabled) {
         console.error(
-          `rlmx: context exceeds model limit (~${validation.estimatedTokens.toLocaleString()} tokens > ${validation.limit.toLocaleString()}), disabling cache mode`
+          `mikro: context exceeds model limit (~${validation.estimatedTokens.toLocaleString()} tokens > ${validation.limit.toLocaleString()}), disabling cache mode`
         );
         opts.cache = false;
         config.cache.enabled = false;
@@ -405,7 +405,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
       if (config.storage.enabled === "auto" || config.storage.enabled === "always") {
         storageMode = true;
         console.error(
-          `rlmx: storage mode activated for large context (~${validation.estimatedTokens.toLocaleString()} tokens)`
+          `mikro: storage mode activated for large context (~${validation.estimatedTokens.toLocaleString()} tokens)`
         );
       }
     }
@@ -414,7 +414,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
   if (config.storage.enabled === "always" && !storageMode) {
     storageMode = true;
     if (opts.verbose) {
-      console.error("rlmx: storage mode forced (storage.enabled: always)");
+      console.error("mikro: storage mode forced (storage.enabled: always)");
     }
   }
 
@@ -504,7 +504,7 @@ async function runQuery(opts: CliOptions): Promise<void> {
         logPath: opts.log,
       });
     } catch (err: unknown) {
-      console.error(`rlmx: session save failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`mikro: session save failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -525,7 +525,7 @@ const COST_PER_1M_INPUT: Record<string, number> = {
 async function runCache(opts: CliOptions): Promise<void> {
   if (!opts.context) {
     console.error("Error: --context is required for the cache command.");
-    console.error("Usage: rlmx cache --context <path> [--estimate]");
+    console.error("Usage: mikro cache --context <path> [--estimate]");
     process.exit(1);
   }
 
@@ -566,7 +566,7 @@ async function runCache(opts: CliOptions): Promise<void> {
 
   if (opts.estimate) {
     // Print stats and exit — no actual caching
-    console.log("rlmx cache estimate");
+    console.log("mikro cache estimate");
     console.log("---");
     console.log(`  context:          ${opts.context}`);
     console.log(`  metadata:         ${context.metadata}`);
@@ -581,7 +581,7 @@ async function runCache(opts: CliOptions): Promise<void> {
   }
 
   // Warmup: run a minimal rlmLoop with cache enabled
-  console.error(`rlmx: warming cache for ${opts.context} (~${validation.estimatedTokens.toLocaleString()} tokens)`);
+  console.error(`mikro: warming cache for ${opts.context} (~${validation.estimatedTokens.toLocaleString()} tokens)`);
 
   config.cache.enabled = true;
 
@@ -598,7 +598,7 @@ async function runCache(opts: CliOptions): Promise<void> {
     // The goal is just to prime the provider's cache
   }
 
-  console.error("rlmx: cache warmup complete");
+  console.error("mikro: cache warmup complete");
   console.error(`  provider:         ${provider}`);
   console.error(`  model:            ${model}`);
   console.error(`  estimated tokens: ${validation.estimatedTokens.toLocaleString()}`);
@@ -609,7 +609,7 @@ async function runCache(opts: CliOptions): Promise<void> {
 async function runBatchCommand(opts: CliOptions): Promise<void> {
   if (!opts.batchFile) {
     console.error("Error: batch command requires a questions file path.");
-    console.error("Usage: rlmx batch <questions.txt> [--context <path>] [--max-cost <n>]");
+    console.error("Usage: mikro batch <questions.txt> [--context <path>] [--max-cost <n>]");
     process.exit(1);
   }
 
@@ -645,7 +645,7 @@ async function runBatchCommand(opts: CliOptions): Promise<void> {
         : undefined;
     context = await loadContext(contextPath, contextOpts);
     if (opts.verbose) {
-      console.error(`rlmx batch: loaded context — ${context.metadata}`);
+      console.error(`mikro batch: loaded context — ${context.metadata}`);
     }
   }
 
@@ -656,14 +656,14 @@ async function runBatchCommand(opts: CliOptions): Promise<void> {
     const validation = validateContextSize(context, config.model.provider);
     if (!validation.valid) {
       console.error(
-        `rlmx: context exceeds model limit (~${validation.estimatedTokens.toLocaleString()} tokens > ${validation.limit.toLocaleString()}), disabling cache mode`
+        `mikro: context exceeds model limit (~${validation.estimatedTokens.toLocaleString()} tokens > ${validation.limit.toLocaleString()}), disabling cache mode`
       );
       batchCache = false;
       config.cache.enabled = false;
       if (config.storage.enabled === "auto" || config.storage.enabled === "always") {
         batchStorageMode = true;
         console.error(
-          `rlmx: storage mode activated for batch (~${validation.estimatedTokens.toLocaleString()} tokens)`
+          `mikro: storage mode activated for batch (~${validation.estimatedTokens.toLocaleString()} tokens)`
         );
       }
     }
@@ -674,7 +674,7 @@ async function runBatchCommand(opts: CliOptions): Promise<void> {
   }
 
   if (opts.verbose) {
-    console.error(`rlmx batch: processing ${opts.batchFile}`);
+    console.error(`mikro batch: processing ${opts.batchFile}`);
   }
 
   await runBatch(resolve(opts.batchFile), context, config, {
@@ -688,14 +688,14 @@ async function runBatchCommand(opts: CliOptions): Promise<void> {
   });
 }
 
-const CONFIG_HELP = `rlmx config — manage global settings
+const CONFIG_HELP = `mikro config — manage global settings
 
 Usage:
-  rlmx config set <key> <value>   Set a setting
-  rlmx config get <key>           Get a setting value
-  rlmx config list                Show all settings (API keys masked)
-  rlmx config delete <key>        Remove a setting
-  rlmx config path                Show settings file path
+  mikro config set <key> <value>   Set a setting
+  mikro config get <key>           Get a setting value
+  mikro config list                Show all settings (API keys masked)
+  mikro config delete <key>        Remove a setting
+  mikro config path                Show settings file path
 
 Keys:
   API keys:    GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, ...
@@ -704,7 +704,7 @@ Keys:
   Gemini:      gemini.thinking_level, gemini.google_search, gemini.code_execution
   General:     tools_level, cache.retention
 
-Settings file: ~/.rlmx/settings.json
+Settings file: ~/.mikro/settings.json
 `;
 
 async function runConfig(args: string[]): Promise<void> {
@@ -715,7 +715,7 @@ async function runConfig(args: string[]): Promise<void> {
   switch (action) {
     case "set": {
       if (!key || !value) {
-        console.error("Usage: rlmx config set <key> <value>");
+        console.error("Usage: mikro config set <key> <value>");
         process.exit(1);
       }
       const settings = await loadSettings();
@@ -727,7 +727,7 @@ async function runConfig(args: string[]): Promise<void> {
 
     case "get": {
       if (!key) {
-        console.error("Usage: rlmx config get <key>");
+        console.error("Usage: mikro config get <key>");
         process.exit(1);
       }
       const settings = await loadSettings();
@@ -743,7 +743,7 @@ async function runConfig(args: string[]): Promise<void> {
       const settings = await loadSettings();
       const keys = Object.keys(settings);
       if (keys.length === 0) {
-        console.log("No settings configured. Use: rlmx config set <key> <value>");
+        console.log("No settings configured. Use: mikro config set <key> <value>");
         return;
       }
       for (const k of keys) {
@@ -754,7 +754,7 @@ async function runConfig(args: string[]): Promise<void> {
 
     case "delete": {
       if (!key) {
-        console.error("Usage: rlmx config delete <key>");
+        console.error("Usage: mikro config delete <key>");
         process.exit(1);
       }
       const settings = await loadSettings();
@@ -810,12 +810,12 @@ async function runBenchmarkCommand(opts: CliOptions, args: string[]): Promise<vo
     const savedPath = await saveBenchmarkResults(results);
     console.error(`Results saved to ${savedPath}`);
   } else {
-    console.log(`rlmx benchmark — compare RLM vs direct LLM\n\nUsage:\n  rlmx benchmark cost                     Run cost benchmark with built-in dataset\n  rlmx benchmark cost --output json       Output results as JSON\n  rlmx benchmark oolong                   Run Oolong Synth (auto-installs HF datasets)\n  rlmx benchmark oolong --samples 5       Run N samples (default 5)\n  rlmx benchmark oolong --idx 42          Run specific sample by index`);
+    console.log(`mikro benchmark — compare RLM vs direct LLM\n\nUsage:\n  mikro benchmark cost                     Run cost benchmark with built-in dataset\n  mikro benchmark cost --output json       Output results as JSON\n  mikro benchmark oolong                   Run Oolong Synth (auto-installs HF datasets)\n  mikro benchmark oolong --samples 5       Run N samples (default 5)\n  mikro benchmark oolong --idx 42          Run specific sample by index`);
   }
 }
 
 /**
- * rlmx doctor — report health of providers, RTK, and config.
+ * mikro doctor — report health of providers, RTK, and config.
  *
  * Exit codes:
  *   0 = all nominal
@@ -828,7 +828,7 @@ async function runDoctor(): Promise<void> {
   // dist/src/cli.js → ../../package.json
   const pkg = require("../../package.json") as { version: string };
 
-  // Load config from cwd (falls back to defaults if no .rlmx/rlmx.yaml)
+  // Load config from cwd (falls back to defaults if no .mikro/mikro.yaml)
   const configDir = process.cwd();
   const config = await loadConfig(configDir);
   applySettingsModelOverrides(config);
@@ -847,10 +847,10 @@ async function runDoctor(): Promise<void> {
     // missing
   }
 
-  // Active template — inferred from whether .rlmx exists; we report the default
+  // Active template — inferred from whether .mikro exists; we report the default
   // the user selects at init (wish scope: print template only when determinable).
   // With no easy on-disk marker, we just show "default" as the library default.
-  const activeTemplate = config.configSource === "yaml" ? "(from rlmx.yaml)" : "default";
+  const activeTemplate = config.configSource === "yaml" ? "(from mikro.yaml)" : "default";
 
   // Provider key status — mirrors settings.ENV_KEY_MAP
   const providerKeys: { label: string; envVar: string }[] = [
@@ -867,7 +867,7 @@ async function runDoctor(): Promise<void> {
     if (!process.env[envVar]) anyKeyMissing = true;
   }
 
-  // Config-declared providers (rlmx.yaml / settings.json `providers`) — the
+  // Config-declared providers (mikro.yaml / settings.json `providers`) — the
   // whole point of listing them here is that a `<id>/<model>` pin which
   // fails as "unknown model" is diagnosable from this screen alone.
   const customProviders = config.providers;
@@ -885,7 +885,7 @@ async function runDoctor(): Promise<void> {
   }
 
   // ─── Output ────────────────────────────────────────────
-  console.log(`rlmx ${pkg.version}`);
+  console.log(`mikro ${pkg.version}`);
   console.log(`node: ${process.version}`);
   console.log("");
 
@@ -898,7 +898,7 @@ async function runDoctor(): Promise<void> {
 
   console.log("Config-declared providers:");
   if (customProviders.length === 0) {
-    console.log("  (none — declare under providers: in .rlmx/rlmx.yaml or ~/.rlmx/settings.json)");
+    console.log("  (none — declare under providers: in .mikro/mikro.yaml or ~/.mikro/settings.json)");
   }
   for (const p of customProviders) {
     const source = customProviderKeySource(p);
@@ -936,7 +936,7 @@ async function runDoctor(): Promise<void> {
   if (rtkMode === "always" && !rtk.available) {
     console.error("");
     console.error(
-      "Error: rlmx config: rtk.enabled=always but rtk is not installed on PATH."
+      "Error: mikro config: rtk.enabled=always but rtk is not installed on PATH."
     );
     process.exit(2);
   }
@@ -966,7 +966,7 @@ async function runUpdate(args: string[]): Promise<void> {
   try {
     runGit(root, ["rev-parse", "--is-inside-work-tree"]);
   } catch {
-    throw new Error("rlmx update requires a git-installed checkout. Reinstall with scripts/install.sh.");
+    throw new Error("mikro update requires a git-installed checkout. Reinstall with scripts/install.sh.");
   }
 
   const before = runGit(root, ["rev-parse", "HEAD"]);
@@ -975,7 +975,13 @@ async function runUpdate(args: string[]): Promise<void> {
     throw new Error("Refusing to update with local changes. Commit/stash them or rerun with --force for managed installs.");
   }
 
-  console.log(`rlmx update: ${root}`);
+  console.log(`mikro update: ${root}`);
+  if (root.includes("/.rlmx/")) {
+    console.log("note: this checkout lives under the legacy ~/.rlmx path; re-run scripts/install.sh to migrate it to ~/.mikro.");
+  }
+  if (root.includes("/.mikro/")) {
+    console.log("note: this checkout lives under the legacy ~/.mikro path; re-run scripts/install.sh to migrate it to ~/.mikro.");
+  }
   console.log(`before: ${before}`);
   runGit(root, ["fetch", "origin", "main", "--tags"]);
   const target = runGit(root, ["rev-parse", "origin/main"]);
@@ -996,7 +1002,7 @@ async function runUpdate(args: string[]): Promise<void> {
   const require = createRequire(import.meta.url);
   const pkg = require("../../package.json") as { version: string };
   console.log(`after:  ${after}`);
-  console.log(`rlmx v${pkg.version}`);
+  console.log(`mikro v${pkg.version}`);
 }
 
 async function main(): Promise<void> {
@@ -1017,12 +1023,12 @@ async function main(): Promise<void> {
       const require = createRequire(import.meta.url);
       // dist/src/cli.js → ../../package.json
       const pkg = require("../../package.json");
-      console.log(`rlmx v${pkg.version}`);
+      console.log(`mikro v${pkg.version}`);
       break;
     }
 
     case "schema":
-      printRlmxCliSchema();
+      printMikroCliSchema();
       break;
 
     case "init":
@@ -1093,6 +1099,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("rlmx error:", err.message);
+  console.error("mikro error:", err.message);
   process.exit(1);
 });

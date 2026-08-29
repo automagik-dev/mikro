@@ -1,6 +1,6 @@
 /**
  * Prime backend — executes one delegated microagent turn through the pinned,
- * installed prime-agent binary (wish rlmx-v2-prime-backend, Group 2).
+ * installed prime-agent binary (wish mikro-v2-prime-backend, Group 2).
  *
  * Why a subprocess: prime-agent is not an npm SDK this repo may import — the
  * wish pins integration to the installed binary (`--mode json -p`), and a
@@ -22,15 +22,15 @@
  * The wish is the governing artifact; every ambiguous mapping fails loudly —
  * no silent degradation.
  *
- * - model: rlmx provider `deepseek` → prime `--provider deepseek
+ * - model: mikro provider `deepseek` → prime `--provider deepseek
  *   --model <id>` (same bare addressing, prime's native deepseek provider).
  *   THE GATE MODEL (wish decision 7, as amended) is deepseek/deepseek-v4-flash:
- *   it maps to `--provider deepseek --model deepseek-v4-flash`. rlmx provider
+ *   it maps to `--provider deepseek --model deepseek-v4-flash`. mikro provider
  *   `google` → prime `--provider prime-inference --model google/<id>` (prime
  *   addresses its google models namespaced) remains a SUPPORTED path for
  *   `google/`-prefixed specs, but it is NOT the gate model. prime 0.7.2
  *   exposes only these two providers (`prime-agent model list`), so any other
- *   rlmx provider (khal, station, openrouter, …) throws.
+ *   mikro provider (khal, station, openrouter, …) throws.
  * - thinking: `config.gemini.thinkingLevel` (minimal|low|medium|high) is a
  *   subset of prime's `--thinking` levels; passed through verbatim.
  * - system: `config.system` (the agent's SYSTEM.md via `applyAgent`) and
@@ -48,7 +48,7 @@
  *   @file — which prime answers with a hard `process.exit(1)` — surfaces as
  *   an actionable tool error before any child starts. A `dict` context
  *   throws.
- * - budget.maxCost / maxTokens: rlmx-owned ceilings monitored from the
+ * - budget.maxCost / maxTokens: mikro-owned ceilings monitored from the
  *   assistant messages' usage records, mirroring `BudgetTracker`
  *   (`src/budget.ts`): totalCost ≥ maxCost → "max-cost", input+output
  *   tokens ≥ maxTokens → "max-tokens". A breach kills the subprocess AND its
@@ -61,8 +61,8 @@
  *   bound ends gracefully with no budget note; prime has no stop signal
  *   other than the kill, so the truncation is marked in the footer.
  *   `isFailedRun` still classifies it as a success, matching legacy.
- * - deadline: an rlmx-owned wall clock defaulting to rlmLoop's 300s and
- *   overridable with `RLMX_MCP_RUN_TIMEOUT_MS` — the same override the
+ * - deadline: an mikro-owned wall clock defaulting to rlmLoop's 300s and
+ *   overridable with `MIKRO_MCP_RUN_TIMEOUT_MS` — the same override the
  *   legacy backend forwards to its engine. Expiry kills the tree and
  *   returns `TIMEOUT_ANSWER`, which `isFailedRun` classifies as failed,
  *   exactly like legacy's timeout.
@@ -74,7 +74,7 @@
  *   prime stream carries no child-depth signal to enforce from.
  * - `output.schema`: prime has no structured-output flag.
  * - gemini feature flags (googleSearch, urlContext, codeExecution,
- *   computerUse, mapsGrounding, fileSearch, mediaResolution): rlmx-side
+ *   computerUse, mapsGrounding, fileSearch, mediaResolution): mikro-side
  *   request decoration prime cannot replicate.
  * - `context` of type `dict`.
  *
@@ -98,7 +98,7 @@ export declare const EXPECTED_PRIME_VERSION = "0.7.2";
 export declare const DEFAULT_PRIME_DEADLINE_MS = 300000;
 /** Budgets the backend enforces on the spawned run, from the request. */
 export interface PrimeRunLimits {
-    /** rlmx-owned wall-clock deadline; expiry kills the tree and returns TIMEOUT_ANSWER. */
+    /** mikro-owned wall-clock deadline; expiry kills the tree and returns TIMEOUT_ANSWER. */
     readonly deadlineMs: number;
     /** Cost ceiling from `budget.max_cost` (null = unlimited). */
     readonly maxCost: number | null;
@@ -128,7 +128,7 @@ export interface PrimeRunResult {
  */
 export type PrimeEngine = (argv: readonly string[], emit: (message: string) => void, limits: PrimeRunLimits) => Promise<PrimeRunResult>;
 export interface PrimeBackendOptions {
-    /** Path to the prime-agent binary (default: `RLMX_PRIME_BINARY_PATH` or "prime-agent"). */
+    /** Path to the prime-agent binary (default: `MIKRO_PRIME_BINARY_PATH` or "prime-agent"). */
     readonly binaryPath?: string;
     /** Pinned version to assert at construction (default: EXPECTED_PRIME_VERSION). */
     readonly expectedVersion?: string;

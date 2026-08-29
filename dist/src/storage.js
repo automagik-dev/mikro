@@ -13,8 +13,8 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync } from "
 import pg from "pg";
 import { PROVIDER_LIMITS } from "./cache.js";
 const { Client } = pg;
-/** Database name used for rlmx context storage */
-const RLMX_DB = "rlmx";
+/** Database name used for mikro context storage */
+const MIKRO_DB = "mikro";
 /** Schema DDL for the records table */
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS records (
@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_records_timestamp ON records (timestamp) WHERE ti
 `;
 /** Schema DDL for observability tables */
 const OBSERVABILITY_DDL = `
-CREATE TABLE IF NOT EXISTS rlmx_sessions (
+CREATE TABLE IF NOT EXISTS mikro_sessions (
   id             TEXT PRIMARY KEY,
   query          TEXT NOT NULL,
   context_path   TEXT,
@@ -51,9 +51,9 @@ CREATE TABLE IF NOT EXISTS rlmx_sessions (
   budget_hit     TEXT
 );
 
-CREATE TABLE IF NOT EXISTS rlmx_events (
+CREATE TABLE IF NOT EXISTS mikro_events (
   id             BIGSERIAL PRIMARY KEY,
-  session_id     TEXT REFERENCES rlmx_sessions(id),
+  session_id     TEXT REFERENCES mikro_sessions(id),
   iteration      INT,
   kind           TEXT NOT NULL,
   input_tokens   INT,
@@ -79,7 +79,7 @@ SELECT session_id, model,
   SUM(output_tokens) AS total_output,
   SUM(cost) AS total_cost,
   AVG(duration_ms)::INT AS avg_duration_ms
-FROM rlmx_events WHERE kind = 'llm_call'
+FROM mikro_events WHERE kind = 'llm_call'
 GROUP BY session_id, model;
 
 CREATE OR REPLACE VIEW v_repl_usage AS
@@ -87,7 +87,7 @@ SELECT session_id, request_type,
   COUNT(*) AS calls,
   SUM(CASE WHEN is_error THEN 1 ELSE 0 END) AS errors,
   AVG(duration_ms)::INT AS avg_duration_ms
-FROM rlmx_events WHERE kind IN ('sub_call', 'pg_query', 'repl_exec')
+FROM mikro_events WHERE kind IN ('sub_call', 'pg_query', 'repl_exec')
 GROUP BY session_id, request_type;
 `;
 /** Resolve ~ in paths to the user's home directory */
@@ -129,7 +129,7 @@ export function getChunkSize(provider, config) {
  * PgStorage manages an embedded pgserve instance for large context handling.
  */
 /** Filename for the server-info sidecar inside a persistent-mode dataDir. */
-const SERVER_SIDECAR = ".rlmx-server.json";
+const SERVER_SIDECAR = ".mikro-server.json";
 export class PgStorage {
     process = null;
     client = null;
@@ -137,7 +137,7 @@ export class PgStorage {
     stopping = false;
     cleanupRegistered = false;
     /**
-     * Absolute path to the `.rlmx-server.json` sidecar this instance wrote. Set
+     * Absolute path to the `.mikro-server.json` sidecar this instance wrote. Set
      * only when we spawned pgserve (owner mode) so `stop()` can clean it up.
      * Null when we attached to an existing instance (no ownership = no cleanup).
      */
@@ -146,7 +146,7 @@ export class PgStorage {
     attached = false;
     /** Connection string for the running pgserve instance */
     get connectionString() {
-        return `postgresql://postgres:postgres@127.0.0.1:${this.port}/${RLMX_DB}`;
+        return `postgresql://postgres:postgres@127.0.0.1:${this.port}/${MIKRO_DB}`;
     }
     /** Get the underlying pg Client (for observability recorder). */
     getClient() {
@@ -155,11 +155,11 @@ export class PgStorage {
     /**
      * Start pgserve and connect to it. For persistent-mode dataDirs where
      * another PgStorage instance already spawned pgserve (discovered via
-     * `.rlmx-server.json` sidecar), we attach as a second client instead of
+     * `.mikro-server.json` sidecar), we attach as a second client instead of
      * trying to spawn a conflicting postmaster — postgres single-writer
      * semantics mean a second spawn on the same dataDir always fails with
-     * "pre-existing shared memory block". Attaching lets `rlmx stats`,
-     * `rlmx` query runs, and long-running SDK pipelines coexist cleanly.
+     * "pre-existing shared memory block". Attaching lets `mikro stats`,
+     * `mikro` query runs, and long-running SDK pipelines coexist cleanly.
      *
      * Returns the connection string once ready.
      */
@@ -247,10 +247,10 @@ export class PgStorage {
      * Try to attach to an existing pgserve on this dataDir. Three levels of
      * discovery, in order:
      *
-     *   1. `.rlmx-server.json` sidecar (the happy path — spawner writes it
+     *   1. `.mikro-server.json` sidecar (the happy path — spawner writes it
      *      after `waitForReady`, cleans it on stop).
      *   2. `postmaster.pid` fallback (postgres's own lockfile — present even
-     *      if the rlmx sidecar was never written or got unlinked before the
+     *      if the mikro sidecar was never written or got unlinked before the
      *      pg process exited, e.g. orphaned pgserve after a crash).
      *
      * Returns the connection string on success, null to tell the caller to
@@ -258,7 +258,7 @@ export class PgStorage {
      */
     async tryAttachFromSidecar(config) {
         const dataDir = expandHome(config.dataDir);
-        // Level 1: rlmx sidecar
+        // Level 1: mikro sidecar
         const sidecarPath = join(dataDir, SERVER_SIDECAR);
         if (existsSync(sidecarPath)) {
             let info = null;
@@ -625,7 +625,7 @@ export class PgStorage {
             process.exit(128 + 2);
         });
         process.once("uncaughtException", (err) => {
-            console.error("rlmx: uncaught exception, cleaning up pgserve:", err.message);
+            console.error("mikro: uncaught exception, cleaning up pgserve:", err.message);
             cleanup();
             process.exit(1);
         });
@@ -685,7 +685,7 @@ export function parseContextLine(line, options = {}) {
     }
     catch {
         // Malformed JSONL in an actual JSONL source — log warning and treat as plain text
-        process.stderr.write(`rlmx: warning: skipping malformed JSONL line: ${trimmed.slice(0, 80)}...\n`);
+        process.stderr.write(`mikro: warning: skipping malformed JSONL line: ${trimmed.slice(0, 80)}...\n`);
         return { timestamp: null, type: null, content: trimmed };
     }
 }

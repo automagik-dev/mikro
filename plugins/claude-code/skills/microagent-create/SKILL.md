@@ -1,14 +1,14 @@
 ---
 name: microagent-create
-description: "PROPOSE-ONLY — mine this host's recent Claude Code transcripts for work that keeps recurring and keeps returning bulk into context, rank those families by the context they burn, and write ONE draft rlmx microagent into `.rlmx/agents/<name>.proposed/` (agent.yaml + SYSTEM.md + EVIDENCE.md) for the user to approve. Read this skill when the user asks to create, propose, draft or suggest an rlmx microagent, asks what is worth offloading, asks where their tokens are going and wants an agent for it, or runs /rlmx:microagent-create. It never activates anything: `.proposed` is a reserved suffix that rlmx discovery skips, so a draft is neither listed nor callable until the USER renames the directory. Do not use it to edit an existing agent, to run an agent, or to answer a question about a codebase (that is `rlmx_explore-r`)."
+description: "PROPOSE-ONLY — mine this host's recent Claude Code transcripts for work that keeps recurring and keeps returning bulk into context, rank those families by the context they burn, and write ONE draft mikro microagent into `.mikro/agents/<name>.proposed/` (agent.yaml + SYSTEM.md + EVIDENCE.md) for the user to approve. Read this skill when the user asks to create, propose, draft or suggest an mikro microagent, asks what is worth offloading, asks where their tokens are going and wants an agent for it, or runs /mikro:microagent-create. It never activates anything: `.proposed` is a reserved suffix that mikro discovery skips, so a draft is neither listed nor callable until the USER renames the directory. Do not use it to edit an existing agent, to run an agent, or to answer a question about a codebase (that is `mikro_explore-r`)."
 ---
 
-# Proposing an rlmx microagent from real usage
+# Proposing an mikro microagent from real usage
 
 ## The contract, first
 
 **You measure, you draft, you stop.** The draft goes into
-`.rlmx/agents/<name>.proposed/` and nowhere else. You do not rename it, you do
+`.mikro/agents/<name>.proposed/` and nowhere else. You do not rename it, you do
 not copy it somewhere it would load, and you do not offer to. The rename is the
 user's, and it is the entire approval step.
 
@@ -18,7 +18,7 @@ whose name ends `.proposed`, case-insensitively
 `tools/call` dispatches from the same scan that builds `tools/list`
 (`src/mcp/server.ts:252`, `src/mcp/server.ts:771`), a draft is *neither listed
 nor callable*; calling it by its would-be name answers `Unknown tool:
-rlmx_<name>_proposed`. Renaming publishes it on the next request, without a
+mikro_<name>_proposed`. Renaming publishes it on the next request, without a
 reconnect. `tests/mcp-agents.test.ts` pins all of that.
 
 Two consequences worth stating to the user:
@@ -67,7 +67,7 @@ highest-burn family that clears all five:
    a build is out, and stays out even when the same command also greps.
 2. **Not already covered.** `repo-exploration` will usually top the table and
    is `explore-r`'s class — proposing it again proposes a duplicate. Check
-   `.rlmx/agents/`, `.agents/` and `~/.rlmx/agents/` before choosing.
+   `.mikro/agents/`, `.agents/` and `~/.mikro/agents/` before choosing.
 3. **Repeatable.** It recurs across sessions and projects, not once in one
    burst. Read `sess`, `proj` and `calls/sess` in the table, not just the total.
 4. **Self-contained.** A question can be asked in one prompt and answered
@@ -83,8 +83,8 @@ Pick exactly one. One defensible draft beats three speculative ones.
 
 ## Step 3 — write the draft
 
-Create `.rlmx/agents/<name>.proposed/` in the workspace root (the project the
-user is in — the directory `rlmx mcp` was started with via `--dir`). Three
+Create `.mikro/agents/<name>.proposed/` in the workspace root (the project the
+user is in — the directory `mikro mcp` was started with via `--dir`). Three
 files, all three required.
 
 ### `agent.yaml`
@@ -113,7 +113,7 @@ which carries the measurement in its own comments:
 - **`shape: loop`.** Only `single-step` changes behaviour (it caps iterations at
   1); `loop` and `recurse` are identical at runtime. Choose `recurse` only if
   the draft actually fans out with `rlm_query_batched` — and if it does, it
-  inherits explore-r's two install requirements (`RLMX_REPL_TIMEOUT_MS=600000`
+  inherits explore-r's two install requirements (`MIKRO_REPL_TIMEOUT_MS=600000`
   and the child model pin), which you must then copy into the draft's comments
   rather than leave the user to discover.
 - **`model: khal/deepseek-v4-flash`** is the project default on the cost
@@ -165,10 +165,10 @@ Report: the candidate, its measured burn, where the three files are, and the
 exact command that would activate it — for the user to run, not you:
 
 ```bash
-mv .rlmx/agents/<name>.proposed .rlmx/agents/<name>
+mv .mikro/agents/<name>.proposed .mikro/agents/<name>
 ```
 
-Then say what happens when they do: the tool appears as `rlmx_<name>` on the
+Then say what happens when they do: the tool appears as `mikro_<name>` on the
 next request, live, with no restart and no reconnect. And that undoing it is
 the same rename backwards.
 

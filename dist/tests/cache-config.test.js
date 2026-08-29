@@ -4,16 +4,16 @@ import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadConfig } from "../src/config.js";
-/** Helper: create .rlmx/ dir with rlmx.yaml content */
+/** Helper: create .mikro/ dir with mikro.yaml content */
 async function makeConfig(dir, yamlContent) {
-    const rlmxDir = join(dir, ".rlmx");
-    await mkdir(rlmxDir, { recursive: true });
-    await writeFile(join(rlmxDir, "rlmx.yaml"), yamlContent);
+    const mikroDir = join(dir, ".mikro");
+    await mkdir(mikroDir, { recursive: true });
+    await writeFile(join(mikroDir, "mikro.yaml"), yamlContent);
 }
 describe("YAML cache config parsing", () => {
     let dir;
     it("returns default cache config when no cache section exists", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, "model:\n  provider: google\n");
         const cfg = await loadConfig(dir);
         assert.equal(cfg.cache.enabled, false);
@@ -25,7 +25,7 @@ describe("YAML cache config parsing", () => {
         await rm(dir, { recursive: true });
     });
     it("parses full cache config with all fields", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `model:
   provider: anthropic
 cache:
@@ -46,7 +46,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("parses cache enabled: true", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `model:
   provider: google
 cache:
@@ -57,7 +57,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("parses cache enabled: false explicitly", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `model:
   provider: google
 cache:
@@ -68,7 +68,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("parses retention: short", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `cache:
   retention: short
 `);
@@ -77,7 +77,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("parses retention: long", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `cache:
   retention: long
 `);
@@ -86,7 +86,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("rejects invalid retention value", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `cache:
   retention: medium
 `);
@@ -94,7 +94,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("rejects invalid strategy value", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `cache:
   strategy: partial
 `);
@@ -102,7 +102,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("parses TTL as a number", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `cache:
   ttl: 7200
 `);
@@ -112,7 +112,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("parses expire-time as ISO 8601 string", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `cache:
   expire-time: "2026-06-15T12:00:00Z"
 `);
@@ -121,7 +121,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("omits optional fields when not provided", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `cache:
   enabled: true
 `);
@@ -133,7 +133,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("defaults cache config when no config files exist", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         const cfg = await loadConfig(dir);
         assert.equal(cfg.cache.enabled, false);
         assert.equal(cfg.cache.strategy, "full");
@@ -142,7 +142,7 @@ cache:
         await rm(dir, { recursive: true });
     });
     it("cache config coexists with other config sections", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cache-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cache-cfg-"));
         await makeConfig(dir, `model:
   provider: anthropic
   model: claude-sonnet-4-20250514

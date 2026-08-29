@@ -1,6 +1,6 @@
 /**
  * Prime backend — executes one delegated microagent turn through the pinned,
- * installed prime-agent binary (wish rlmx-v2-prime-backend, Group 2).
+ * installed prime-agent binary (wish mikro-v2-prime-backend, Group 2).
  *
  * Why a subprocess: prime-agent is not an npm SDK this repo may import — the
  * wish pins integration to the installed binary (`--mode json -p`), and a
@@ -22,15 +22,15 @@
  * The wish is the governing artifact; every ambiguous mapping fails loudly —
  * no silent degradation.
  *
- * - model: rlmx provider `deepseek` → prime `--provider deepseek
+ * - model: mikro provider `deepseek` → prime `--provider deepseek
  *   --model <id>` (same bare addressing, prime's native deepseek provider).
  *   THE GATE MODEL (wish decision 7, as amended) is deepseek/deepseek-v4-flash:
- *   it maps to `--provider deepseek --model deepseek-v4-flash`. rlmx provider
+ *   it maps to `--provider deepseek --model deepseek-v4-flash`. mikro provider
  *   `google` → prime `--provider prime-inference --model google/<id>` (prime
  *   addresses its google models namespaced) remains a SUPPORTED path for
  *   `google/`-prefixed specs, but it is NOT the gate model. prime 0.7.2
  *   exposes only these two providers (`prime-agent model list`), so any other
- *   rlmx provider (khal, station, openrouter, …) throws.
+ *   mikro provider (khal, station, openrouter, …) throws.
  * - thinking: `config.gemini.thinkingLevel` (minimal|low|medium|high) is a
  *   subset of prime's `--thinking` levels; passed through verbatim.
  * - system: `config.system` (the agent's SYSTEM.md via `applyAgent`) and
@@ -48,7 +48,7 @@
  *   @file — which prime answers with a hard `process.exit(1)` — surfaces as
  *   an actionable tool error before any child starts. A `dict` context
  *   throws.
- * - budget.maxCost / maxTokens: rlmx-owned ceilings monitored from the
+ * - budget.maxCost / maxTokens: mikro-owned ceilings monitored from the
  *   assistant messages' usage records, mirroring `BudgetTracker`
  *   (`src/budget.ts`): totalCost ≥ maxCost → "max-cost", input+output
  *   tokens ≥ maxTokens → "max-tokens". A breach kills the subprocess AND its
@@ -61,8 +61,8 @@
  *   bound ends gracefully with no budget note; prime has no stop signal
  *   other than the kill, so the truncation is marked in the footer.
  *   `isFailedRun` still classifies it as a success, matching legacy.
- * - deadline: an rlmx-owned wall clock defaulting to rlmLoop's 300s and
- *   overridable with `RLMX_MCP_RUN_TIMEOUT_MS` — the same override the
+ * - deadline: an mikro-owned wall clock defaulting to rlmLoop's 300s and
+ *   overridable with `MIKRO_MCP_RUN_TIMEOUT_MS` — the same override the
  *   legacy backend forwards to its engine. Expiry kills the tree and
  *   returns `TIMEOUT_ANSWER`, which `isFailedRun` classifies as failed,
  *   exactly like legacy's timeout.
@@ -74,7 +74,7 @@
  *   prime stream carries no child-depth signal to enforce from.
  * - `output.schema`: prime has no structured-output flag.
  * - gemini feature flags (googleSearch, urlContext, codeExecution,
- *   computerUse, mapsGrounding, fileSearch, mediaResolution): rlmx-side
+ *   computerUse, mapsGrounding, fileSearch, mediaResolution): mikro-side
  *   request decoration prime cannot replicate.
  * - `context` of type `dict`.
  *
@@ -95,7 +95,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
-import type { RlmxConfig } from "../../config.js";
+import type { MikroConfig } from "../../config.js";
 import type { LoadedContext } from "../../context.js";
 import { TIMEOUT_ANSWER } from "../../rlm.js";
 import type { Microagent } from "../agents.js";
@@ -109,7 +109,7 @@ export const DEFAULT_PRIME_DEADLINE_MS = 300_000;
 
 /** Budgets the backend enforces on the spawned run, from the request. */
 export interface PrimeRunLimits {
-  /** rlmx-owned wall-clock deadline; expiry kills the tree and returns TIMEOUT_ANSWER. */
+  /** mikro-owned wall-clock deadline; expiry kills the tree and returns TIMEOUT_ANSWER. */
   readonly deadlineMs: number;
   /** Cost ceiling from `budget.max_cost` (null = unlimited). */
   readonly maxCost: number | null;
@@ -146,7 +146,7 @@ export type PrimeEngine = (
 ) => Promise<PrimeRunResult>;
 
 export interface PrimeBackendOptions {
-  /** Path to the prime-agent binary (default: `RLMX_PRIME_BINARY_PATH` or "prime-agent"). */
+  /** Path to the prime-agent binary (default: `MIKRO_PRIME_BINARY_PATH` or "prime-agent"). */
   readonly binaryPath?: string;
   /** Pinned version to assert at construction (default: EXPECTED_PRIME_VERSION). */
   readonly expectedVersion?: string;
@@ -220,7 +220,7 @@ function textOf(message: PrimeMessage): string {
 
 /**
  * The real engine: spawn the binary, parse the JSONL event stream, enforce
- * the rlmx-owned budgets, and kill the whole process tree on breach.
+ * the mikro-owned budgets, and kill the whole process tree on breach.
  */
 function spawnPrimeRun(
   argv: readonly string[],
@@ -433,7 +433,7 @@ function spawnPrimeRun(
  */
 function assertPinnedVersion(binaryPath: string, expected: string): void {
   const failWith = (message: string): void => {
-    process.stderr.write(`rlmx: ${message}\n`);
+    process.stderr.write(`mikro: ${message}\n`);
     throw new Error(message);
   };
 
@@ -447,7 +447,7 @@ function assertPinnedVersion(binaryPath: string, expected: string): void {
     failWith(
       `prime backend: cannot run "${binaryPath}": ${err instanceof Error ? err.message : String(err)}. ` +
         `The prime backend executes microagent turns through the installed prime-agent binary; ` +
-        `install prime-agent ${expected} and restart rlmx mcp, or switch the agent back to \`backend: rlmx\`.`
+        `install prime-agent ${expected} and restart mikro mcp, or switch the agent back to \`backend: mikro\`.`
     );
     return;
   }
@@ -456,7 +456,7 @@ function assertPinnedVersion(binaryPath: string, expected: string): void {
     failWith(
       `prime backend: cannot run "${binaryPath}": ${probe.error.message}. ` +
         `The prime backend executes microagent turns through the installed prime-agent binary; ` +
-        `install prime-agent ${expected} and restart rlmx mcp, or switch the agent back to \`backend: rlmx\`.`
+        `install prime-agent ${expected} and restart mikro mcp, or switch the agent back to \`backend: mikro\`.`
     );
     return;
   }
@@ -467,46 +467,46 @@ function assertPinnedVersion(binaryPath: string, expected: string): void {
     failWith(
       `prime backend: "${binaryPath}" is not the pinned prime-agent ${expected}: ` +
         `\`prime-agent --version\` reported ${reported ? `"${reported}"` : "nothing"}. ` +
-        `rlmx pins this backend to an exact binary version — upgrades are deliberate events. ` +
-        `Run \`prime-agent update\` to move the pin as a recorded decision, or switch the agent back to \`backend: rlmx\`.`
+        `mikro pins this backend to an exact binary version — upgrades are deliberate events. ` +
+        `Run \`prime-agent update\` to move the pin as a recorded decision, or switch the agent back to \`backend: mikro\`.`
     );
   }
 }
 
 /**
- * Map rlmx's model addressing onto prime 0.7.2's two providers. Fails loudly
- * for every rlmx provider prime cannot address — a spec that says "run on X"
+ * Map mikro's model addressing onto prime 0.7.2's two providers. Fails loudly
+ * for every mikro provider prime cannot address — a spec that says "run on X"
  * must never silently run on another model.
  */
 function mapPrimeModel(
-  model: RlmxConfig["model"],
+  model: MikroConfig["model"],
   agentName: string | undefined
 ): { provider: string; model: string } {
   const who = agentName ? `agent "${agentName}"` : "this run";
   switch (model.provider) {
     case "google":
-      // rlmx addresses gemini bare (`gemini-2.5-flash`); prime namespaces it
+      // mikro addresses gemini bare (`gemini-2.5-flash`); prime namespaces it
       // under the prime-inference gateway (`google/gemini-2.5-flash`).
       return { provider: "prime-inference", model: `google/${model.model}` };
     case "deepseek":
       return { provider: "deepseek", model: model.model };
     default:
       throw new Error(
-        `prime backend: ${who} is pinned to rlmx model "${model.provider}/${model.model}", ` +
+        `prime backend: ${who} is pinned to mikro model "${model.provider}/${model.model}", ` +
           `which prime-agent 0.7.2 cannot address — prime exposes only the \`deepseek\` and \`prime-inference\` providers. ` +
           `Re-pin the agent's model to \`google/<gemini model>\` (routed through prime-inference) or \`deepseek/<model>\`, ` +
-          `or switch the agent back to \`backend: rlmx\`.`
+          `or switch the agent back to \`backend: mikro\`.`
       );
   }
 }
 
-/** Reject every rlmx feature the prime leg cannot honor — never degrade silently. */
-function assertSupportedConfig(config: RlmxConfig, agentName: string | undefined): void {
+/** Reject every mikro feature the prime leg cannot honor — never degrade silently. */
+function assertSupportedConfig(config: MikroConfig, agentName: string | undefined): void {
   const who = agentName ? `agent "${agentName}"` : "this run";
   const reject = (field: string, why: string): never => {
     throw new Error(
       `prime backend: ${who} declares ${field}, which the prime leg cannot honor (${why}). ` +
-        `Remove it from the agent/config or switch the agent back to \`backend: rlmx\`.`
+        `Remove it from the agent/config or switch the agent back to \`backend: mikro\`.`
     );
   };
 
@@ -567,7 +567,7 @@ function resolveContextFiles(
   if (!contextRoot) {
     throw new Error(
       "prime backend: context was loaded without a root path and cannot be mapped to prime @file arguments. " +
-        "Pass the context through a filesystem path, or switch the agent back to `backend: rlmx`."
+        "Pass the context through a filesystem path, or switch the agent back to `backend: mikro`."
     );
   }
   const toFileArg = (absolutePath: string): string => {
@@ -575,7 +575,7 @@ function resolveContextFiles(
       throw new Error(
         `prime backend: context file "${absolutePath}" does not exist — a missing @file argument ` +
           `makes prime-agent exit(1) at startup. Re-create the file or re-load the context, ` +
-          `or switch the agent back to \`backend: rlmx\`.`
+          `or switch the agent back to \`backend: mikro\`.`
       );
     }
     return `@${absolutePath}`;
@@ -587,19 +587,19 @@ function resolveContextFiles(
   }
   throw new Error(
     `prime backend: context type "${(context as LoadedContext).type}" cannot be mapped to prime @file arguments. ` +
-      `Pass a file or directory as the context, or switch the agent back to \`backend: rlmx\`.`
+      `Pass a file or directory as the context, or switch the agent back to \`backend: mikro\`.`
   );
 }
 
 /** The microagent role appended AFTER prime's base prompt (never replacing it). */
 function buildAppendedRole(
   agent: Microagent | undefined,
-  config: RlmxConfig,
+  config: MikroConfig,
   contextNote: string | null
 ): string {
-  const who = agent ? `the rlmx microagent "${agent.name}"` : "an rlmx microagent";
+  const who = agent ? `the mikro microagent "${agent.name}"` : "an mikro microagent";
   const parts: string[] = [
-    `You are operating as ${who}, dispatched by an rlmx MCP host to complete one delegated task. ` +
+    `You are operating as ${who}, dispatched by an mikro MCP host to complete one delegated task. ` +
       `Work autonomously to completion — you cannot ask the host follow-up questions mid-run — and ` +
       `end with your final report: the complete answer to the task, self-contained and written for the host's user.`,
   ];
@@ -613,7 +613,7 @@ function buildAppendedRole(
 
 /** Resolve the wall-clock deadline — legacy's override, same default. */
 function primeDeadlineMs(): number {
-  const ms = Number(process.env.RLMX_MCP_RUN_TIMEOUT_MS);
+  const ms = Number(process.env.MIKRO_MCP_RUN_TIMEOUT_MS);
   return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_PRIME_DEADLINE_MS;
 }
 
@@ -653,7 +653,7 @@ export class PrimeBackend implements RuntimeBackend {
 
   constructor(options: PrimeBackendOptions = {}) {
     this.binaryPath =
-      options.binaryPath ?? process.env.RLMX_PRIME_BINARY_PATH ?? "prime-agent";
+      options.binaryPath ?? process.env.MIKRO_PRIME_BINARY_PATH ?? "prime-agent";
     this.engine = options.engine ?? ((argv, emit, limits) => spawnPrimeRun(argv, emit, limits));
     // Backend startup: the version pin is asserted once per instance. The
     // server constructs this lazily on first prime selection (selectBackend),

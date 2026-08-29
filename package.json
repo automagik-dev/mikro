@@ -1,11 +1,9 @@
 {
-  "name": "@automagik/rlmx",
+  "name": "mikro",
   "version": "1.260829.1",
-  "description": "RLM algorithm SDK for coding agents — prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
+  "private": true,
+  "description": "mikro \u2014 microagent runtime for coding agents: prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
   "type": "module",
-  "publishConfig": {
-    "access": "public"
-  },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "files": [
@@ -54,7 +52,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/automagik-dev/rlmx.git"
+    "url": "git+https://github.com/automagik-dev/mikro.git"
   },
   "overrides": {
     "@hono/node-server": "^2.0.11"

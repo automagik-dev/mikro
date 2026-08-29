@@ -1,5 +1,5 @@
 /**
- * Runtime backend seam — Wish rlmx-v2-prime-backend Group 1.
+ * Runtime backend seam — Wish mikro-v2-prime-backend Group 1.
  *
  * The MCP server used to call `rlmLoop` directly; it now calls a backend.
  * That inversion is the whole point of this module: the server owns the

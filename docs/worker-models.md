@@ -90,7 +90,7 @@ is copied from a committed record — none is recomputed here.
 ### Per-arm pricing
 
 Catalog prices read live from the khal LiteLLM gateway (`/v1/model/info`) on
-2026-07-27, the same day every arm ran. rlmx converts LiteLLM's per-token
+2026-07-27, the same day every arm ran. mikro converts LiteLLM's per-token
 prices ×1e6 on the way in (`src/khal-provider.ts`).
 
 | model | input $/Mtok | output $/Mtok | context |
@@ -99,7 +99,7 @@ prices ×1e6 on the way in (`src/khal-provider.ts`).
 | `khal/glm-5.2` | $1.00 | $4.00 | 1,048,576 |
 | `khal/deepseek-v4-pro` | $1.30 | $2.60 | 1,048,576 |
 | `khal/qwen3.7-max` | $2.50 | $7.50 | 256,000 |
-| `station/<any>` | **$0.00** | **$0.00** | local; rlmx caps the window at 32,768 |
+| `station/<any>` | **$0.00** | **$0.00** | local; mikro caps the window at 32,768 |
 
 `station/*` is $0.00 by construction, not by measurement: the provider declares
 `cost: { input: 0, output: 0, … }` because a keyless local gateway bills
@@ -170,14 +170,14 @@ replicates buy exactly three things:
 
 | n = 2 **does** establish | n = 2 does **not** establish |
 |---|---|
-| **Feasibility** — whether the recursive recipe completes at all on a local model under this harness's walls (`RLMX_REPL_TIMEOUT_MS=600000` for the fan-out, `RLMX_MCP_RUN_TIMEOUT_MS=900000` for the run) | **A rank against the khal arms.** Those are n = 1 on a suite whose measured run-to-run spread is ±3 facts of 34. Comparing a 2-replicate mean to a 1-round observation is not a comparison |
+| **Feasibility** — whether the recursive recipe completes at all on a local model under this harness's walls (`MIKRO_REPL_TIMEOUT_MS=600000` for the fan-out, `MIKRO_MCP_RUN_TIMEOUT_MS=900000` for the run) | **A rank against the khal arms.** Those are n = 1 on a suite whose measured run-to-run spread is ±3 facts of 34. Comparing a 2-replicate mean to a 1-round observation is not a comparison |
 | **Cost** — $0.00, by construction | **That the station model is better or worse** than any khal model on coverage. Nothing here tests that |
 | **A first noise estimate** — the spread *between* the two replicates on one fixed (recipe, model, suite) triple | **A level.** Two observations bound a spread loosely and estimate a mean badly |
 
 Reproduce it (keyless — no `KHAL_API_KEY` needed or used):
 
 ```bash
-cd ~/prod/rlmx && npm run build
+cd ~/prod/mikro && npm run build
 R=.genie/wishes/rlmx-explore-offload/parity/round2
 for rep in 1 2; do
   node $R/run-train-round.mjs --gen 1 \
@@ -253,7 +253,7 @@ this reason.
 
 ```bash
 export KHAL_API_KEY=…          # shell only, never in a file — station needs none
-cd ~/prod/rlmx && npm run build
+cd ~/prod/mikro && npm run build
 
 R=.genie/wishes/rlmx-explore-offload/parity/round2
 node $R/run-train-round.mjs --gen 1 \

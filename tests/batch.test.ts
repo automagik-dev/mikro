@@ -22,7 +22,7 @@ describe("batch question file parsing", () => {
   let dir: string;
 
   it("reads questions from a file (one per line)", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
     const questionsPath = join(dir, "questions.txt");
     await writeFile(
       questionsPath,
@@ -41,7 +41,7 @@ describe("batch question file parsing", () => {
   });
 
   it("skips empty lines", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
     const questionsPath = join(dir, "questions.txt");
     await writeFile(
       questionsPath,
@@ -59,7 +59,7 @@ describe("batch question file parsing", () => {
   });
 
   it("skips comment lines starting with #", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
     const questionsPath = join(dir, "questions.txt");
     await writeFile(
       questionsPath,
@@ -77,7 +77,7 @@ describe("batch question file parsing", () => {
   });
 
   it("trims whitespace from questions", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
     const questionsPath = join(dir, "questions.txt");
     await writeFile(
       questionsPath,
@@ -95,7 +95,7 @@ describe("batch question file parsing", () => {
   });
 
   it("handles file with only comments and empty lines", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
     const questionsPath = join(dir, "questions.txt");
     await writeFile(
       questionsPath,
@@ -111,7 +111,7 @@ describe("batch question file parsing", () => {
   });
 
   it("handles single question file", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
     const questionsPath = join(dir, "questions.txt");
     await writeFile(questionsPath, "Just one question\n");
     const content = await readFile(questionsPath, "utf-8");
@@ -125,7 +125,7 @@ describe("batch question file parsing", () => {
   });
 
   it("preserves question content with special characters", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
     const questionsPath = join(dir, "questions.txt");
     await writeFile(
       questionsPath,

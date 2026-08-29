@@ -83,7 +83,7 @@ export function isSessionState(value: unknown): value is SessionState {
 	return true;
 }
 
-/** Safe id → filename transform. Matches the rlmx naming style. */
+/** Safe id → filename transform. Matches the mikro naming style. */
 function safeFilename(sessionId: string): string {
 	const cleaned = sessionId.replace(/[^a-zA-Z0-9._-]+/g, "-");
 	return cleaned.length > 0 ? cleaned : "session";

@@ -23,21 +23,21 @@ export async function runBatch(questionsFile, context, config, options = {}) {
         .map((q) => q.trim())
         .filter((q) => q.length > 0 && !q.startsWith("#"));
     if (questions.length === 0) {
-        console.error("rlmx batch: no questions found in file");
+        console.error("mikro batch: no questions found in file");
         process.exit(1);
     }
     // Gemini Batch API mode — uses server-side batching for 50% cost reduction
     if (options.batchApi) {
         if (!isGoogleProvider(config.model.provider)) {
-            console.error(`rlmx batch: --batch-api requires provider: google. Current provider: ${config.model.provider}`);
+            console.error(`mikro batch: --batch-api requires provider: google. Current provider: ${config.model.provider}`);
             process.exit(1);
         }
-        console.error(`rlmx batch: Gemini Batch API mode — ${questions.length} questions will be submitted as a batch job`);
+        console.error(`mikro batch: Gemini Batch API mode — ${questions.length} questions will be submitted as a batch job`);
         // TODO: Implement Gemini Batch API integration via @google/genai BatchClient
         // The Batch API submits all questions as a single job and polls for results,
         // providing 50% cost reduction on input/output tokens.
         // For now, fall through to standard batching with a cost discount note.
-        console.error("rlmx batch: Gemini Batch API is not yet fully implemented. Using standard batching.");
+        console.error("mikro batch: Gemini Batch API is not yet fully implemented. Using standard batching.");
     }
     let totalCost = 0;
     let totalCacheReadTokens = 0;
@@ -45,7 +45,7 @@ export async function runBatch(questionsFile, context, config, options = {}) {
     for (const question of questions) {
         // Check budget — stop if cumulative cost exceeds maxCost
         if (options.maxCost && totalCost >= options.maxCost) {
-            console.error(`rlmx batch: budget exceeded ($${totalCost.toFixed(4)} >= $${options.maxCost.toFixed(4)}), stopping after ${completed}/${questions.length} questions`);
+            console.error(`mikro batch: budget exceeded ($${totalCost.toFixed(4)} >= $${options.maxCost.toFixed(4)}), stopping after ${completed}/${questions.length} questions`);
             break;
         }
         // Determine cache/storage mode for this batch

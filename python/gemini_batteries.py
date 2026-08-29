@@ -1,5 +1,5 @@
 """
-gemini_batteries.py — Gemini 3 native batteries for rlmx.
+gemini_batteries.py — Gemini 3 native batteries for mikro.
 
 Provides Gemini-powered functions available in the REPL when provider is Google:
   - web_search(query) — Google Search grounding via IPC

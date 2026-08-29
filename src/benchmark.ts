@@ -1,5 +1,5 @@
 /**
- * Benchmark runner for rlmx — compares RLM vs direct LLM on cost/tokens/latency.
+ * Benchmark runner for mikro — compares RLM vs direct LLM on cost/tokens/latency.
  *
  * Two modes:
  * - cost: built-in curated dataset, measures cost savings
@@ -13,7 +13,7 @@ import { mkdir, writeFile, readFile, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import type { RlmxConfig } from "./config.js";
+import type { MikroConfig } from "./config.js";
 import type { LoadedContext } from "./context.js";
 import { llmComplete, type ChatMessage } from "./llm.js";
 import { rlmLoop } from "./rlm.js";
@@ -91,7 +91,7 @@ export function calculateCostSavings(directCost: number, rlmCost: number): numbe
 // ─── Cost Benchmark ──────────────────────────────────────
 
 export async function runCostBenchmark(
-  config: RlmxConfig,
+  config: MikroConfig,
   options?: { outputFormat?: "table" | "json" }
 ): Promise<BenchmarkResults> {
   const dataset = await loadBuiltinDataset();
@@ -173,7 +173,7 @@ export async function runCostBenchmark(
 // ─── Oolong Benchmark ────────────────────────────────────
 
 async function ensureBenchVenv(): Promise<string> {
-  const venvDir = join(homedir(), ".rlmx", ".bench-venv");
+  const venvDir = join(homedir(), ".mikro", ".bench-venv");
   const pythonBin = join(venvDir, "bin", "python");
 
   try {
@@ -181,8 +181,8 @@ async function ensureBenchVenv(): Promise<string> {
     return pythonBin;
   } catch {
     // Create venv and install datasets
-    process.stderr.write("rlmx benchmark: setting up Python venv for HuggingFace datasets...\n");
-    await mkdir(join(homedir(), ".rlmx"), { recursive: true });
+    process.stderr.write("mikro benchmark: setting up Python venv for HuggingFace datasets...\n");
+    await mkdir(join(homedir(), ".mikro"), { recursive: true });
 
     // Try uv first (preferred), fall back to python3 -m venv + pip
     try {
@@ -193,7 +193,7 @@ async function ensureBenchVenv(): Promise<string> {
       await execFileAsync(join(venvDir, "bin", "pip"), ["install", "datasets"]);
     }
 
-    process.stderr.write("rlmx benchmark: Python venv ready.\n");
+    process.stderr.write("mikro benchmark: Python venv ready.\n");
     return pythonBin;
   }
 }
@@ -206,7 +206,7 @@ function findLoadDatasetScript(): string {
 }
 
 export async function runOolongBenchmark(
-  config: RlmxConfig,
+  config: MikroConfig,
   options?: { samples?: number; idx?: number }
 ): Promise<BenchmarkResults> {
   const samples = options?.samples ?? 5;
@@ -221,10 +221,10 @@ export async function runOolongBenchmark(
     args.push(String(idx));
   }
 
-  process.stderr.write(`rlmx benchmark: loading Oolong Synth dataset (${idx !== undefined ? `idx=${idx}` : `${samples} samples`})...\n`);
+  process.stderr.write(`mikro benchmark: loading Oolong Synth dataset (${idx !== undefined ? `idx=${idx}` : `${samples} samples`})...\n`);
   const { stdout } = await execFileAsync(pythonBin, args, { maxBuffer: 50 * 1024 * 1024 });
   const dataset: BenchmarkQuestion[] = JSON.parse(stdout);
-  process.stderr.write(`rlmx benchmark: loaded ${dataset.length} samples.\n`);
+  process.stderr.write(`mikro benchmark: loaded ${dataset.length} samples.\n`);
 
   const runs: BenchmarkRunResult[] = [];
 
@@ -365,7 +365,7 @@ export function formatBenchmarkTable(results: BenchmarkResults): string {
   const lines: string[] = [];
 
   const modeLabel = results.mode === "cost" ? "cost comparison" : "oolong accuracy";
-  lines.push(`rlmx benchmark — ${modeLabel} (RLM vs Direct LLM)`);
+  lines.push(`mikro benchmark — ${modeLabel} (RLM vs Direct LLM)`);
   lines.push("");
 
   // Header
@@ -419,7 +419,7 @@ export function formatBenchmarkTable(results: BenchmarkResults): string {
 // ─── Results Persistence ─────────────────────────────────
 
 export async function saveBenchmarkResults(results: BenchmarkResults): Promise<string> {
-  const benchDir = join(homedir(), ".rlmx", "benchmarks");
+  const benchDir = join(homedir(), ".mikro", "benchmarks");
   await mkdir(benchDir, { recursive: true });
 
   const ts = results.timestamp.replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");

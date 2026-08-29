@@ -1,7 +1,7 @@
 /**
- * ACP (Agent Client Protocol) stdio agent — wish rlmx-acp-adapter, Group 1.
+ * ACP (Agent Client Protocol) stdio agent — wish mikro-acp-adapter, Group 1.
  *
- * Exposes `rlmx acp`: a stdio JSON-RPC agent (per the Agent Client Protocol,
+ * Exposes `mikro acp`: a stdio JSON-RPC agent (per the Agent Client Protocol,
  * https://agentclientprotocol.com) that completes the handshake and drives the
  * REAL instrumented `rlmLoop` in-process for a prompt round-trip.
  *
@@ -20,7 +20,7 @@
  *     EMPTY, so a `session/load` + follow-up `session/prompt` survive an
  *     agent-process restart instead of throwing "Invalid params". Prompt turns
  *     thread prior-turn context so a session is genuinely multi-turn. Host MCP
- *     config is materialized + advertised (store-only; rlmx has no MCP client —
+ *     config is materialized + advertised (store-only; mikro has no MCP client —
  *     execution is a documented follow-on). Mid-run disconnect (stdin EOF /
  *     SIGTERM) reuses the cooperative cancel path to abort the active turn and
  *     close the emitter before exit (no orphaned children, emitter closed).
@@ -91,14 +91,14 @@ function extractPromptText(blocks) {
     return parts.join("\n").trim();
 }
 /**
- * The rlmx ACP agent. One instance per stdio connection.
+ * The mikro ACP agent. One instance per stdio connection.
  *
  * Single active session, serialized: `promptInFlight` guards the one-at-a-time
  * invariant. A second `session/prompt` that arrives while a run is in flight is
  * rejected with `RequestError.invalidRequest` (JSON-RPC -32600) — a clear,
  * documented rejection rather than a silent queue.
  */
-export class RlmxAcpAgent {
+export class MikroAcpAgent {
     conn;
     sessions = new Map();
     store = new SessionStore();
@@ -117,9 +117,9 @@ export class RlmxAcpAgent {
                 // Group 3: session/load is durable (restore-on-empty from disk), so we
                 // advertise it truthfully. A host will now offer session resume.
                 loadSession: true,
-                // MCP-server support. rlmx MATERIALIZES + STORES host MCP config
+                // MCP-server support. mikro MATERIALIZES + STORES host MCP config
                 // (advertise-only): a host may pass `mcpServers` on session/new and
-                // session/load and rlmx will persist them, but rlmx has no MCP CLIENT
+                // session/load and mikro will persist them, but mikro has no MCP CLIENT
                 // yet — executing tools against those servers is a documented follow-on.
                 // We advertise the stdio/http/sse transports the host may hand us; the
                 // `_meta` note marks the store-only status so a strict host is not misled.
@@ -127,7 +127,7 @@ export class RlmxAcpAgent {
                     http: true,
                     sse: true,
                     _meta: {
-                        "rlmx/mcp": "store-and-advertise-only; no MCP client execution yet",
+                        "mikro/mcp": "store-and-advertise-only; no MCP client execution yet",
                     },
                 },
                 promptCapabilities: {
@@ -138,7 +138,7 @@ export class RlmxAcpAgent {
             },
             // No authentication required: the local station provider needs no keys.
             authMethods: [],
-            agentInfo: { name: "rlmx", version: this.version },
+            agentInfo: { name: "mikro", version: this.version },
         };
     }
     async authenticate(_params) {
@@ -203,7 +203,7 @@ export class RlmxAcpAgent {
         // Single active session, serialized. Reject a concurrent prompt turn with
         // a clear JSON-RPC error (documented choice: reject, do not queue).
         if (this.promptInFlight) {
-            throw RequestError.invalidRequest(undefined, "a prompt is already in flight; rlmx acp serializes prompt turns (single active session)");
+            throw RequestError.invalidRequest(undefined, "a prompt is already in flight; mikro acp serializes prompt turns (single active session)");
         }
         const query = extractPromptText(params.prompt);
         if (query.length === 0) {
@@ -244,7 +244,7 @@ export class RlmxAcpAgent {
                         const m = translateErr instanceof Error
                             ? translateErr.message
                             : String(translateErr);
-                        process.stderr.write(`rlmx acp: translate error: ${m}\n`);
+                        process.stderr.write(`mikro acp: translate error: ${m}\n`);
                         continue;
                     }
                     for (const update of updates) {
@@ -277,10 +277,10 @@ export class RlmxAcpAgent {
             // A recursive turn (parent iterations + a child spawn that itself takes
             // tens of seconds) can exceed rlmLoop's 300s default wall-clock cap. The
             // client owns turn duration (it can session/cancel), so an ACP-hosted run
-            // honors an optional RLMX_ACP_RUN_TIMEOUT_MS override for the loop's
+            // honors an optional MIKRO_ACP_RUN_TIMEOUT_MS override for the loop's
             // internal timeout. Unset → rlmLoop's own default applies (unchanged for
             // the fast non-recursive path). Additive; rlm.ts untouched.
-            const runTimeoutMs = Number(process.env.RLMX_ACP_RUN_TIMEOUT_MS);
+            const runTimeoutMs = Number(process.env.MIKRO_ACP_RUN_TIMEOUT_MS);
             const result = await rlmLoop(effectiveQuery, null, config, {
                 emitter,
                 output: "json",
@@ -304,7 +304,7 @@ export class RlmxAcpAgent {
                     // Persistence failure must not fail the prompt turn; the client still
                     // gets its answer. It only degrades a later restart's resume fidelity.
                     const m = persistErr instanceof Error ? persistErr.message : String(persistErr);
-                    process.stderr.write(`rlmx acp: session persist failed: ${m}\n`);
+                    process.stderr.write(`mikro acp: session persist failed: ${m}\n`);
                 }
             }
             // Invariant backstop: some rlmLoop exit paths (e.g. the consecutive-empty
@@ -453,7 +453,7 @@ export async function runAcp() {
     // so the connection is not GC'd while stdin is open.
     let agentRef = null;
     const _conn = new AgentSideConnection((conn) => {
-        agentRef = new RlmxAcpAgent(conn);
+        agentRef = new MikroAcpAgent(conn);
         return agentRef;
     }, stream);
     void _conn;

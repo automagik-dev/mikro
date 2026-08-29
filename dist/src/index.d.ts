@@ -1,5 +1,5 @@
 export { loadConfig, hasConfig, parseToolsMd } from "./config.js";
-export type { RlmxConfig, ToolDef, ModelConfig, BudgetConfig, ContextConfig, ToolsLevel, GeminiConfig, MediaResolutionConfig, OutputConfig } from "./config.js";
+export type { MikroConfig, ToolDef, ModelConfig, BudgetConfig, ContextConfig, ToolsLevel, GeminiConfig, MediaResolutionConfig, OutputConfig } from "./config.js";
 export { isGoogleProvider, isValidThinkingLevel, THINKING_LEVELS, checkFutureFlags, buildGeminiOnPayload, createGeminiStats, DEFAULT_GEMINI_CONFIG, } from "./gemini.js";
 export type { ThinkingLevel, GeminiStats } from "./gemini.js";
 export { scaffold, needsScaffold } from "./scaffold.js";

@@ -95,13 +95,13 @@ budget:
 
 /**
  * `thinking:` — per-agent reasoning effort, the agent.yaml twin of
- * `rlmx --thinking`.
+ * `mikro --thinking`.
  *
  * Validated rather than passed through because a bad level has no safe
  * fallback: pi-ai clamps an unrecognised value to *some* level the model
  * supports instead of rejecting it, so `thinking: hgih` would quietly run at
  * whatever effort that model floors at and look like it worked. The parser runs
- * at discovery time for `rlmx mcp`, so failing here is what surfaces the typo.
+ * at discovery time for `mikro mcp`, so failing here is what surfaces the typo.
  */
 describe("parseAgentSpec — thinking:", () => {
 	const DIR = "/tmp/fake-agent";
@@ -135,9 +135,9 @@ describe("parseAgentSpec — thinking:", () => {
 		);
 	});
 
-	it("rejects levels pi-ai knows but rlmx does not expose", () => {
+	it("rejects levels pi-ai knows but mikro does not expose", () => {
 		// pi-ai's own ThinkingLevel adds "xhigh" and "max", reachable only on
-		// models that declare an explicit map entry for them. rlmx's type is
+		// models that declare an explicit map entry for them. mikro's type is
 		// narrower, so agent.yaml must not accept them either.
 		for (const level of ["xhigh", "max", "off", "none"]) {
 			assert.throws(
