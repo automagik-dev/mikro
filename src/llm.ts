@@ -216,7 +216,7 @@ export function resolveModel(
   if (!model) {
     throw new Error(
       `Unknown model "${modelId}" for provider "${provider}". ` +
-        describeProviderHint(providers, provider)
+        describeProviderHint(providers, provider, models.getProvider(provider) !== undefined)
     );
   }
   return model;

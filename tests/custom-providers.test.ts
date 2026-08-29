@@ -234,6 +234,13 @@ describe("key status and hints", () => {
     assert.doesNotMatch(hint, /MODEL\.md/);
   });
 
+  it("says a known provider lacks the model, not that the provider is missing", () => {
+    const problem = checkModelConfig({ provider: "openrouter", model: "~vendor/does-not-exist" });
+    assert.ok(problem);
+    assert.match(problem, /Provider "openrouter" is known but does not list that model/);
+    assert.doesNotMatch(problem, /not a built-in/);
+  });
+
   it("lists the declared models when the provider exists but the model does not", () => {
     assert.match(describeProviderHint([wafer()], "wafer"), /models: GLM-5\.3-Flash/);
   });
