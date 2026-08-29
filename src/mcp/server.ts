@@ -666,7 +666,7 @@ const BACKENDS: ReadonlyMap<string, RuntimeBackend> = new Map([
 
 /**
  * The prime backend, constructed lazily on first selection. Its constructor
- * runs the version-pin check (`prime-agent --version` === 0.7.2), and a
+ * runs the version-pin check (`prime-agent --version` === 0.8.1), and a
  * server that never selects prime must not pay for that — nor fail to start
  * on a machine without the binary. A spec naming a backend this build has
  * not wired fails loudly at call time, the same "no silent degradation"
@@ -717,7 +717,8 @@ export async function runTurn(
   contextPath: string | undefined,
   cwd: string,
   progress?: ProgressSink,
-  maxIterations?: number
+  maxIterations?: number,
+  signal?: AbortSignal
 ): Promise<TurnOutcome> {
   let context: LoadedContext | null = null;
   const contextRoot = contextPath ? resolve(cwd, contextPath) : undefined;
@@ -767,6 +768,7 @@ export async function runTurn(
         cwd,
         contextRoot,
         ...(maxIterations !== undefined ? { maxIterations } : {}),
+        ...(signal ? { signal } : {}),
       },
       emit
     );
@@ -948,7 +950,8 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
           contextPath,
           cwd,
           progress,
-          agentMaxIterations(agent)
+          agentMaxIterations(agent),
+          extra.signal
         );
       } else {
         const override = readArg(args?.model);
@@ -962,7 +965,9 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
           session.id,
           contextPath,
           cwd,
-          progress
+          progress,
+          undefined,
+          extra.signal
         );
       }
 

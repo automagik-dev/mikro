@@ -52,11 +52,8 @@ import { isFailedRun, runTurn, selectBackend, sessionResult, } from "../src/mcp/
 const SESSION_ID = "sess_contract0000000";
 /** Config whose fields the turn pipeline actually reads (model for the footer). */
 const CONFIG = {
-    // The gate model (wish decision 7, as amended): deepseek/deepseek-v4-flash.
-    // The prime backend maps rlmx's deepseek addressing to prime's native
-    // deepseek provider verbatim; any other provider would be a loud failure,
-    // which is not what this harness exists to compare.
-    model: { provider: "deepseek", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" },
+    // Shared Google model: both backends must receive the same model identity.
+    model: { provider: "google", model: "gemini-3.5-flash-lite", subCallModel: "gemini-3.5-flash-lite" },
     budget: { maxCost: null, maxTokens: null, maxDepth: null },
     gemini: { thinkingLevel: null },
     contextConfig: {},
@@ -257,6 +254,7 @@ function assertPrimeForwarding(calls, scenario, tag) {
     for (const call of calls) {
         const { argv } = call;
         assert.ok(hasArgs(argv, ["--mode", "json", "-p"]), `${tag}: json mode, print-and-exit`);
+        assert.ok(argv.includes("--offline"), `${tag}: startup network disabled`);
         assert.ok(argv.includes("--no-session"), `${tag}: --no-session`);
         assert.ok(hasArgs(argv, ["--cwd", "/tmp/rlmx-backend-contract"]), `${tag}: the server's cwd must reach prime's --cwd`);
         for (const flag of ["-nc", "-ne", "-ns", "-np"]) {
@@ -264,7 +262,7 @@ function assertPrimeForwarding(calls, scenario, tag) {
         }
         assert.ok(argv.includes("--append-system-prompt"), `${tag}: the microagent role must be appended to prime's base prompt`);
         assert.ok(!argv.includes("--system-prompt"), `${tag}: prime's base RLM prompt must never be replaced`);
-        assert.ok(hasArgs(argv, ["--provider", "deepseek", "--model", "deepseek-v4-flash"]), `${tag}: the gate model maps to prime's native deepseek provider, bare id`);
+        assert.ok(hasArgs(argv, ["--provider", "google", "--model", "gemini-3.5-flash-lite"]), `${tag}: the shared model maps to Prime's native google provider, bare id`);
         const contextArgs = argv.filter((a) => a.startsWith("@"));
         if (scenario.contextPath === undefined) {
             assert.equal(contextArgs.length, 0, `${tag}: no context path → no @file args`);
@@ -475,7 +473,7 @@ describe("backend selection", () => {
         try {
             const shim = join(dir, "prime-agent");
             await writeFile(shim, "#!/usr/bin/env node\n" +
-                "if (process.argv.includes('--version')) { process.stderr.write('0.7.2'); process.exit(0); }\n" +
+                "if (process.argv.includes('--version')) { process.stderr.write('0.8.1'); process.exit(0); }\n" +
                 "process.exit(1);\n", "utf-8");
             await chmod(shim, 0o755);
             const previous = process.env.RLMX_PRIME_BINARY_PATH;

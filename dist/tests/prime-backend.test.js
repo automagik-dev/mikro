@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { DEFAULT_PRIME_DEADLINE_MS, PrimeBackend, } from "../src/mcp/backends/prime.js";
+import { DEFAULT_PRIME_DEADLINE_MS, PrimeBackend, buildPrimeChildEnv, } from "../src/mcp/backends/prime.js";
 import { TIMEOUT_ANSWER } from "../src/rlm.js";
 import { isFailedRun } from "../src/mcp/server.js";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -35,13 +35,20 @@ const SHIM_BODY = `
 const fs = require("node:fs");
 const argv = process.argv.slice(2);
 if (argv.includes("--version")) {
-  const v = process.env.RLMX_STUB_VERSION ?? "0.7.2";
+  const v = process.env.RLMX_STUB_VERSION ?? "0.8.1";
   if (process.env.RLMX_STUB_VERSION_STREAM === "stdout") fs.writeSync(1, v);
   else fs.writeSync(2, v);
   process.exit(0);
 }
 if (process.env.RLMX_STUB_ARGV_FILE) {
   fs.writeFileSync(process.env.RLMX_STUB_ARGV_FILE, JSON.stringify(argv));
+}
+if (process.env.RLMX_STUB_CONTEXT_FILE) {
+  const files = argv.filter((arg) => arg.startsWith("@")).map((arg) => ({
+    path: arg.slice(1),
+    content: fs.readFileSync(arg.slice(1), "utf8"),
+  }));
+  fs.writeFileSync(process.env.RLMX_STUB_CONTEXT_FILE, JSON.stringify(files));
 }
 if (process.env.RLMX_STUB_SELF_PID_FILE) {
   fs.writeFileSync(process.env.RLMX_STUB_SELF_PID_FILE, String(process.pid));
@@ -80,6 +87,13 @@ async function makeShim(dir) {
     await chmod(path, 0o755);
     return path;
 }
+/** Real-spawn test backend; only the stub receives the harness control vars. */
+async function makeSpawnBackend(dir) {
+    return new PrimeBackend({
+        binaryPath: await makeShim(dir),
+        environment: (source) => source,
+    });
+}
 /** Set process env for the duration of `fn`, restoring exactly afterward. */
 async function withEnv(vars, fn) {
     const previous = new Map();
@@ -117,6 +131,18 @@ async function assertDead(pid, tag) {
         await new Promise((r) => setTimeout(r, 25));
     }
     assert.fail(`${tag}: process ${pid} survived the kill`);
+}
+async function waitForPid(path) {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+        try {
+            return Number(await readFile(path, "utf8"));
+        }
+        catch {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+    }
+    throw new Error(`timed out waiting for pid file ${path}`);
 }
 function usageOf(u) {
     return {
@@ -179,9 +205,7 @@ function fullRun(turnLists, finalText, finalUsage) {
 const HAPPY_EVENTS = JSON.stringify(fullRun([turnEvents("The call sites are A and B.", USAGE)], "The call sites are A and B.", USAGE));
 // ── Request fixtures ──────────────────────────────────────────────────────
 const CONFIG = {
-    // The gate model (wish decision 7, as amended): deepseek/deepseek-v4-flash,
-    // prime's native deepseek provider, bare id.
-    model: { provider: "deepseek", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" },
+    model: { provider: "google", model: "gemini-3.5-flash-lite", subCallModel: "gemini-3.5-flash-lite" },
     budget: { maxCost: null, maxTokens: null, maxDepth: null },
     gemini: { thinkingLevel: null },
     contextConfig: {},
@@ -246,7 +270,7 @@ describe("prime backend — version pin", () => {
     it("accepts the pinned prime-agent version", async () => {
         const dir = await scratch();
         try {
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS }, async () => {
                 const { result } = await runOnce(backend);
                 assert.equal(result.answer, "The call sites are A and B.");
@@ -260,7 +284,7 @@ describe("prime backend — version pin", () => {
         const dir = await scratch();
         try {
             await withEnv({ RLMX_STUB_VERSION_STREAM: "stdout" }, async () => {
-                assert.ok(new PrimeBackend({ binaryPath: await makeShim(dir) }));
+                assert.ok(await makeSpawnBackend(dir));
             });
         }
         finally {
@@ -270,12 +294,12 @@ describe("prime backend — version pin", () => {
     it("fails fast with an actionable report when the binary is a different version", async () => {
         const dir = await scratch();
         try {
-            await withEnv({ RLMX_STUB_VERSION: "0.7.3" }, async () => {
+            await withEnv({ RLMX_STUB_VERSION: "0.8.0" }, async () => {
                 const binaryPath = await makeShim(dir);
                 assert.throws(() => new PrimeBackend({ binaryPath }), (err) => {
                     assert.ok(err instanceof Error);
-                    assert.match(err.message, /not the pinned prime-agent 0\.7\.2/);
-                    assert.match(err.message, /"0\.7\.3"/);
+                    assert.match(err.message, /not the pinned prime-agent 0\.8\.1/);
+                    assert.match(err.message, /"0\.8\.0"/);
                     assert.match(err.message, /prime-agent update/);
                     return true;
                 });
@@ -291,7 +315,7 @@ describe("prime backend — version pin", () => {
             assert.throws(() => new PrimeBackend({ binaryPath: join(dir, "no-such-prime-agent") }), (err) => {
                 assert.ok(err instanceof Error);
                 assert.match(err.message, /cannot run/);
-                assert.match(err.message, /install prime-agent 0\.7\.2/);
+                assert.match(err.message, /install prime-agent 0\.8\.1/);
                 return true;
             });
         }
@@ -306,7 +330,7 @@ describe("prime backend — argv assembly", () => {
         const dir = await scratch();
         try {
             const argvFile = join(dir, "argv.json");
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS, RLMX_STUB_ARGV_FILE: argvFile }, async () => {
                 await runOnce(backend, { config: { ...CONFIG, system: "SYSTEM-ROLE-CONTENT" } });
             });
@@ -317,7 +341,8 @@ describe("prime backend — argv assembly", () => {
             for (const flag of ["-nc", "-ne", "-ns", "-np"]) {
                 assert.ok(argv.includes(flag), `isolation flag ${flag}`);
             }
-            assertHasArgs(argv, ["--provider", "deepseek", "--model", "deepseek-v4-flash"], "model");
+            assertHasArgs(argv, ["--provider", "google", "--model", "gemini-3.5-flash-lite"], "model");
+            assert.ok(argv.includes("--offline"), "startup network disabled");
             assert.ok(argv.includes("--append-system-prompt"), "append flag");
             assert.ok(!argv.includes("--system-prompt"), "the base prompt must never be replaced");
             assert.ok(!argv.includes("--daemon-socket"), "the daemon socket must never be touched");
@@ -332,7 +357,7 @@ describe("prime backend — argv assembly", () => {
             await rm(dir, { recursive: true, force: true });
         }
     });
-    it("maps google/gemini-2.5-flash-lite through the prime-inference namespace (supported non-gate path)", async () => {
+    it("maps google models to Prime's native google provider with a bare id", async () => {
         const calls = [];
         const backend = new PrimeBackend({ engine: recordingEngine(calls) });
         await runOnce(backend, {
@@ -341,18 +366,60 @@ describe("prime backend — argv assembly", () => {
                 model: { provider: "google", model: "gemini-2.5-flash-lite", subCallModel: "gemini-2.5-flash-lite" },
             },
         });
-        assertHasArgs(calls[0].argv, ["--provider", "prime-inference", "--model", "google/gemini-2.5-flash-lite"], "lite model");
+        assertHasArgs(calls[0].argv, ["--provider", "google", "--model", "gemini-2.5-flash-lite"], "lite model");
     });
-    it("passes rlmx's deepseek models through verbatim", async () => {
+    it("maps OpenRouter refs without losing the vendor/model path or latest alias", async () => {
         const calls = [];
         const backend = new PrimeBackend({ engine: recordingEngine(calls) });
         await runOnce(backend, {
             config: {
                 ...CONFIG,
-                model: { provider: "deepseek", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" },
+                model: {
+                    provider: "openrouter",
+                    model: "~deepseek/deepseek-v4-flash-latest",
+                    subCallModel: "~deepseek/deepseek-v4-flash-latest",
+                },
             },
         });
-        assertHasArgs(calls[0].argv, ["--provider", "deepseek", "--model", "deepseek-v4-flash"], "deepseek model");
+        assertHasArgs(calls[0].argv, ["--provider", "openrouter", "--model", "~deepseek/deepseek-v4-flash-latest"], "OpenRouter latest alias");
+    });
+    it("preserves Prime's credential-gated direct provider mappings", async () => {
+        for (const [provider, model] of [
+            ["deepseek", "deepseek-v4-flash"],
+            ["prime-inference", "qwen/qwen3.7-flash"],
+        ]) {
+            const calls = [];
+            const backend = new PrimeBackend({ engine: recordingEngine(calls) });
+            await runOnce(backend, {
+                config: {
+                    ...CONFIG,
+                    model: { provider, model, subCallModel: model },
+                },
+            });
+            assertHasArgs(calls[0].argv, ["--provider", provider, "--model", model], provider);
+        }
+    });
+    it("passes only the selected provider credential and forces telemetry off", () => {
+        const source = {
+            HOME: "/home/test",
+            PATH: "/bin",
+            GEMINI_API_KEY: "gemini-test",
+            OPENROUTER_API_KEY: "openrouter-test",
+            AWS_SECRET_ACCESS_KEY: "must-not-leak",
+            PRIME_AGENT_TELEMETRY: "1",
+            DO_NOT_TRACK: "0",
+        };
+        const child = buildPrimeChildEnv(source, "google");
+        assert.equal(child.HOME, "/home/test");
+        assert.equal(child.PATH, "/bin");
+        assert.equal(child.GEMINI_API_KEY, "gemini-test");
+        assert.equal(child.OPENROUTER_API_KEY, undefined);
+        assert.equal(child.AWS_SECRET_ACCESS_KEY, undefined);
+        assert.equal(child.PRIME_AGENT_TELEMETRY, "0");
+        assert.equal(child.DO_NOT_TRACK, "1");
+        const openrouter = buildPrimeChildEnv(source, "openrouter");
+        assert.equal(openrouter.OPENROUTER_API_KEY, "openrouter-test");
+        assert.equal(openrouter.GEMINI_API_KEY, undefined);
     });
     it("maps the declared thinking level onto prime's --thinking", async () => {
         const calls = [];
@@ -380,7 +447,7 @@ describe("prime backend — argv assembly", () => {
         assert.ok(role.includes("SYSTEM-ROLE-CONTENT"), "role carries the system content");
         assert.ok(role.includes("Cite every claim."), "role carries the criteria");
     });
-    it("maps loaded list context to @file args at the caller's original paths", async () => {
+    it("maps loaded list context to private immutable snapshots", async () => {
         const dir = await scratch();
         try {
             const ctxDir = join(dir, "ctx");
@@ -396,14 +463,24 @@ describe("prime backend — argv assembly", () => {
                 metadata: "",
             };
             const argvFile = join(dir, "argv.json");
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
-            await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS, RLMX_STUB_ARGV_FILE: argvFile }, async () => {
+            const observedContextFile = join(dir, "context.json");
+            const backend = await makeSpawnBackend(dir);
+            await writeFile(join(ctxDir, "sub", "a.md"), "CHANGED AFTER LOAD");
+            await withEnv({
+                RLMX_STUB_EVENTS: HAPPY_EVENTS,
+                RLMX_STUB_ARGV_FILE: argvFile,
+                RLMX_STUB_CONTEXT_FILE: observedContextFile,
+            }, async () => {
                 await runOnce(backend, { context, contextRoot: ctxDir });
             });
             const argv = JSON.parse(await readFile(argvFile, "utf8"));
-            assert.ok(argv.includes(`@${join(ctxDir, "sub", "a.md")}`), "context file forwarded as one @<abs path> arg");
-            assert.ok(argv.includes(`@${join(ctxDir, "evil.md")}`), "dot segments sanitized, not escaped");
+            const snapshots = argv.filter((arg) => arg.startsWith("@"));
+            assert.equal(snapshots.length, 2);
+            assert.ok(snapshots.every((arg) => !arg.includes(ctxDir)), "original host paths stay hidden");
             assert.ok(!argv.some((a) => a.includes("..")), "no parent traversal in @file args");
+            const observed = JSON.parse(await readFile(observedContextFile, "utf8"));
+            assert.deepEqual(observed.map((item) => item.content), ["AAA", "EVIL"]);
+            await assert.rejects(() => readFile(observed[0].path), /ENOENT/, "snapshot cleaned after run");
         }
         finally {
             await rm(dir, { recursive: true, force: true });
@@ -416,12 +493,14 @@ describe("prime backend — argv assembly", () => {
             await writeFile(ctxFile, "LOG");
             const context = { type: "string", content: "LOG", metadata: "" };
             const argvFile = join(dir, "argv.json");
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS, RLMX_STUB_ARGV_FILE: argvFile }, async () => {
                 await runOnce(backend, { context, contextRoot: ctxFile });
             });
             const argv = JSON.parse(await readFile(argvFile, "utf8"));
-            assert.ok(argv.includes(`@${ctxFile}`), "string context forwarded as one @<abs path> arg");
+            const snapshot = argv.find((arg) => arg.startsWith("@"));
+            assert.ok(snapshot, "string context forwarded as one @<abs path> arg");
+            assert.ok(!snapshot.includes(ctxFile), "the original host path is not forwarded");
         }
         finally {
             await rm(dir, { recursive: true, force: true });
@@ -466,11 +545,6 @@ describe("prime backend — loud failures", () => {
             over: { context: { type: "dict", content: { a: "b" }, metadata: "" }, contextRoot: "/tmp/x" },
             pattern: /cannot be mapped/,
         },
-        {
-            name: "a context without a root path",
-            over: { context: { type: "list", content: [{ path: "a.md", content: "A" }], metadata: "" }, contextRoot: undefined },
-            pattern: /without a root path/,
-        },
     ];
     for (const c of cases) {
         it(`rejects ${c.name} instead of degrading silently`, async () => {
@@ -483,25 +557,19 @@ describe("prime backend — loud failures", () => {
             });
         });
     }
-    it("rejects a context file that no longer exists before any spawn, instead of letting prime exit(1) on a dead @file arg", async () => {
+    it("uses loaded context even when the original file no longer exists", async () => {
         const dir = await scratch();
         try {
-            const calls = [];
             const context = {
                 type: "list",
                 content: [{ path: "gone.md", content: "GONE" }],
                 metadata: "",
             };
-            const backend = new PrimeBackend({ engine: recordingEngine(calls) });
-            await assert.rejects(() => runOnce(backend, { context, contextRoot: dir }), (err) => {
-                assert.ok(err instanceof Error);
-                assert.match(err.message, /context file/);
-                assert.ok(err.message.includes(join(dir, "gone.md")), `the error must name the missing file: ${err.message}`);
-                assert.match(err.message, /does not exist/);
-                assert.match(err.message, /backend: rlmx/, "the message must name the escape hatch");
-                return true;
-            });
-            assert.equal(calls.length, 0, "the existence check fires before the engine is ever invoked");
+            const observedContextFile = join(dir, "context.json");
+            const backend = await makeSpawnBackend(dir);
+            await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS, RLMX_STUB_CONTEXT_FILE: observedContextFile }, () => runOnce(backend, { context, contextRoot: dir }));
+            const observed = JSON.parse(await readFile(observedContextFile, "utf8"));
+            assert.deepEqual(observed.map((item) => item.content), ["GONE"]);
         }
         finally {
             await rm(dir, { recursive: true, force: true });
@@ -513,7 +581,7 @@ describe("prime backend — event mapping", () => {
     it("extracts the final answer, usage, and turn count from a single-turn run", async () => {
         const dir = await scratch();
         try {
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: HAPPY_EVENTS }, async () => {
                 const { result, progress } = await runOnce(backend);
                 assert.equal(result.answer, "The call sites are A and B.");
@@ -535,7 +603,7 @@ describe("prime backend — event mapping", () => {
             const u1 = { input: 1000, output: 100, total: 0.1 };
             const u2 = { input: 200, output: 50, total: 0.05 };
             const events = fullRun([turnEvents("first report", u1), turnEvents("final report", u2)], "final report", u2);
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { result, progress } = await runOnce(backend);
                 assert.equal(result.answer, "final report");
@@ -554,7 +622,7 @@ describe("prime backend — event mapping", () => {
         const dir = await scratch();
         try {
             const events = fullRun([turnEvents("done", USAGE, { tools: ["ipython"], partialText: "thinking…" })], "done", USAGE);
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { progress } = await runOnce(backend);
                 assert.deepEqual(progress, ["iteration 1", "tool ipython"]);
@@ -577,7 +645,7 @@ describe("prime backend — event mapping", () => {
                 { type: "message_end", message: assistantMessage("direct answer", USAGE) },
                 { type: "agent_end", messages: [USER_MESSAGE, assistantMessage("direct answer", USAGE)] },
             ];
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { result } = await runOnce(backend);
                 assert.equal(result.answer, "direct answer");
@@ -591,7 +659,7 @@ describe("prime backend — event mapping", () => {
         const dir = await scratch();
         try {
             const events = [SESSION, { type: "agent_start" }, { type: "turn_start" }];
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 await assert.rejects(() => runOnce(backend), (err) => {
                     assert.ok(err instanceof Error);
@@ -607,7 +675,7 @@ describe("prime backend — event mapping", () => {
     it("surfaces the child's stderr when it exits non-zero", async () => {
         const dir = await scratch();
         try {
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: JSON.stringify([SESSION]), RLMX_STUB_EXIT: "3", RLMX_STUB_STDERR_LINE: "stub exploded" }, async () => {
                 await assert.rejects(() => runOnce(backend), (err) => {
                     assert.ok(err instanceof Error);
@@ -621,9 +689,88 @@ describe("prime backend — event mapping", () => {
             await rm(dir, { recursive: true, force: true });
         }
     });
+    it("turns Prime model errors into a failed run instead of an empty success", async () => {
+        const dir = await scratch();
+        try {
+            const failed = {
+                role: "assistant",
+                content: [],
+                provider: "openrouter",
+                model: "deepseek/deepseek-v4-flash",
+                stopReason: "error",
+                errorMessage: "401 Missing Authentication header",
+                usage: usageOf({ input: 0, output: 0, total: 0 }),
+            };
+            const events = JSON.stringify([
+                SESSION,
+                { type: "agent_start" },
+                { type: "turn_start" },
+                { type: "message_end", message: failed },
+                { type: "turn_end", message: failed, toolResults: [] },
+                { type: "agent_end", messages: [USER_MESSAGE, failed] },
+            ]);
+            const backend = await makeSpawnBackend(dir);
+            await withEnv({ RLMX_STUB_EVENTS: events }, async () => {
+                await assert.rejects(() => runOnce(backend), /model run failed \(openrouter\/deepseek\/deepseek-v4-flash\): 401 Missing Authentication header/);
+            });
+        }
+        finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+    it("rejects agent_end without final text instead of reporting a false success", async () => {
+        const dir = await scratch();
+        try {
+            const empty = assistantMessage("", USAGE);
+            const events = JSON.stringify([
+                SESSION,
+                { type: "agent_start" },
+                { type: "turn_start" },
+                { type: "message_end", message: empty },
+                { type: "turn_end", message: empty, toolResults: [] },
+                { type: "agent_end", messages: [USER_MESSAGE, empty] },
+            ]);
+            const backend = await makeSpawnBackend(dir);
+            await withEnv({ RLMX_STUB_EVENTS: events }, async () => {
+                await assert.rejects(() => runOnce(backend), /without a final text answer/);
+            });
+        }
+        finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
 });
 // ── Budget enforcement ────────────────────────────────────────────────────
 describe("prime backend — budget enforcement", () => {
+    it("kills the process tree when the MCP caller cancels", async () => {
+        const dir = await scratch();
+        try {
+            const selfPidFile = join(dir, "cancel-self.pid");
+            const childPidFile = join(dir, "cancel-child.pid");
+            const backend = await makeSpawnBackend(dir);
+            const controller = new AbortController();
+            let selfPid = 0;
+            let childPid = 0;
+            await withEnv({
+                RLMX_STUB_HANG: "1",
+                RLMX_STUB_SELF_PID_FILE: selfPidFile,
+                RLMX_STUB_CHILD_PID_FILE: childPidFile,
+            }, async () => {
+                const run = runOnce(backend, { signal: controller.signal });
+                [selfPid, childPid] = await Promise.all([
+                    waitForPid(selfPidFile),
+                    waitForPid(childPidFile),
+                ]);
+                controller.abort();
+                await assert.rejects(() => run, /cancelled by the MCP caller/);
+            });
+            await assertDead(selfPid, "cancelled shim");
+            await assertDead(childPid, "cancelled shim grandchild");
+        }
+        finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
     it("kills the tree on a cost-ceiling breach and returns a non-throwing result with budgetHit", async () => {
         const dir = await scratch();
         try {
@@ -638,7 +785,7 @@ describe("prime backend — budget enforcement", () => {
                 { type: "message_update", message: assistantMessage("partial report", { input: 10, output: 10, total: 1.0 }) },
                 { type: "message_end", message: assistantMessage("partial report", { input: 10, output: 10, total: 1.0 }) },
             ];
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({
                 RLMX_STUB_EVENTS: JSON.stringify(events),
                 RLMX_STUB_HANG: "1",
@@ -670,7 +817,7 @@ describe("prime backend — budget enforcement", () => {
                 { type: "agent_start" },
                 ...turnEvents("big report", { input: 600, output: 400, total: 0.01 }),
             ];
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({
                 RLMX_STUB_EVENTS: JSON.stringify(events),
                 RLMX_STUB_HANG: "1",
@@ -697,7 +844,7 @@ describe("prime backend — budget enforcement", () => {
                 { type: "agent_start" },
                 ...turnEvents("", { input: 10, output: 10, total: 5.0 }),
             ];
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({ RLMX_STUB_EVENTS: JSON.stringify(events) }, async () => {
                 const { result } = await runOnce(backend, {
                     config: { ...CONFIG, budget: { maxCost: 2.0, maxTokens: null, maxDepth: null } },
@@ -716,7 +863,7 @@ describe("prime backend — budget enforcement", () => {
         try {
             const selfPidFile = join(dir, "self.pid");
             const childPidFile = join(dir, "child.pid");
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({
                 RLMX_MCP_RUN_TIMEOUT_MS: "250",
                 RLMX_STUB_EVENTS: JSON.stringify([SESSION, { type: "agent_start" }]),
@@ -761,7 +908,7 @@ describe("prime backend — budget enforcement", () => {
                 ...turnEvents("first report", USAGE),
                 { type: "turn_start" }, // the second turn would start → cap of 1 fires
             ];
-            const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+            const backend = await makeSpawnBackend(dir);
             await withEnv({
                 RLMX_STUB_EVENTS: JSON.stringify(events),
                 RLMX_STUB_HANG: "1",

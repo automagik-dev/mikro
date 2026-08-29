@@ -22,32 +22,25 @@
  * The wish is the governing artifact; every ambiguous mapping fails loudly —
  * no silent degradation.
  *
- * - model: rlmx provider `deepseek` → prime `--provider deepseek
- *   --model <id>` (same bare addressing, prime's native deepseek provider).
- *   THE GATE MODEL (wish decision 7, as amended) is deepseek/deepseek-v4-flash:
- *   it maps to `--provider deepseek --model deepseek-v4-flash`. rlmx provider
- *   `google` → prime `--provider prime-inference --model google/<id>` (prime
- *   addresses its google models namespaced) remains a SUPPORTED path for
- *   `google/`-prefixed specs, but it is NOT the gate model. prime 0.7.2
- *   exposes only these two providers (`prime-agent model list`), so any other
- *   rlmx provider (khal, station, openrouter, …) throws.
+ * - model: prime 0.8.1 exposes credential-gated catalogs for `google`,
+ *   `openrouter`, `deepseek`, and `prime-inference`. Each takes the same bare
+ *   model id rlmx stores after its first-slash provider split, so
+ *   `openrouter/~deepseek/…` maps to
+ *   `--provider openrouter --model ~deepseek/…`. Other rlmx-only providers
+ *   such as `khal` and `station` throw before spawn.
  * - thinking: `config.gemini.thinkingLevel` (minimal|low|medium|high) is a
  *   subset of prime's `--thinking` levels; passed through verbatim.
  * - system: `config.system` (the agent's SYSTEM.md via `applyAgent`) and
  *   `config.criteria` are APPENDED to prime's base prompt via
  *   `--append-system-prompt` — never `--system-prompt`, which per prime
- *   0.7.2 `--help` *replaces* the default system prompt. Replacing would
+ *   0.8.1 `--help` *replaces* the default system prompt. Replacing would
  *   strip prime's base RLM prompt and handicap the prime leg.
- * - context: `LoadedContext` items map to prime `@file` arguments at their
- *   original absolute paths (`BackendRequest.contextRoot` — the same files
- *   the caller named, so path citations stay resolvable). Every arg is the
- *   single `@<abs path>` form prime 0.7.2's parser turns into fileArgs
- *   (contents inlined into the first user message): a plain path would
- *   instead become a message and spawn one garbage autonomous turn per file.
- *   Each mapped file's existence is pre-checked at spawn, so a missing
- *   @file — which prime answers with a hard `process.exit(1)` — surfaces as
- *   an actionable tool error before any child starts. A `dict` context
- *   throws.
+ * - context: `LoadedContext` items are materialized from their already-loaded
+ *   contents into private 0600 snapshots, then mapped to prime `@file`
+ *   arguments. Prime never re-reads mutable originals or learns their host
+ *   paths. Every arg uses the single `@<abs path>` form prime 0.8.1 parses as
+ *   a file argument; snapshots are removed in a `finally` block. A `dict`
+ *   context throws.
  * - budget.maxCost / maxTokens: rlmx-owned ceilings monitored from the
  *   assistant messages' usage records, mirroring `BudgetTracker`
  *   (`src/budget.ts`): totalCost ≥ maxCost → "max-cost", input+output
@@ -91,14 +84,69 @@
  *   prime parent stream carries only its own turns' usage.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { TIMEOUT_ANSWER } from "../../rlm.js";
-/** The exact prime-agent version this build pins (wish decision 2: 0.7.2). */
-export const EXPECTED_PRIME_VERSION = "0.7.2";
+/** The exact prime-agent version this build pins. */
+export const EXPECTED_PRIME_VERSION = "0.8.1";
 /** rlmLoop's default wall-clock cap, mirrored so the deadline default matches legacy. */
 export const DEFAULT_PRIME_DEADLINE_MS = 300_000;
+/**
+ * Environment names Prime needs to run without inheriting the host's entire
+ * credential set. Keep this deliberately small and explicit: adding a new
+ * provider requires adding both its model mapping and its credential here.
+ */
+const PRIME_ENV_ALLOWLIST = [
+    "HOME",
+    "PATH",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+];
+const PRIME_PROVIDER_CREDENTIALS = {
+    google: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    openrouter: ["OPENROUTER_API_KEY"],
+    deepseek: ["DEEPSEEK_API_KEY"],
+    "prime-inference": ["PRIME_API_KEY"],
+};
+/** Build the least-privilege environment handed to the Prime subprocess. */
+export function buildPrimeChildEnv(source, provider) {
+    const child = {
+        // Prime 0.8.1 honors both variables. Set both so user-level settings can
+        // never silently turn telemetry back on for an rlmx-dispatched run.
+        DO_NOT_TRACK: "1",
+        PRIME_AGENT_TELEMETRY: "0",
+    };
+    for (const name of PRIME_ENV_ALLOWLIST) {
+        const value = source[name];
+        if (value !== undefined)
+            child[name] = value;
+    }
+    for (const name of PRIME_PROVIDER_CREDENTIALS[provider] ?? []) {
+        const value = source[name];
+        if (value !== undefined)
+            child[name] = value;
+    }
+    return child;
+}
 const num = (value) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 function isAssistant(message) {
     return (typeof message === "object" &&
@@ -124,16 +172,17 @@ function textOf(message) {
  * The real engine: spawn the binary, parse the JSONL event stream, enforce
  * the rlmx-owned budgets, and kill the whole process tree on breach.
  */
-function spawnPrimeRun(argv, emit, limits) {
+function spawnPrimeRun(argv, emit, limits, childEnv, signal) {
     return new Promise((resolve, reject) => {
         const binaryPath = argv[0];
         const child = spawn(binaryPath, argv.slice(1), {
             // Own process group: the budget kill takes the tree, descendants included.
             detached: true,
             stdio: ["ignore", "pipe", "pipe"],
-            env: process.env,
+            env: childEnv,
         });
         let settled = false;
+        let cancelled = false;
         let killed = null;
         let turns = 0;
         let lastTurnText = null;
@@ -188,6 +237,7 @@ function spawnPrimeRun(argv, emit, limits) {
                 clearTimeout(deadlineTimer);
             if (failsafeTimer)
                 clearTimeout(failsafeTimer);
+            signal?.removeEventListener("abort", onAbort);
             resolve(result);
         };
         const fail = (err) => {
@@ -198,6 +248,7 @@ function spawnPrimeRun(argv, emit, limits) {
                 clearTimeout(deadlineTimer);
             if (failsafeTimer)
                 clearTimeout(failsafeTimer);
+            signal?.removeEventListener("abort", onAbort);
             reject(err);
         };
         const breach = (reason) => {
@@ -210,6 +261,15 @@ function spawnPrimeRun(argv, emit, limits) {
             failsafeTimer = setTimeout(() => settle(killResult(reason)), 2_000);
         };
         deadlineTimer = setTimeout(() => breach("deadline"), limits.deadlineMs);
+        const onAbort = () => {
+            if (settled || cancelled)
+                return;
+            cancelled = true;
+            killTree();
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted)
+            onAbort();
         const handleEvent = (event) => {
             switch (event.type) {
                 case "turn_start":
@@ -294,6 +354,10 @@ function spawnPrimeRun(argv, emit, limits) {
         child.on("close", (code, signal) => {
             if (settled)
                 return;
+            if (cancelled) {
+                fail(new Error("prime backend: cancelled by the MCP caller"));
+                return;
+            }
             if (killed) {
                 settle(killResult(killed));
                 return;
@@ -310,6 +374,17 @@ function spawnPrimeRun(argv, emit, limits) {
             // (agent_end's message list, falling back to the last turn_end and the
             // streamed text); usage = the run total over every assistant message.
             const answer = finalMessage ? textOf(finalMessage) : (lastTurnText ?? lastText);
+            if (finalMessage?.stopReason === "error" || finalMessage?.errorMessage) {
+                const model = [finalMessage.provider, finalMessage.model].filter(Boolean).join("/");
+                fail(new Error(`prime backend: prime-agent model run failed${model ? ` (${model})` : ""}: ` +
+                    `${finalMessage.errorMessage?.trim() || "unknown model error"}`));
+                return;
+            }
+            if (!answer.trim()) {
+                fail(new Error("prime backend: prime-agent reported agent_end without a final text answer. " +
+                    "The run cannot be treated as successful; inspect the Prime JSON event stream."));
+                return;
+            }
             settle({
                 answer,
                 turns,
@@ -358,7 +433,7 @@ function assertPinnedVersion(binaryPath, expected) {
     }
 }
 /**
- * Map rlmx's model addressing onto prime 0.7.2's two providers. Fails loudly
+ * Map rlmx's model addressing onto prime 0.8.1's advertised providers. Fails loudly
  * for every rlmx provider prime cannot address — a spec that says "run on X"
  * must never silently run on another model.
  */
@@ -366,15 +441,17 @@ function mapPrimeModel(model, agentName) {
     const who = agentName ? `agent "${agentName}"` : "this run";
     switch (model.provider) {
         case "google":
-            // rlmx addresses gemini bare (`gemini-2.5-flash`); prime namespaces it
-            // under the prime-inference gateway (`google/gemini-2.5-flash`).
-            return { provider: "prime-inference", model: `google/${model.model}` };
+            return { provider: "google", model: model.model };
+        case "openrouter":
+            return { provider: "openrouter", model: model.model };
         case "deepseek":
             return { provider: "deepseek", model: model.model };
+        case "prime-inference":
+            return { provider: "prime-inference", model: model.model };
         default:
             throw new Error(`prime backend: ${who} is pinned to rlmx model "${model.provider}/${model.model}", ` +
-                `which prime-agent 0.7.2 cannot address — prime exposes only the \`deepseek\` and \`prime-inference\` providers. ` +
-                `Re-pin the agent's model to \`google/<gemini model>\` (routed through prime-inference) or \`deepseek/<model>\`, ` +
+                `which the rlmx Prime adapter for prime-agent 0.8.1 cannot address — it supports \`google\`, \`openrouter\`, \`deepseek\`, and \`prime-inference\`. ` +
+                `Re-pin the agent to one of those providers, ` +
                 `or switch the agent back to \`backend: rlmx\`.`);
     }
 }
@@ -420,41 +497,49 @@ function sanitizeSegments(relativePath) {
         .filter((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 /**
- * Map the loaded context onto prime `@file` arguments — each in the single
- * `@<abs path>` form prime 0.7.2 parses into fileArgs — at their original
- * absolute paths (the same files the caller named), so path citations stay
- * resolvable. The `@` prefix is the contract itself, not decoration: a plain
- * path becomes a message and prime runs one autonomous turn per path string.
- *
- * Every mapped file is also existence-checked here, before any spawn: prime
- * answers a missing @file with a hard `process.exit(1)`, so a dead file
- * surfaces as an actionable tool error instead of a cryptic child exit.
- * `dict` contexts and contexts without a root cannot be mapped — fail
- * loudly rather than degrade.
+ * Materialize the already-loaded context into a private immutable snapshot.
+ * Prime receives only snapshot paths, never the caller's mutable originals.
  */
-function resolveContextFiles(context, contextRoot) {
-    if (!context)
-        return [];
-    if (!contextRoot) {
-        throw new Error("prime backend: context was loaded without a root path and cannot be mapped to prime @file arguments. " +
-            "Pass the context through a filesystem path, or switch the agent back to `backend: rlmx`.");
+async function prepareContextSnapshot(context, contextRoot) {
+    if (!context) {
+        return { fileArgs: [], labels: [], cleanup: async () => { } };
     }
-    const toFileArg = (absolutePath) => {
-        if (!existsSync(absolutePath)) {
-            throw new Error(`prime backend: context file "${absolutePath}" does not exist — a missing @file argument ` +
-                `makes prime-agent exit(1) at startup. Re-create the file or re-load the context, ` +
-                `or switch the agent back to \`backend: rlmx\`.`);
+    if (context.type === "dict") {
+        throw new Error(`prime backend: context type "${context.type}" cannot be mapped to prime @file arguments. ` +
+            `Pass a file or directory as the context, or switch the agent back to \`backend: rlmx\`.`);
+    }
+    const root = await mkdtemp(join(tmpdir(), "rlmx-prime-context-"));
+    const entries = context.type === "string"
+        ? [{
+                label: basename(contextRoot ?? "context.txt") || "context.txt",
+                content: context.content,
+            }]
+        : context.content.map((item) => ({
+            label: sanitizeSegments(item.path).join("/") || "context.txt",
+            content: item.content,
+        }));
+    try {
+        const fileArgs = [];
+        const labels = [];
+        for (const [index, entry] of entries.entries()) {
+            // The index makes sanitization collisions impossible while the suffix
+            // keeps the caller's logical filename visible to the model.
+            const snapshotPath = join(root, String(index).padStart(4, "0"), entry.label);
+            await mkdir(dirname(snapshotPath), { recursive: true, mode: 0o700 });
+            await writeFile(snapshotPath, entry.content, { encoding: "utf8", mode: 0o600 });
+            fileArgs.push(`@${snapshotPath}`);
+            labels.push(entry.label);
         }
-        return `@${absolutePath}`;
-    };
-    if (context.type === "string")
-        return [toFileArg(contextRoot)];
-    if (context.type === "list") {
-        const items = context.content;
-        return items.map((item) => toFileArg(join(contextRoot, ...sanitizeSegments(item.path))));
+        return {
+            fileArgs,
+            labels,
+            cleanup: () => rm(root, { recursive: true, force: true }),
+        };
     }
-    throw new Error(`prime backend: context type "${context.type}" cannot be mapped to prime @file arguments. ` +
-        `Pass a file or directory as the context, or switch the agent back to \`backend: rlmx\`.`);
+    catch (err) {
+        await rm(root, { recursive: true, force: true });
+        throw err;
+    }
 }
 /** The microagent role appended AFTER prime's base prompt (never replacing it). */
 function buildAppendedRole(agent, config, contextNote) {
@@ -478,19 +563,20 @@ function primeDeadlineMs() {
     const ms = Number(process.env.RLMX_MCP_RUN_TIMEOUT_MS);
     return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_PRIME_DEADLINE_MS;
 }
-function buildArgv(binaryPath, agent, request) {
+function buildArgv(binaryPath, agent, request, preparedContext) {
     const config = request.config;
     assertSupportedConfig(config, agent?.name);
     const mapped = mapPrimeModel(config.model, agent?.name);
-    const contextFiles = resolveContextFiles(request.context, request.contextRoot);
+    const contextFiles = preparedContext.fileArgs;
     const contextNote = contextFiles.length > 0
-        ? `## Caller-provided context\n\nThe host attached ${contextFiles.length} file(s) to this task: ${contextFiles.join(", ")}. Read them before answering.`
+        ? `## Caller-provided context\n\nThe host attached ${contextFiles.length} immutable file snapshot(s) to this task, corresponding to: ${preparedContext.labels.join(", ")}. Read them before answering.`
         : null;
     const role = buildAppendedRole(agent, config, contextNote);
     const argv = [
         binaryPath,
         "--mode", "json",
         "-p",
+        "--offline",
         "--no-session",
         "--cwd", request.cwd,
         // Host hermeticity: no AGENTS.md/CLAUDE.md, extension, skill, or prompt
@@ -511,7 +597,16 @@ export class PrimeBackend {
     constructor(options = {}) {
         this.binaryPath =
             options.binaryPath ?? process.env.RLMX_PRIME_BINARY_PATH ?? "prime-agent";
-        this.engine = options.engine ?? ((argv, emit, limits) => spawnPrimeRun(argv, emit, limits));
+        const environment = options.environment ?? buildPrimeChildEnv;
+        this.engine =
+            options.engine ??
+                ((argv, emit, limits, signal) => {
+                    const providerIndex = argv.indexOf("--provider");
+                    const provider = providerIndex >= 0 ? argv[providerIndex + 1] : undefined;
+                    if (!provider)
+                        throw new Error("prime backend: internal error: spawn argv has no --provider");
+                    return spawnPrimeRun(argv, emit, limits, environment(process.env, provider), signal);
+                });
         // Backend startup: the version pin is asserted once per instance. The
         // server constructs this lazily on first prime selection (selectBackend),
         // so a machine without prime-agent never pays for it — and the injected
@@ -526,7 +621,14 @@ export class PrimeBackend {
             maxTokens: request.config.budget?.maxTokens ?? null,
             maxTurns: request.maxIterations !== undefined ? request.maxIterations : null,
         };
-        const result = await this.engine(buildArgv(this.binaryPath, agent, request), emit, limits);
+        const preparedContext = await prepareContextSnapshot(request.context, request.contextRoot);
+        let result;
+        try {
+            result = await this.engine(buildArgv(this.binaryPath, agent, request, preparedContext), emit, limits, request.signal);
+        }
+        finally {
+            await preparedContext.cleanup();
+        }
         return {
             answer: result.answer,
             iterations: result.turns,

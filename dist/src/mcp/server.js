@@ -521,7 +521,7 @@ const BACKENDS = new Map([
 ]);
 /**
  * The prime backend, constructed lazily on first selection. Its constructor
- * runs the version-pin check (`prime-agent --version` === 0.7.2), and a
+ * runs the version-pin check (`prime-agent --version` === 0.8.1), and a
  * server that never selects prime must not pay for that — nor fail to start
  * on a machine without the binary. A spec naming a backend this build has
  * not wired fails loudly at call time, the same "no silent degradation"
@@ -557,7 +557,7 @@ export function selectBackend(agent) {
  * and presentation stay server concerns while event translation stays the
  * backend's.
  */
-export async function runTurn(backend, agent, config, label, query, sessionId, contextPath, cwd, progress, maxIterations) {
+export async function runTurn(backend, agent, config, label, query, sessionId, contextPath, cwd, progress, maxIterations, signal) {
     let context = null;
     const contextRoot = contextPath ? resolve(cwd, contextPath) : undefined;
     if (contextRoot) {
@@ -601,6 +601,7 @@ export async function runTurn(backend, agent, config, label, query, sessionId, c
             cwd,
             contextRoot,
             ...(maxIterations !== undefined ? { maxIterations } : {}),
+            ...(signal ? { signal } : {}),
         }, emit);
         const footer = formatFooter(label, config, result, Date.now() - started, sessionId);
         return {
@@ -738,12 +739,12 @@ export async function runMcp(cwd = process.cwd()) {
             const query = buildResumeQuery(session.turns, prompt);
             let outcome;
             if (agent) {
-                outcome = await runTurn(selectBackend(agent), agent, applyAgent(baseConfig, agent), `agent=${agent.name}`, query, session.id, contextPath, cwd, progress, agentMaxIterations(agent));
+                outcome = await runTurn(selectBackend(agent), agent, applyAgent(baseConfig, agent), `agent=${agent.name}`, query, session.id, contextPath, cwd, progress, agentMaxIterations(agent), extra.signal);
             }
             else {
                 const override = readArg(args?.model);
                 const config = override ? applyModelOverride(baseConfig, override) : baseConfig;
-                outcome = await runTurn(selectBackend(undefined), undefined, config, "query", query, session.id, contextPath, cwd, progress);
+                outcome = await runTurn(selectBackend(undefined), undefined, config, "query", query, session.id, contextPath, cwd, progress, undefined, extra.signal);
             }
             // The turn is recorded either way: an aborted turn is still history the
             // follow-up may need to reference, and the caller was told it happened.

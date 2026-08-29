@@ -268,7 +268,7 @@ export declare function selectBackend(agent: Microagent | undefined): RuntimeBac
  * and presentation stay server concerns while event translation stays the
  * backend's.
  */
-export declare function runTurn(backend: RuntimeBackend, agent: Microagent | undefined, config: RlmxConfig, label: string, query: string, sessionId: string, contextPath: string | undefined, cwd: string, progress?: ProgressSink, maxIterations?: number): Promise<TurnOutcome>;
+export declare function runTurn(backend: RuntimeBackend, agent: Microagent | undefined, config: RlmxConfig, label: string, query: string, sessionId: string, contextPath: string | undefined, cwd: string, progress?: ProgressSink, maxIterations?: number, signal?: AbortSignal): Promise<TurnOutcome>;
 /**
  * Run the MCP server on stdio until the client disconnects.
  *

@@ -7,12 +7,9 @@
  * backend owns "what actually executes the turn", so a second engine can
  * slot in behind the same host-visible surface.
  *
- * Deliberately no `signal` parameter: the MCP server has no cancellation
- * wiring and `RLMOptions` (`src/rlm.ts`) has no `signal` field, so a signal
- * would have no producer and no legacy consumer. Each backend owns its own
- * stopping semantics — the legacy backend keeps its internal
- * `maxIterations`/`timeout` → `budgetHit` behavior; a future backend owns a
- * deadline/kill of its own.
+ * The request carries the MCP request's AbortSignal. Backends that own a
+ * killable execution boundary (Prime's subprocess) must honor it; legacy's
+ * in-process rlmLoop cannot yet consume it and remains deadline-bounded.
  */
 import type { RlmxConfig } from "../config.js";
 import type { LoadedContext } from "../context.js";
@@ -36,10 +33,12 @@ export interface BackendRequest {
     readonly cwd: string;
     /**
      * Absolute path the caller's `context:` argument resolved to, when one was
-     * passed. Lets a backend that needs real files (prime's `@file` arguments)
-     * point at the caller's originals instead of the loaded snapshot.
+     * passed. Used only to retain the logical basename when a backend
+     * materializes the already-loaded context into a private snapshot.
      */
     readonly contextRoot?: string;
+    /** Caller cancellation, forwarded by the MCP SDK. */
+    readonly signal?: AbortSignal;
 }
 /**
  * The result of one backend run — exactly the fields the MCP layer consumes.
@@ -68,9 +67,9 @@ export interface MicroagentResult {
  * `rlmx_query` tool, which has no agent spec. `request` carries the resolved
  * config and query; `emit` reports progress messages (without the tool label —
  * the server prefixes it) while the run executes. A throw is a *failed run*
- * the server reports as a tool error; the two designed non-throwing aborts
- * (empty responses, wall-clock timeout) must return normally so the server's
- * `isFailedRun` classification keeps working.
+ * the server reports as a tool error. Backend-owned deadline and budget exits
+ * return normally so the server's `isFailedRun` classification can preserve
+ * the public footer contract; malformed/empty provider completions throw.
  */
 export interface RuntimeBackend {
     run(agent: Microagent | undefined, request: BackendRequest, emit: (message: string) => void): Promise<MicroagentResult>;
