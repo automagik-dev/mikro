@@ -976,6 +976,9 @@ async function runUpdate(args: string[]): Promise<void> {
   }
 
   console.log(`mikro update: ${root}`);
+  if (root.includes("/.rlmx/")) {
+    console.log("note: this checkout lives under the legacy ~/.rlmx path; re-run scripts/install.sh to migrate it to ~/.mikro.");
+  }
   if (root.includes("/.mikro/")) {
     console.log("note: this checkout lives under the legacy ~/.mikro path; re-run scripts/install.sh to migrate it to ~/.mikro.");
   }
