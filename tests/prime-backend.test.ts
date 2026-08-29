@@ -453,6 +453,7 @@ describe("prime backend — argv assembly", () => {
     for (const [provider, model] of [
       ["deepseek", "deepseek-v4-flash"],
       ["prime-inference", "qwen/qwen3.7-flash"],
+      ["khal", "deepseek-v4-flash"],
     ] as const) {
       const calls: Array<{ argv: readonly string[]; limits: PrimeRunLimits }> = [];
       const backend = new PrimeBackend({ engine: recordingEngine(calls) });
@@ -472,6 +473,8 @@ describe("prime backend — argv assembly", () => {
       PATH: "/bin",
       GEMINI_API_KEY: "gemini-test",
       OPENROUTER_API_KEY: "openrouter-test",
+      KHAL_API_KEY: "khal-test",
+      PRIME_AGENT_CODING_AGENT_DIR: "/tmp/prime-agent-config",
       AWS_SECRET_ACCESS_KEY: "must-not-leak",
       PRIME_AGENT_TELEMETRY: "1",
       DO_NOT_TRACK: "0",
@@ -479,6 +482,7 @@ describe("prime backend — argv assembly", () => {
     const child = buildPrimeChildEnv(source, "google");
     assert.equal(child.HOME, "/home/test");
     assert.equal(child.PATH, "/bin");
+    assert.equal(child.PRIME_AGENT_CODING_AGENT_DIR, "/tmp/prime-agent-config");
     assert.equal(child.GEMINI_API_KEY, "gemini-test");
     assert.equal(child.OPENROUTER_API_KEY, undefined);
     assert.equal(child.AWS_SECRET_ACCESS_KEY, undefined);
@@ -488,6 +492,10 @@ describe("prime backend — argv assembly", () => {
     const openrouter = buildPrimeChildEnv(source, "openrouter");
     assert.equal(openrouter.OPENROUTER_API_KEY, "openrouter-test");
     assert.equal(openrouter.GEMINI_API_KEY, undefined);
+
+    const khal = buildPrimeChildEnv(source, "khal");
+    assert.equal(khal.KHAL_API_KEY, "khal-test");
+    assert.equal(khal.OPENROUTER_API_KEY, undefined);
   });
 
   it("maps the declared thinking level onto prime's --thinking", async () => {
@@ -588,11 +596,6 @@ describe("prime backend — argv assembly", () => {
 
 describe("prime backend — loud failures", () => {
   const cases: ReadonlyArray<{ name: string; over: Partial<BackendRequest>; pattern: RegExp }> = [
-    {
-      name: "rlmx model providers prime cannot address (khal)",
-      over: { config: { ...CONFIG, model: { provider: "khal", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" } } as RlmxConfig },
-      pattern: /khal\/deepseek-v4-flash/,
-    },
     {
       name: "rlmx model providers prime cannot address (station)",
       over: { config: { ...CONFIG, model: { provider: "station", model: "Qwen3.6-35B-A3B-MTP-GGUF", subCallModel: "Qwen3.6-35B-A3B-MTP-GGUF" } } as RlmxConfig },

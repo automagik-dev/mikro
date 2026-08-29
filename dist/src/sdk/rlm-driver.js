@@ -61,6 +61,7 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ensureStationModels, registerStationProvider, STATION_PROVIDER_ID, } from "../station-provider.js";
 import { ensureKhalModels, registerKhalProvider, KHAL_PROVIDER_ID, } from "../khal-provider.js";
+import { OPENROUTER_PROVIDER_ID, resolveOpenRouterModel, } from "../openrouter-provider.js";
 import { llmCompleteSimple } from "../llm.js";
 const DEFAULT_RETRY_FORMATTER = (hint) => `# Retry hint from the validator\n\n${hint}\n\n`;
 const DEFAULT_MAX_TOOL_ITERATIONS = 16;
@@ -119,6 +120,9 @@ function resolvePiModel(provider, modelId) {
         }
     }
     if (!model) {
+        if (provider === OPENROUTER_PROVIDER_ID) {
+            return resolveOpenRouterModel(piModels, modelId);
+        }
         throw new Error(`rlmDriver: unknown model "${modelId}" for provider "${provider}".`);
     }
     return model;

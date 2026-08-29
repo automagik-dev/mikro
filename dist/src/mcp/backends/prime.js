@@ -23,11 +23,13 @@
  * no silent degradation.
  *
  * - model: prime 0.8.1 exposes credential-gated catalogs for `google`,
- *   `openrouter`, `deepseek`, and `prime-inference`. Each takes the same bare
+ *   `openrouter`, `deepseek`, and `prime-inference`, plus OpenAI-compatible
+ *   custom providers declared in Prime's `models.json`. RLΜX supports its
+ *   `khal` gateway through that custom-provider contract. Each takes the same bare
  *   model id rlmx stores after its first-slash provider split, so
  *   `openrouter/~deepseek/…` maps to
- *   `--provider openrouter --model ~deepseek/…`. Other rlmx-only providers
- *   such as `khal` and `station` throw before spawn.
+ *   `--provider openrouter --model ~deepseek/…`. RLΜX-only providers that
+ *   Prime cannot configure, such as `station`, throw before spawn.
  * - thinking: `config.gemini.thinkingLevel` (minimal|low|medium|high) is a
  *   subset of prime's `--thinking` levels; passed through verbatim.
  * - system: `config.system` (the agent's SYSTEM.md via `applyAgent`) and
@@ -105,6 +107,7 @@ const PRIME_ENV_ALLOWLIST = [
     "TMP",
     "TEMP",
     "USER",
+    "PRIME_AGENT_CODING_AGENT_DIR",
     "LOGNAME",
     "SHELL",
     "LANG",
@@ -126,6 +129,7 @@ const PRIME_PROVIDER_CREDENTIALS = {
     openrouter: ["OPENROUTER_API_KEY"],
     deepseek: ["DEEPSEEK_API_KEY"],
     "prime-inference": ["PRIME_API_KEY"],
+    khal: ["KHAL_API_KEY", "RLMX_KHAL_API_KEY"],
 };
 /** Build the least-privilege environment handed to the Prime subprocess. */
 export function buildPrimeChildEnv(source, provider) {
@@ -448,9 +452,11 @@ function mapPrimeModel(model, agentName) {
             return { provider: "deepseek", model: model.model };
         case "prime-inference":
             return { provider: "prime-inference", model: model.model };
+        case "khal":
+            return { provider: "khal", model: model.model };
         default:
             throw new Error(`prime backend: ${who} is pinned to rlmx model "${model.provider}/${model.model}", ` +
-                `which the rlmx Prime adapter for prime-agent 0.8.1 cannot address — it supports \`google\`, \`openrouter\`, \`deepseek\`, and \`prime-inference\`. ` +
+                `which the rlmx Prime adapter for prime-agent 0.8.1 cannot address — it supports \`google\`, \`openrouter\`, \`deepseek\`, \`prime-inference\`, and the configured \`khal\` provider. ` +
                 `Re-pin the agent to one of those providers, ` +
                 `or switch the agent back to \`backend: rlmx\`.`);
     }

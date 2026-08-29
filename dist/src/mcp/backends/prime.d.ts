@@ -23,11 +23,13 @@
  * no silent degradation.
  *
  * - model: prime 0.8.1 exposes credential-gated catalogs for `google`,
- *   `openrouter`, `deepseek`, and `prime-inference`. Each takes the same bare
+ *   `openrouter`, `deepseek`, and `prime-inference`, plus OpenAI-compatible
+ *   custom providers declared in Prime's `models.json`. RLΜX supports its
+ *   `khal` gateway through that custom-provider contract. Each takes the same bare
  *   model id rlmx stores after its first-slash provider split, so
  *   `openrouter/~deepseek/…` maps to
- *   `--provider openrouter --model ~deepseek/…`. Other rlmx-only providers
- *   such as `khal` and `station` throw before spawn.
+ *   `--provider openrouter --model ~deepseek/…`. RLΜX-only providers that
+ *   Prime cannot configure, such as `station`, throw before spawn.
  * - thinking: `config.gemini.thinkingLevel` (minimal|low|medium|high) is a
  *   subset of prime's `--thinking` levels; passed through verbatim.
  * - system: `config.system` (the agent's SYSTEM.md via `applyAgent`) and

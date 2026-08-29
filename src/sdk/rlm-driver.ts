@@ -70,6 +70,10 @@ import {
 	registerKhalProvider,
 	KHAL_PROVIDER_ID,
 } from "../khal-provider.js";
+import {
+  OPENROUTER_PROVIDER_ID,
+  resolveOpenRouterModel,
+} from "../openrouter-provider.js";
 import type {
 	AssistantMessage as PiAssistantMessage,
 	Context as PiContext,
@@ -227,6 +231,9 @@ function resolvePiModel(provider: string, modelId: string) {
 		}
 	}
 	if (!model) {
+		if (provider === OPENROUTER_PROVIDER_ID) {
+			return resolveOpenRouterModel(piModels, modelId);
+		}
 		throw new Error(
 			`rlmDriver: unknown model "${modelId}" for provider "${provider}".`,
 		);

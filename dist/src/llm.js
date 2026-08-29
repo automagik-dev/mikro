@@ -7,6 +7,7 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ensureStationModels, registerStationProvider, STATION_PROVIDER_ID, } from "./station-provider.js";
 import { ensureKhalModels, registerKhalProvider, KHAL_PROVIDER_ID, } from "./khal-provider.js";
+import { OPENROUTER_PROVIDER_ID, resolveOpenRouterModel, } from "./openrouter-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import { buildGeminiOnPayload, isGoogleProvider } from "./gemini.js";
@@ -110,6 +111,9 @@ function resolveModel(provider, modelId) {
                 input: ["text", "image"],
             };
         }
+    }
+    if (!model && provider === OPENROUTER_PROVIDER_ID) {
+        model = resolveOpenRouterModel(models, normalizedModelId);
     }
     if (!model) {
         throw new Error(`Unknown model "${modelId}" for provider "${provider}". ` +

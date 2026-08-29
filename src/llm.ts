@@ -17,6 +17,10 @@ import {
   registerKhalProvider,
   KHAL_PROVIDER_ID,
 } from "./khal-provider.js";
+import {
+  OPENROUTER_PROVIDER_ID,
+  resolveOpenRouterModel,
+} from "./openrouter-provider.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
@@ -194,6 +198,9 @@ function resolveModel(provider: string, modelId: string) {
         input: ["text", "image"],
       } as typeof template;
     }
+  }
+  if (!model && provider === OPENROUTER_PROVIDER_ID) {
+    model = resolveOpenRouterModel(models, normalizedModelId);
   }
   if (!model) {
     throw new Error(
