@@ -32,6 +32,7 @@ function makeConfig(overrides = {}) {
         output: overrides.output ?? { schema: null },
         storage: overrides.storage ?? { enabled: "auto", mode: "persistent", dataDir: "~/.rlmx/data", port: 0, chunkSize: null, chunkUtilization: 0.6, charsPerToken: 4 },
         rtk: overrides.rtk ?? { enabled: "auto" },
+        providers: overrides.providers ?? [],
     };
 }
 // ─── estimateTokens ──────────────────────────────────────

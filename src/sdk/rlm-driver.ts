@@ -65,6 +65,7 @@ import {
 	registerStationProvider,
 	STATION_PROVIDER_ID,
 } from "../station-provider.js";
+import { ensureCustomProviders } from "../custom-providers.js";
 import {
 	ensureKhalModels,
 	registerKhalProvider,
@@ -369,6 +370,10 @@ function buildToolDispatchDriver(
 			if (modelCfg.provider === KHAL_PROVIDER_ID) {
 				await ensureKhalModels(piModels);
 			}
+			// Config-declared providers (rlmx.yaml / settings.json `providers`)
+			// ride on the model config; register them before lookup (mirrors
+			// src/llm.ts resolveModel).
+			ensureCustomProviders(piModels, modelCfg.providers);
 			const model = resolvePiModel(modelCfg.provider, modelCfg.model);
 			const opts: PiSimpleStreamOptions = { signal };
 			return await piModels.completeSimple(model, ctx, opts);

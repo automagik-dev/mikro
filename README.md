@@ -813,6 +813,46 @@ Model selection is the `model:` block in `.rlmx/rlmx.yaml`, `--model <ref>` for
 one run, or `rlmx config set model.provider …` globally. There is no
 `MODEL.md` — nothing loads it.
 
+### Custom providers (`providers:`)
+
+Any OpenAI-compatible, Anthropic-compatible or OpenAI Responses endpoint can be
+declared in config and then used as `<id>/<model>` anywhere a model ref is
+accepted — `model:` in `rlmx.yaml`, `--model`, an agent's `model:` pin, or the
+MCP `model` argument. Nothing per-vendor is hard-coded: the declaration *is*
+the provider.
+
+```yaml
+# .rlmx/rlmx.yaml (project) — or the same keys under "providers" in
+# ~/.rlmx/settings.json (global; camelCase accepted). A project entry
+# replaces a global entry with the same id.
+providers:
+  wafer:
+    api: openai-completions        # default; also anthropic-messages, openai-responses
+    base-url: https://pass.wafer.ai/v1
+    api-key-env: WAFER_API_KEY     # env var name (or a list — first one set wins)
+    headers:                       # sent on every request
+      Wafer-ZDR: required
+    models:
+      GLM-5.3-Flash:
+        context-window: 128000
+        max-tokens: 16000          # reasoning tokens count against this on GLM
+        reasoning: true
+        input: [text]              # add `image` for vision models
+        cost: { input: 0, output: 0, cache-read: 0, cache-write: 0 }  # $ per 1M tokens
+  deepseek:
+    base-url: https://api.deepseek.com/v1
+    api-key-env: DEEPSEEK_API_KEY
+    models: [deepseek-chat, deepseek-reasoner]   # list form; defaults per model
+```
+
+Keys are env-only — the config names the variable, never holds the value.
+`rlmx doctor` lists every declared provider, which key variable is set, and
+whether the configured `model:` resolves. `rlmx mcp` validates every
+microagent's pin at discovery time: a tool whose provider or model is not
+resolvable is advertised as **UNAVAILABLE** with the reason, and calling it
+returns that reason instead of starting a run. Declaring the provider heals it
+on the next `tools/list` — no restart.
+
 ### TOOLS.md Format
 
 Define custom REPL tools as `## heading` + `python` code block:

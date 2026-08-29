@@ -52,6 +52,7 @@ import { applyModelRef, loadConfig, type RlmxConfig } from "../config.js";
 import { loadContext, type LoadedContext } from "../context.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../rlm.js";
 import { VERSION } from "../version.js";
+import { checkModelConfig } from "../llm.js";
 import { discoverAgents, splitModel, type Microagent } from "./agents.js";
 import type { MicroagentResult, RuntimeBackend } from "./backend.js";
 import { LegacyRlmxBackend } from "./backends/legacy.js";
@@ -181,6 +182,13 @@ function genericToolSchema(): Tool["inputSchema"] {
 /** Spawn-style description: what it is, how to prompt it, what comes back. */
 function describeAgent(agent: Microagent): string {
   const model = agent.spec.model ? ` Runs on ${agent.spec.model}.` : "";
+  if (agent.modelProblem) {
+    return (
+      `UNAVAILABLE — "${agent.name}" cannot run: ${agent.modelProblem} ` +
+      `Fix the agent's model: pin or declare the provider in config, then retry. ` +
+      `${agent.summary}${model}`
+    );
+  }
   return (
     `Launch the "${agent.name}" rlmx agent to handle a task autonomously. ` +
     `${agent.summary}${model} Give it a complete, standalone prompt — it runs ` +
@@ -538,6 +546,37 @@ export function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
   return next;
 }
 
+/**
+ * Validate each discovered agent's `model:` pin against the runtime it will
+ * actually run on, so `tools/list` never advertises a tool whose first call
+ * is guaranteed to fail with "Unknown model". Only the pi-ai backed backend
+ * (`rlmx`, the default) resolves models this way; other backends own their
+ * model universe and are left alone. The config is re-read per scan so a
+ * newly declared provider heals a degraded agent on the next request.
+ */
+export async function validateAgentModels(
+  cwd: string,
+  agents: readonly Microagent[]
+): Promise<Microagent[]> {
+  if (agents.length === 0) return [];
+  let config: RlmxConfig;
+  try {
+    config = await loadConfig(cwd);
+  } catch (err: unknown) {
+    // A broken rlmx.yaml fails every run the same way; let the call surface it.
+    process.stderr.write(
+      `rlmx mcp: could not load config for model validation: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+    return [...agents];
+  }
+  return agents.map((agent) => {
+    if ((agent.spec.backend ?? "rlmx") !== "rlmx") return agent;
+    const problem = checkModelConfig(applyAgent(config, agent).model);
+    if (!problem) return agent;
+    return { ...agent, modelProblem: problem };
+  });
+}
+
 function applyModelOverride(config: RlmxConfig, model: string): RlmxConfig {
   if (!splitModel(model)) return config;
   return { ...config, model: applyModelRef(config.model, model) };
@@ -802,7 +841,9 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
   console.debug = toStderr as typeof console.debug;
   console.warn = toStderr as typeof console.warn;
 
-  const registry = createAgentRegistry(() => discoverAgents(cwd));
+  const registry = createAgentRegistry(async () =>
+    validateAgentModels(cwd, await discoverAgents(cwd))
+  );
   const sessions = new McpSessionStore();
 
   // Seed the baseline before connecting, so the first tools/list is not
@@ -812,6 +853,13 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
     `rlmx mcp: ${initial.agents.length} microagent${initial.agents.length === 1 ? "" : "s"} discovered` +
       `${initial.agents.length ? ` (${initial.agents.map((a) => a.name).join(", ")})` : ""}\n`
   );
+  for (const agent of initial.agents) {
+    if (agent.modelProblem) {
+      process.stderr.write(
+        `rlmx mcp: agent "${agent.name}" is UNAVAILABLE — ${agent.modelProblem}\n`
+      );
+    }
+  }
 
   const server = new Server(
     { name: "rlmx", version: VERSION },
@@ -875,6 +923,11 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
       // caller may hold, and the orphaned sessions go with it.
       sessions.evictTools([name]);
       return textResult(`Unknown tool: ${name}`, true);
+    }
+    if (agent?.modelProblem) {
+      // Refuse up front: the run would die on its first model call with the
+      // same message, after paying for context loading and a REPL spawn.
+      return textResult(`rlmx ${name} cannot run: ${agent.modelProblem}`, true);
     }
 
     const promptArg = readArg(args?.prompt);

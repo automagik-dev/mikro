@@ -97,3 +97,13 @@ storage:
 #     properties:                # Falls back to FINAL() text parsing on non-Google
 #       answer:
 #         type: string
+
+# Custom providers — any OpenAI/Anthropic-compatible endpoint, then use it as
+# `<id>/<model>` (here: `model: { provider: wafer, model: GLM-5.3-Flash }`).
+# providers:
+#   wafer:
+#     base-url: https://pass.wafer.ai/v1
+#     api-key-env: WAFER_API_KEY
+#     headers: { Wafer-ZDR: required }
+#     models:
+#       GLM-5.3-Flash: { context-window: 128000, max-tokens: 16000, reasoning: true }

@@ -2,6 +2,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import type { ThinkingLevel } from "./gemini.js";
+import {
+  mergeCustomProviders,
+  parseCustomProviders,
+  type CustomProviderConfig,
+} from "./custom-providers.js";
+import { loadSettings } from "./settings.js";
 
 // ─── Interfaces ──────────────────────────────────────────
 
@@ -16,6 +22,14 @@ export interface ModelConfig {
   provider: string;
   model: string;
   subCallModel?: string;
+  /**
+   * Config-declared providers (see src/custom-providers.ts). Carried on the
+   * model config — not just on `RlmxConfig` — so every resolution site that
+   * receives a `ModelConfig` (llmComplete, the SDK driver, recursive children)
+   * can register them before lookup without threading a second argument
+   * through the call graph. `applyModelRef` spreads it forward untouched.
+   */
+  providers?: CustomProviderConfig[];
 }
 
 /** Budget limits (all optional — null means unlimited) */
@@ -113,6 +127,11 @@ export interface RlmxConfig {
   storage: StorageConfig;
   /** RTK (Rust Token Killer) integration */
   rtk: RtkConfig;
+  /**
+   * Providers declared in config (settings.json merged with rlmx.yaml; the
+   * yaml wins per id). Also mirrored on `model.providers`.
+   */
+  providers: CustomProviderConfig[];
   /** Config source: "yaml" | "defaults" */
   configSource: "yaml" | "defaults";
 }
@@ -227,6 +246,7 @@ interface RawYamlConfig {
   rtk?: {
     enabled?: string;
   };
+  providers?: unknown;
 }
 
 // ─── File Helpers ────────────────────────────────────────
@@ -339,7 +359,11 @@ export function parseToolsMd(content: string): ToolDef[] {
 /**
  * Parse and validate an rlmx.yaml file.
  */
-function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system" | "criteria" | "tools"> {
+function parseYamlConfig(
+  content: string,
+  dir: string,
+  globalProviders: readonly CustomProviderConfig[] = []
+): Omit<RlmxConfig, "system" | "criteria" | "tools"> {
   let raw: unknown;
   try {
     raw = yaml.load(content);
@@ -360,6 +384,12 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
 
   const cfg = raw as RawYamlConfig;
 
+  // Parse config-declared providers first: the model block may name one.
+  const providers = mergeCustomProviders(
+    globalProviders,
+    parseCustomProviders(cfg.providers, "rlmx.yaml")
+  );
+
   // Parse model
   const model: ModelConfig = {
     provider: cfg.model?.provider ?? DEFAULT_MODEL.provider,
@@ -368,6 +398,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   if (cfg.model?.["sub-call-model"]) {
     model.subCallModel = cfg.model["sub-call-model"];
   }
+  if (providers.length) model.providers = providers;
 
   // Parse context config
   const contextConfig: ContextConfig = {
@@ -555,6 +586,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
     output,
     storage,
     rtk,
+    providers,
     configSource: "yaml",
   };
 }
@@ -562,12 +594,14 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
 /**
  * Build a config from defaults only (no files).
  */
-function defaultConfig(dir: string): RlmxConfig {
+function defaultConfig(dir: string, providers: CustomProviderConfig[] = []): RlmxConfig {
+  const model: ModelConfig = { ...DEFAULT_MODEL };
+  if (providers.length) model.providers = providers;
   return {
     system: null,
     tools: [],
     criteria: null,
-    model: { ...DEFAULT_MODEL },
+    model,
     configDir: dir,
     budget: { ...DEFAULT_BUDGET },
     contextConfig: { ...DEFAULT_CONTEXT_CONFIG },
@@ -577,8 +611,20 @@ function defaultConfig(dir: string): RlmxConfig {
     output: { ...DEFAULT_OUTPUT_CONFIG },
     storage: { ...DEFAULT_STORAGE_CONFIG },
     rtk: { ...DEFAULT_RTK_CONFIG },
+    providers,
     configSource: "defaults",
   };
+}
+
+/**
+ * Providers declared globally in ~/.rlmx/settings.json under `"providers"`.
+ * Read on every load (the file is small) so a `rlmx config` edit takes effect
+ * on the next run. A malformed block is an error, not a silent skip — the
+ * operator wrote it expecting it to work.
+ */
+export async function loadGlobalProviders(): Promise<CustomProviderConfig[]> {
+  const settings = await loadSettings();
+  return parseCustomProviders(settings.providers, "settings.json");
 }
 
 // ─── Main loader ─────────────────────────────────────────
@@ -590,14 +636,20 @@ function defaultConfig(dir: string): RlmxConfig {
  *   3. .rlmx/CRITERIA.md (auto-loaded when present)
  *   4. .rlmx/TOOLS.md (auto-loaded and parsed when present)
  *   5. Defaults if no .rlmx/rlmx.yaml
+ *
+ * Config-declared providers come from ~/.rlmx/settings.json (`"providers"`)
+ * overlaid by rlmx.yaml (`providers:`), in both the yaml and the defaults
+ * branch — a project with no rlmx.yaml can still run on a globally declared
+ * provider.
  */
 export async function loadConfig(dir: string): Promise<RlmxConfig> {
   const rlmxDir = join(dir, ".rlmx");
+  const globalProviders = await loadGlobalProviders();
 
   // Try .rlmx/rlmx.yaml
   const yamlContent = await readOptionalFile(join(rlmxDir, "rlmx.yaml"));
   if (yamlContent !== null) {
-    const partial = parseYamlConfig(yamlContent, dir);
+    const partial = parseYamlConfig(yamlContent, dir, globalProviders);
 
     // Auto-load .md files from .rlmx/
     const [systemRaw, criteriaRaw, toolsRaw] = await Promise.all([
@@ -619,7 +671,7 @@ export async function loadConfig(dir: string): Promise<RlmxConfig> {
   }
 
   // No .rlmx/rlmx.yaml — return defaults
-  return defaultConfig(dir);
+  return defaultConfig(dir, globalProviders);
 }
 
 /**
