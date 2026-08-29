@@ -14,6 +14,12 @@ import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import yaml from "js-yaml";
 import { isValidThinkingLevel, THINKING_LEVELS } from "../gemini.js";
+/** Backends a spec may name. Pinned here so the error text can list them. */
+const VALID_BACKENDS = [
+    "rlmx",
+    "prime",
+    "prime-sdk",
+];
 const VALID_SHAPES = [
     "single-step",
     "loop",
@@ -105,8 +111,11 @@ export function parseAgentSpec(yamlText, dir) {
     // silently fall back to the legacy engine and look like it worked, which
     // is exactly the silent degradation a selection field must not allow.
     const backendRaw = asString(r.backend);
-    if (backendRaw !== undefined && backendRaw !== "rlmx" && backendRaw !== "prime") {
-        throw new Error(`agent.yaml: backend must be one of rlmx | prime, got "${backendRaw}"`);
+    if (backendRaw !== undefined &&
+        backendRaw !== "rlmx" &&
+        backendRaw !== "prime" &&
+        backendRaw !== "prime-sdk") {
+        throw new Error(`agent.yaml: backend must be one of ${VALID_BACKENDS.join(" | ")}, got "${backendRaw}"`);
     }
     // Build the "extras" bag by stripping the known keys from r.
     const known = new Set([

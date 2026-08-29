@@ -60,8 +60,16 @@ export interface AgentSpec {
      * engine, which stays the default. Deliberately NOT part of the
      * documented `agent.yaml` schema: it is a gate/experiment selector that
      * may change without notice.
+     *
+     * - `rlmx` — the legacy in-process engine (`rlmLoop`). The default.
+     * - `prime` — one `prime-agent` subprocess per turn
+     *   (`src/mcp/backends/prime.ts`).
+     * - `prime-sdk` — the same agent driven in-process through prime's
+     *   programmatic SDK (`src/mcp/backends/prime-sdk.ts`): no per-turn cold
+     *   start, plus custom tools, structured output, custom providers, and
+     *   sub-call depth, which the subprocess flag surface cannot express.
      */
-    readonly backend?: "rlmx" | "prime";
+    readonly backend?: "rlmx" | "prime" | "prime-sdk";
     /** Preserved unrecognised keys — consumers layer their own schema. */
     readonly extras: Readonly<Record<string, unknown>>;
 }

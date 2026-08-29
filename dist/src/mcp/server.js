@@ -49,6 +49,7 @@ import { VERSION } from "../version.js";
 import { discoverAgents, splitModel } from "./agents.js";
 import { LegacyRlmxBackend } from "./backends/legacy.js";
 import { PrimeBackend } from "./backends/prime.js";
+import { PrimeSdkBackend } from "./backends/prime-sdk.js";
 /** How often to tick when the run itself is emitting nothing. */
 const HEARTBEAT_MS = 15_000;
 /** Tool always present, so the server is useful before any agent is authored. */
@@ -529,6 +530,15 @@ const BACKENDS = new Map([
  */
 let primeBackend;
 /**
+ * The in-process prime backend (`src/mcp/backends/prime-sdk.ts`), also
+ * constructed lazily. Its constructor is cheap by design — package
+ * resolution, the version pin, and the dynamic `import()` all happen inside
+ * the memoized loader on the first turn — but it stays lazy for the same
+ * reason `primeBackend` does: a build that never selects it must not depend
+ * on prime-agent being installed.
+ */
+let primeSdkBackend;
+/**
  * The backend a turn runs on.
  *
  * `rlmx_query` (the generic tool) has no agent spec and therefore no
@@ -539,7 +549,11 @@ let primeBackend;
 export function selectBackend(agent) {
     const selected = agent?.spec.backend ?? "rlmx";
     const backend = BACKENDS.get(selected) ??
-        (selected === "prime" ? (primeBackend ??= new PrimeBackend()) : undefined);
+        (selected === "prime"
+            ? (primeBackend ??= new PrimeBackend())
+            : selected === "prime-sdk"
+                ? (primeSdkBackend ??= new PrimeSdkBackend())
+                : undefined);
     if (!backend) {
         throw new Error(`agent "${agent?.name ?? "rlmx_query"}": backend "${selected}" is not wired into this build`);
     }
