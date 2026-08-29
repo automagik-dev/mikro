@@ -63,6 +63,10 @@ thinking: high               # "minimal" | "low" | "medium" | "high"
                              # Rejected with a named error if it is anything
                              # else. Omit to inherit the ambient config.
 
+# ─── MCP execution backend (optional) ─────────────────────────
+backend: prime               # "rlmx" | "prime"; default: rlmx
+                             # Applies to `rlmx mcp` microagent tools only.
+
 # ─── Tools ───────────────────────────────────────────────────
 tools:
   - greet                    # Each name must resolve via the plugin
@@ -100,6 +104,7 @@ system: SYSTEM.md            # Relative to agent dir. Consumer loads
 | `model` | string | — | passthrough | Not validated. Consumers wire it into their driver. |
 | `tools` | string[] | `[]` | SDK reads | Empty strings are filtered. Duplicate names collapse (last wins at load). |
 | `thinking` | `"minimal" \| "low" \| "medium" \| "high"` | — | SDK reads, enforces allowed values | Reasoning effort for the agent's own model calls. Rejects unknown levels with a named error. See [Reasoning effort](#reasoning-effort-thinking). |
+| `backend` | `"rlmx" \| "prime"` | `"rlmx"` | MCP runtime selector | `prime` runs this microagent through the pinned Prime Agent binary. The generic `rlmx_query` tool always remains on the legacy RLΜX engine. See [MCP execution backend](#mcp-execution-backend-backend). |
 | `system` | string | — | passthrough | Consumer is responsible for reading the file + handing its contents to the driver. |
 | `scope.reads` | string[] | — | passthrough | Advisory. Enforced by individual tool handlers (e.g. brain's `read`). |
 | `scope.writes` | string[] | — | passthrough | Advisory, same as above. |
@@ -171,6 +176,29 @@ reason.
 FastFlowLM / NPU `station` models (`*-FLM`) declare `reasoning: false`, so the
 field is simply inert on them rather than harmful.
 
+## MCP execution backend: `backend`
+
+```yaml
+model: openrouter/~deepseek/deepseek-v4-flash-latest
+backend: prime
+```
+
+`backend` selects the execution engine for this one microagent when it is
+exposed by `rlmx mcp`. Both lanes live behind the same MCP server and preserve
+the same tool, session, progress, and cost-footer contract:
+
+- `prime` is the preferred lane for new text-only microagents whose work fits
+  Prime Agent's built-in IPython/RLM tool environment.
+- `rlmx` is the compatibility lane and remains the default when the field is
+  absent. Keep it for RLΜX `TOOLS.md` functions, `station` models, structured
+  `output.schema`, `budget.max_depth`, dictionary context, or Gemini-specific
+  grounding/media flags; the Prime adapter rejects those configurations
+  loudly instead of silently dropping behavior.
+- `rlmx_query` has no agent manifest and always uses the legacy lane.
+
+Do not run both lanes as paid shadows for every request. Choose per agent; use
+the second lane for compatibility, fallback, or explicit A/B evaluation.
+
 ## Extras
 
 Any key not listed above is preserved on `AgentSpec.extras` so
@@ -224,6 +252,7 @@ there is no warning to notice.
 | Top-level is not a mapping (e.g. a list or scalar) | `Error: agent.yaml: expected a YAML mapping at the top level` |
 | `shape` is set to an unsupported value | `Error: agent.yaml: shape must be one of single-step \| loop \| recurse, got "..."` |
 | `thinking` is set to an unsupported level | `Error: agent.yaml: thinking must be one of minimal \| low \| medium \| high, got "..."` |
+| `backend` is set to an unsupported value | `Error: agent.yaml: backend must be one of rlmx \| prime, got "..."` |
 | `agent.yaml` file is missing (via `loadAgentSpec`) | `ENOENT` from `node:fs` |
 
 Non-strings, non-finite numbers, and other type drift default
