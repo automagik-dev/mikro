@@ -1,8 +1,8 @@
 {
   "name": "mikro",
-  "version": "1.260829.1",
+  "version": "1.260829.2",
   "private": true,
-  "description": "mikro \u2014 microagent runtime for coding agents: prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
+  "description": "mikro — microagent runtime for coding agents: prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
