@@ -17,7 +17,8 @@ import { estimateTokens, validateContextSize } from "./cache.js";
 import { runBatch } from "./batch.js";
 import { loadSettings, saveSettings, injectApiKeysToEnv, formatValue, parseSettingValue, getSettingsPath, type GlobalSettings } from "./settings.js";
 import { printRlmxCliSchema } from "./schema.js";
-import { formatModelRef } from "./llm.js";
+import { checkModelConfig, formatModelRef } from "./llm.js";
+import { customProviderKeySource } from "./custom-providers.js";
 import type { RlmxConfig } from "./config.js";
 
 /**
@@ -866,6 +867,12 @@ async function runDoctor(): Promise<void> {
     if (!process.env[envVar]) anyKeyMissing = true;
   }
 
+  // Config-declared providers (rlmx.yaml / settings.json `providers`) — the
+  // whole point of listing them here is that a `<id>/<model>` pin which
+  // fails as "unknown model" is diagnosable from this screen alone.
+  const customProviders = config.providers;
+  const configuredModelProblem = checkModelConfig(config.model);
+
   // RTK mode text
   const rtkMode = config.rtk.enabled;
   let rtkModeText: string;
@@ -887,6 +894,28 @@ async function runDoctor(): Promise<void> {
     const set = Boolean(process.env[envVar]);
     console.log(`  ${label} : ${envVar} set (${set ? "yes" : "no"})`);
   }
+  console.log("");
+
+  console.log("Config-declared providers:");
+  if (customProviders.length === 0) {
+    console.log("  (none — declare under providers: in .rlmx/rlmx.yaml or ~/.rlmx/settings.json)");
+  }
+  for (const p of customProviders) {
+    const source = customProviderKeySource(p);
+    const keyText =
+      p.apiKeyEnv.length === 0
+        ? "keyless"
+        : source
+          ? `${source} set (yes)`
+          : `${p.apiKeyEnv.join("|")} set (no)`;
+    const modelIds = p.models.map((m) => m.id);
+    console.log(`  ${p.id} : ${p.api} @ ${p.baseUrl} · key ${keyText}`);
+    console.log(`    models : ${modelIds.length ? modelIds.join(", ") : "(none declared)"}`);
+  }
+  console.log("");
+
+  console.log("Configured model:");
+  console.log(`  ${config.model.provider}/${config.model.model} : ${configuredModelProblem ? `UNRESOLVABLE — ${configuredModelProblem}` : "resolves"}`);
   console.log("");
 
   console.log("RTK (token optimizer):");

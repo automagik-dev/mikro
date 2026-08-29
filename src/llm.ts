@@ -17,6 +17,11 @@ import {
   registerKhalProvider,
   KHAL_PROVIDER_ID,
 } from "./khal-provider.js";
+import {
+  describeProviderHint,
+  ensureCustomProviders,
+  type CustomProviderConfig,
+} from "./custom-providers.js";
 import { spawn } from "node:child_process";
 import { uuidv7 } from "./uuid.js";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
@@ -169,7 +174,20 @@ export function formatModelRef(provider: string, modelId: string): string {
   return `${provider}/${normalizeProviderModelId(provider, modelId)}`;
 }
 
-function resolveModel(provider: string, modelId: string) {
+/**
+ * Resolve a pi-ai model for `<provider>/<modelId>`.
+ *
+ * `providers` are the config-declared providers riding on the model config;
+ * they are registered on the shared runtime before lookup so a declared
+ * `<id>/<model>` resolves exactly like a built-in. Exported so the MCP server
+ * and `rlmx doctor` can validate a pin without making a call.
+ */
+export function resolveModel(
+  provider: string,
+  modelId: string,
+  providers?: readonly CustomProviderConfig[]
+) {
+  ensureCustomProviders(models, providers);
   const normalizedModelId = normalizeProviderModelId(provider, modelId);
   let model = models.getModel(provider, normalizedModelId);
   if (!model) {
@@ -198,10 +216,34 @@ function resolveModel(provider: string, modelId: string) {
   if (!model) {
     throw new Error(
       `Unknown model "${modelId}" for provider "${provider}". ` +
-        `Try updating MODEL.md or check pi/ai supported models.`
+        describeProviderHint(providers, provider)
     );
   }
   return model;
+}
+
+/**
+ * Check that a model config resolves, without calling anything. Returns the
+ * failure message, or null when the pin is good.
+ *
+ * Station and khal carry dynamic catalogs that need a network round-trip to
+ * fill; they are reported as resolvable here and checked at call time, as
+ * before. Everything else — built-ins and config-declared providers — is
+ * static and answers immediately.
+ */
+export function checkModelConfig(modelConfig: ModelConfig): string | null {
+  if (
+    modelConfig.provider === STATION_PROVIDER_ID ||
+    modelConfig.provider === KHAL_PROVIDER_ID
+  ) {
+    return null;
+  }
+  try {
+    resolveModel(modelConfig.provider, modelConfig.model, modelConfig.providers);
+    return null;
+  } catch (err: unknown) {
+    return err instanceof Error ? err.message : String(err);
+  }
 }
 
 /**
@@ -233,7 +275,7 @@ export async function llmComplete(
   if (modelConfig.provider === KHAL_PROVIDER_ID) {
     await ensureKhalModels(models);
   }
-  const model = resolveModel(modelConfig.provider, modelConfig.model);
+  const model = resolveModel(modelConfig.provider, modelConfig.model, modelConfig.providers);
   const startTime = Date.now();
 
   const systemPrompt = messages.find((m) => m.role === "system")?.content;

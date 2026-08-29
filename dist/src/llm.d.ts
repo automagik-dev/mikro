@@ -5,6 +5,7 @@
  * from the Python REPL, and rlm_query child process spawning.
  */
 import type { AssistantMessage as PiAssistantMessage } from "@earendil-works/pi-ai";
+import { type CustomProviderConfig } from "./custom-providers.js";
 import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
 import type { LLMRequest } from "./ipc.js";
 import type { Logger } from "./logger.js";
@@ -80,6 +81,25 @@ export declare function normalizeOpenRouterDeveloperRole(payload: unknown): unkn
  */
 export declare function normalizeProviderModelId(provider: string, modelId: string): string;
 export declare function formatModelRef(provider: string, modelId: string): string;
+/**
+ * Resolve a pi-ai model for `<provider>/<modelId>`.
+ *
+ * `providers` are the config-declared providers riding on the model config;
+ * they are registered on the shared runtime before lookup so a declared
+ * `<id>/<model>` resolves exactly like a built-in. Exported so the MCP server
+ * and `rlmx doctor` can validate a pin without making a call.
+ */
+export declare function resolveModel(provider: string, modelId: string, providers?: readonly CustomProviderConfig[]): import("@earendil-works/pi-ai").Model<import("@earendil-works/pi-ai").Api>;
+/**
+ * Check that a model config resolves, without calling anything. Returns the
+ * failure message, or null when the pin is good.
+ *
+ * Station and khal carry dynamic catalogs that need a network round-trip to
+ * fill; they are reported as resolvable here and checked at call time, as
+ * before. Everything else — built-ins and config-declared providers — is
+ * static and answers immediately.
+ */
+export declare function checkModelConfig(modelConfig: ModelConfig): string | null;
 /**
  * Call pi/ai completeSimple with messages.
  * Tracks cost and time_ms per call. Optionally emits to a Logger.

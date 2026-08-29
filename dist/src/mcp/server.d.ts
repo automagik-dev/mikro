@@ -191,6 +191,15 @@ export declare function agentMaxIterations(agent: Microagent): number | undefine
  */
 export declare function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig;
 /**
+ * Validate each discovered agent's `model:` pin against the runtime it will
+ * actually run on, so `tools/list` never advertises a tool whose first call
+ * is guaranteed to fail with "Unknown model". Only the pi-ai backed backend
+ * (`rlmx`, the default) resolves models this way; other backends own their
+ * model universe and are left alone. The config is re-read per scan so a
+ * newly declared provider heals a degraded agent on the next request.
+ */
+export declare function validateAgentModels(cwd: string, agents: readonly Microagent[]): Promise<Microagent[]>;
+/**
  * Result of a call that never reached a session: bad arguments, unknown tool,
  * unusable `session_id`. No `structuredContent`, because there is no session id
  * to put in it and the declared schema requires one — legal precisely because

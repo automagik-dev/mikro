@@ -40,6 +40,13 @@ export interface Microagent {
   readonly system?: string;
   /** First non-empty line of the system prompt — used as the tool description. */
   readonly summary: string;
+  /**
+   * Set when the agent's `model:` pin cannot be resolved against the built-in
+   * registry or the config-declared providers. The tool is still advertised
+   * (so the host can see it and read why) but every call is refused with this
+   * message instead of spinning up a run that would fail identically.
+   */
+  readonly modelProblem?: string;
 }
 
 /**

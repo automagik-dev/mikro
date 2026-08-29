@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "./gemini.js";
+import { type CustomProviderConfig } from "./custom-providers.js";
 /** Parsed tool: name → Python code */
 export interface ToolDef {
     name: string;
@@ -9,6 +10,14 @@ export interface ModelConfig {
     provider: string;
     model: string;
     subCallModel?: string;
+    /**
+     * Config-declared providers (see src/custom-providers.ts). Carried on the
+     * model config — not just on `RlmxConfig` — so every resolution site that
+     * receives a `ModelConfig` (llmComplete, the SDK driver, recursive children)
+     * can register them before lookup without threading a second argument
+     * through the call graph. `applyModelRef` spreads it forward untouched.
+     */
+    providers?: CustomProviderConfig[];
 }
 /** Budget limits (all optional — null means unlimited) */
 export interface BudgetConfig {
@@ -96,6 +105,11 @@ export interface RlmxConfig {
     storage: StorageConfig;
     /** RTK (Rust Token Killer) integration */
     rtk: RtkConfig;
+    /**
+     * Providers declared in config (settings.json merged with rlmx.yaml; the
+     * yaml wins per id). Also mirrored on `model.providers`.
+     */
+    providers: CustomProviderConfig[];
     /** Config source: "yaml" | "defaults" */
     configSource: "yaml" | "defaults";
 }
@@ -131,12 +145,24 @@ export declare function applyModelRef(model: ModelConfig, ref: string): ModelCon
  */
 export declare function parseToolsMd(content: string): ToolDef[];
 /**
+ * Providers declared globally in ~/.rlmx/settings.json under `"providers"`.
+ * Read on every load (the file is small) so a `rlmx config` edit takes effect
+ * on the next run. A malformed block is an error, not a silent skip — the
+ * operator wrote it expecting it to work.
+ */
+export declare function loadGlobalProviders(): Promise<CustomProviderConfig[]>;
+/**
  * Load rlmx config from .rlmx/ directory:
  *   1. .rlmx/rlmx.yaml (required for yaml source)
  *   2. .rlmx/SYSTEM.md (auto-loaded when present)
  *   3. .rlmx/CRITERIA.md (auto-loaded when present)
  *   4. .rlmx/TOOLS.md (auto-loaded and parsed when present)
  *   5. Defaults if no .rlmx/rlmx.yaml
+ *
+ * Config-declared providers come from ~/.rlmx/settings.json (`"providers"`)
+ * overlaid by rlmx.yaml (`providers:`), in both the yaml and the defaults
+ * branch — a project with no rlmx.yaml can still run on a globally declared
+ * provider.
  */
 export declare function loadConfig(dir: string): Promise<RlmxConfig>;
 /**
