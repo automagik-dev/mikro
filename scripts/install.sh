@@ -19,9 +19,12 @@ if [ -d "$LEGACY_HOME" ] && [ ! -e "$HOME/.mikro" ]; then
   if [ -d "$HOME/.mikro/rlmx" ] && [ ! -e "$HOME/.mikro/mikro" ]; then
     mv "$HOME/.mikro/rlmx" "$HOME/.mikro/mikro"
   fi
-  if [ -L "$MIKRO_BIN_DIR/rlmx" ]; then
-    rm -f "$MIKRO_BIN_DIR/rlmx"
-  fi
+fi
+# The pre-rebrand symlink is either dangling or points at a legacy checkout;
+# either way it is dead once mikro is installed.
+if [ -L "$MIKRO_BIN_DIR/rlmx" ]; then
+  echo "==> Removing legacy $MIKRO_BIN_DIR/rlmx symlink"
+  rm -f "$MIKRO_BIN_DIR/rlmx"
 fi
 
 mkdir -p "$MIKRO_BIN_DIR" "$(dirname "$MIKRO_INSTALL_DIR")"
