@@ -352,13 +352,19 @@ export function customProviderKeySource(config) {
  * `Unknown model` error so the operator is pointed at config, not at a file
  * that does not exist.
  */
-export function describeProviderHint(providers, provider) {
+export function describeProviderHint(providers, provider, 
+/** True when the runtime knows the provider (built-in or registered). */
+providerKnown = false) {
     const declared = findCustomProvider(providers, provider);
     if (declared) {
         const ids = declared.models.map((m) => m.id);
         return ids.length
             ? `Provider "${provider}" is declared in config with models: ${ids.join(", ")}. Add the model under providers.${provider}.models.`
             : `Provider "${provider}" is declared in config but lists no models. Add it under providers.${provider}.models.`;
+    }
+    if (providerKnown) {
+        return (`Provider "${provider}" is known but does not list that model. ` +
+            `Check the model id against the provider's catalog, or declare it under providers.${provider}.models in config.`);
     }
     return (`Provider "${provider}" is not a built-in pi-ai provider and is not declared in config. ` +
         `Declare it under providers: in .rlmx/rlmx.yaml or ~/.rlmx/settings.json, or run \`rlmx doctor\`.`);

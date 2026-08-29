@@ -107,5 +107,7 @@ export declare function customProviderKeySource(config: CustomProviderConfig): s
  * `Unknown model` error so the operator is pointed at config, not at a file
  * that does not exist.
  */
-export declare function describeProviderHint(providers: readonly CustomProviderConfig[] | undefined, provider: string): string;
+export declare function describeProviderHint(providers: readonly CustomProviderConfig[] | undefined, provider: string, 
+/** True when the runtime knows the provider (built-in or registered). */
+providerKnown?: boolean): string;
 //# sourceMappingURL=custom-providers.d.ts.map

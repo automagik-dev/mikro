@@ -419,7 +419,9 @@ export function customProviderKeySource(config: CustomProviderConfig): string | 
  */
 export function describeProviderHint(
   providers: readonly CustomProviderConfig[] | undefined,
-  provider: string
+  provider: string,
+  /** True when the runtime knows the provider (built-in or registered). */
+  providerKnown = false
 ): string {
   const declared = findCustomProvider(providers, provider);
   if (declared) {
@@ -427,6 +429,12 @@ export function describeProviderHint(
     return ids.length
       ? `Provider "${provider}" is declared in config with models: ${ids.join(", ")}. Add the model under providers.${provider}.models.`
       : `Provider "${provider}" is declared in config but lists no models. Add it under providers.${provider}.models.`;
+  }
+  if (providerKnown) {
+    return (
+      `Provider "${provider}" is known but does not list that model. ` +
+      `Check the model id against the provider's catalog, or declare it under providers.${provider}.models in config.`
+    );
   }
   return (
     `Provider "${provider}" is not a built-in pi-ai provider and is not declared in config. ` +
