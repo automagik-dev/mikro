@@ -68,12 +68,35 @@ Offload repeatable work to a cheap or local model instead of paying host-model
 prices for it every time.
 
 ```bash
+# Claude Code (the plugin below is the stronger project-root integration)
 claude mcp add rlmx -- rlmx mcp
+
+# Codex: register globally; each Codex workspace starts its own stdio process
+codex mcp add rlmx -- rlmx mcp
+
+# Hermes: make the session workspace explicit and dynamic
+hermes mcp add rlmx --command rlmx --args mcp --dir '${workspaceFolder}'
 ```
 
-That's it. Claude Code now has an `rlmx_query` tool, plus **one tool per
+That's it. The host now has an `rlmx_query` tool, plus **one tool per
 microagent** you've defined — `rlmx_triage`, `rlmx_test_writer`, and so on — so
 the model delegates to them by name.
+
+`rlmx mcp` binds to one workspace when the host starts the stdio process. With
+no `--dir`, that workspace is the process cwd; `--dir <project>` makes it
+explicit. It discovers global agents from `~/.rlmx/agents/` and project agents
+from `<project>/.agents/` and `<project>/.rlmx/agents/`. The agent directories
+are rescanned for every `tools/list` and `tools/call`, so adding or removing a
+microagent takes effect without restarting RLΜX. The bound workspace itself
+does not change if a shell later runs `cd`: start a new host session for the
+new workspace.
+
+That gives each Codex, Claude Code, or Hermes workspace its own delegation
+surface while retaining your global microagents. Do not hard-code one absolute
+project path in a global MCP registration: it would make every session expose
+that one project's agents. Codex's optional MCP `cwd` is intentionally omitted
+above; Claude's plugin and Hermes' `${workspaceFolder}` form pass the active
+project root explicitly.
 
 **Claude Code users: there is a plugin.** It registers the same server with
 `--dir` pointed at the project you have open, so agent discovery and the REPL

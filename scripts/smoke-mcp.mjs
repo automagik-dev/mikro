@@ -6,8 +6,14 @@
  * client, so this proves genuine protocol compatibility rather than our own
  * framing of it. No mocks, no stubs.
  *
- * The workspace is a real one: a temp directory holding `.rlmx/rlmx.yaml` and
- * `.rlmx/agents/<name>/`, discovered through the ordinary precedence path.
+ * The workspaces are real ones: temp directories holding agent definitions,
+ * discovered through the ordinary precedence path. Two preliminary servers
+ * are launched with no `--dir`, from two different cwd values, proving that a
+ * host session exposes the microagents belonging to the workspace it starts
+ * in and never leaks a sibling workspace's tools.
+ *
+ * The main workspace holds `.rlmx/rlmx.yaml` and
+ * `.rlmx/agents/<name>/`.
  * `RLMX_AGENTS_DIR` is deliberately NOT set — the override would bypass the
  * very code path this gate exists to protect. The server is spawned from a
  * *different* cwd and pointed at the workspace with `--dir`, so a passing run
@@ -15,25 +21,27 @@
  * agree on the directory the flag names, not on where the process started.
  *
  * Verifies:
- *   1. initialize handshake completes, serverInfo.name === "rlmx", and the
+ *   1. Two bare `rlmx mcp` processes inherit two different workspace cwd
+ *      values and expose only the corresponding workspace's microagents.
+ *   2. initialize handshake completes, serverInfo.name === "rlmx", and the
  *      server declares tools.listChanged (a capability it genuinely emits).
- *   2. tools/list exposes rlmx_query plus one tool per discovered agent.yaml,
+ *   3. tools/list exposes rlmx_query plus one tool per discovered agent.yaml,
  *      each with an MCP-legal name, a spawn-style description, the Agent-tool
  *      input shape (`prompt` + deprecated `query` + `session_id`, nothing
  *      required, no anyOf), and the `{answer, session_id}` output schema.
- *   3. Argument validation: prompt accepted, query accepted, both rejected,
+ *   4. Argument validation: prompt accepted, query accepted, both rejected,
  *      neither rejected — the errors naming `prompt`.
- *   4. An agent directory created mid-session is listed AND callable without a
+ *   5. An agent directory created mid-session is listed AND callable without a
  *      reconnect, and `notifications/tools/list_changed` fires once per set
  *      change (and not at all while the set is static).
- *   5. A result carries `session_id` in structuredContent and in the footer,
+ *   6. A result carries `session_id` in structuredContent and in the footer,
  *      and `answer` in structuredContent mirroring the text block byte for
  *      byte; a follow-up call passing it resumes the same session.
- *   6. Session errors: unknown session_id, a session presented to a different
+ *   7. Session errors: unknown session_id, a session presented to a different
  *      tool, and a concurrent call on a busy session each fail as tool errors.
- *   7. An agent deleted mid-session stops dispatching ("Unknown tool" wins over
+ *   8. An agent deleted mid-session stops dispatching ("Unknown tool" wins over
  *      the session the caller still holds) and the set change is announced.
- *   8. The server survives every one of those failures.
+ *   9. The server survives every one of those failures.
  *
  * The live legs run real rlmLoop turns against the local station/Lemonade
  * gateway — no cloud keys, same convention as scripts/smoke-acp.mjs. Override
@@ -116,6 +124,36 @@ function writeAgent(name, body) {
   return dir;
 }
 
+function writeWorkspaceAgent(workspace, name) {
+  const dir = join(workspace, ".rlmx", "agents", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "agent.yaml"),
+    `schema_version: 1\nshape: single-step\ndescription: ${name} cwd fixture.\n`,
+    "utf-8"
+  );
+}
+
+async function listToolsFromInheritedCwd(workspace) {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [cli, "mcp"],
+    cwd: workspace,
+    env: { ...process.env, HOME: scratchHome, RLMX_AGENTS_DIR: "" },
+    stderr: "inherit",
+  });
+  const probe = new Client(
+    { name: "smoke-mcp-cwd", version: "1.0.0" },
+    { capabilities: {} }
+  );
+  try {
+    await probe.connect(transport);
+    return (await probe.listTools()).tools.map((tool) => tool.name);
+  } finally {
+    await probe.close();
+  }
+}
+
 mkdirSync(agentsRoot, { recursive: true });
 writeFileSync(
   join(tmp, ".rlmx", "rlmx.yaml"),
@@ -132,6 +170,28 @@ let exitCode = 0;
 let listChanged = 0;
 
 try {
+  // ── host contract: bare server inherits each session's workspace cwd ───
+  const cwdA = join(tmp, "cwd-a");
+  const cwdB = join(tmp, "cwd-b");
+  writeWorkspaceAgent(cwdA, "only-a");
+  writeWorkspaceAgent(cwdB, "only-b");
+
+  const namesA = await listToolsFromInheritedCwd(cwdA);
+  const namesB = await listToolsFromInheritedCwd(cwdB);
+  assert(
+    namesA.includes("rlmx_query") &&
+      namesA.includes("rlmx_only-a") &&
+      !namesA.includes("rlmx_only-b"),
+    `bare server from cwd-a leaked or missed tools: ${namesA.join(", ")}`
+  );
+  assert(
+    namesB.includes("rlmx_query") &&
+      namesB.includes("rlmx_only-b") &&
+      !namesB.includes("rlmx_only-a"),
+    `bare server from cwd-b leaked or missed tools: ${namesB.join(", ")}`
+  );
+  log("✓ two bare `rlmx mcp` launches inherit cwd and isolate workspace agents");
+
   const transport = new StdioClientTransport({
     // Spawned from the system temp dir, NOT the workspace: --dir is what has
     // to make the server agree with `tmp`.
@@ -428,7 +488,7 @@ try {
   log("✓ server still healthy after all failed calls");
 
   process.stdout.write(
-    `\nSMOKE PASS: handshake + --dir workspace + Agent-tool schema + live refresh ` +
+    `\nSMOKE PASS: inherited cwd isolation + handshake + --dir workspace + Agent-tool schema + live refresh ` +
       `(create/delete + list_changed) + ${live ? "sessions (resume, busy, cross-tool) + " : ""}` +
       `error isolation all verified.${live ? "" : " (protocol only — live turns skipped)"}\n`
   );
