@@ -1,8 +1,8 @@
-# Dogfood Report — rlmx v0.3 CAG Execution
+# Dogfood Report — mikro v0.3 CAG Execution
 
 ## Summary
 
-rlmx v0.3 (CAG Mode + Provider Caching) was implemented using the dogfood protocol. The rlmx tool was configured to navigate its own codebase via a self-referential `rlmx.yaml` config with custom code navigation tools.
+mikro v0.3 (CAG Mode + Provider Caching) was implemented using the dogfood protocol. The mikro tool was configured to navigate its own codebase via a self-referential `mikro.yaml` config with custom code navigation tools.
 
 **Execution period:** 2026-03-26
 **Groups executed:** 7 v0.3 groups + 2 dogfood infrastructure groups
@@ -27,23 +27,23 @@ rlmx v0.3 (CAG Mode + Provider Caching) was implemented using the dogfood protoc
 
 | Patch | Description | Files Changed |
 |-------|-------------|---------------|
-| Model default | Changed from anthropic/claude-sonnet-4-5 to google/gemini-3.1-flash-lite-preview | config.ts, scaffold.ts, 3 examples, README.md, rlmx.yaml, tests |
+| Model default | Changed from anthropic/claude-sonnet-4-5 to google/gemini-3.1-flash-lite-preview | config.ts, scaffold.ts, 3 examples, README.md, mikro.yaml, tests |
 | Test expectations | Updated test assertions for new default model | tests/config.test.ts |
 
-## Before/After: rlmx on Its Own Codebase
+## Before/After: mikro on Its Own Codebase
 
 ### Before (v0.2.0)
-- rlmx had no self-referential config
+- mikro had no self-referential config
 - No custom code navigation tools
 - Could not answer questions about its own architecture
 - Default model required unavailable API key
 
 ### After (v0.3.0-dev)
-- `rlmx.yaml` in repo root with 5 custom tools (show_file, find_definition, find_references, list_files, file_summary)
+- `mikro.yaml` in repo root with 5 custom tools (show_file, find_definition, find_references, list_files, file_summary)
 - System prompt accurately describes TypeScript + Python architecture
 - Works with freely available Gemini API key
 - Cache mode enables cheap repeated queries against the codebase
-- `rlmx cache --context ./src/ --estimate` reports 31K tokens, $0.002/query
+- `mikro cache --context ./src/ --estimate` reports 31K tokens, $0.002/query
 
 ## v0.3 Features Delivered
 
@@ -54,8 +54,8 @@ rlmx v0.3 (CAG Mode + Provider Caching) was implemented using the dogfood protoc
 | Provider cache passthrough (cacheRetention, sessionId) | 2 | Shipped |
 | TTL control documentation (per-provider) | 2 | Shipped |
 | Cache stats (hit/miss, cost savings, JSONL events) | 3 | Shipped |
-| `rlmx batch` for bulk interrogation | 4 | Shipped |
-| `rlmx cache --estimate` warmup + validation | 5 | Shipped |
+| `mikro batch` for bulk interrogation | 4 | Shipped |
+| `mikro cache --estimate` warmup + validation | 5 | Shipped |
 | Config scaffold with cache section | 6 | Shipped |
 | CAG mode README documentation | 6 | Shipped |
 | Study + batch example configs | 6 | Shipped |
@@ -65,7 +65,7 @@ rlmx v0.3 (CAG Mode + Provider Caching) was implemented using the dogfood protoc
 
 | Phase | Groups | Description |
 |-------|--------|-------------|
-| Wave 0 (bootstrap) | Dogfood 1-2 | rlmx.yaml + gap infrastructure |
+| Wave 0 (bootstrap) | Dogfood 1-2 | mikro.yaml + gap infrastructure |
 | Wave 1 (core) | v0.3 1, 2, 5 | Cache mode, providers, warmup |
 | Wave 2 (features) | v0.3 3, 4, 6 | Stats, batch, docs |
 | Wave 3 (ship) | v0.3 7 | Test suite |
@@ -76,7 +76,7 @@ rlmx v0.3 (CAG Mode + Provider Caching) was implemented using the dogfood protoc
 
 1. **API key availability matters** — The default model should use a provider whose key is available in the dev environment. Switching from Anthropic to Gemini unblocked all LLM validation.
 
-2. **Context loading needs explicit extension hints** — When using `rlmx cache --context ./src/`, the config's `context.extensions` should be applied automatically. Without `--ext`, the estimate showed 0 files.
+2. **Context loading needs explicit extension hints** — When using `mikro cache --context ./src/`, the config's `context.extensions` should be applied automatically. Without `--ext`, the estimate showed 0 files.
 
 3. **Test assertions shouldn't hardcode defaults** — When defaults change (provider, model), tests that check for specific default values break. Consider testing the behavior, not the specific default string.
 
@@ -87,6 +87,6 @@ rlmx v0.3 (CAG Mode + Provider Caching) was implemented using the dogfood protoc
 ## Recommendations for v0.4
 
 1. **Auto-detect available API keys** — If GEMINI_API_KEY is set but ANTHROPIC_API_KEY isn't, default to Google provider automatically.
-2. **Context extension auto-loading** — The `rlmx cache` and `rlmx batch` commands should respect rlmx.yaml context.extensions without requiring `--ext`.
+2. **Context extension auto-loading** — The `mikro cache` and `mikro batch` commands should respect mikro.yaml context.extensions without requiring `--ext`.
 3. **Dogfood CI integration** — Run baseline test queries as part of CI to catch regressions.
 4. **Local cache for development** — Consider a local cache layer for development (avoid API costs during rapid iteration).

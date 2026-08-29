@@ -4,13 +4,13 @@
  *
  * npm / bun runs `prepare` in two very different situations:
  *
- *   1. **Local development checkout** — `npm install` inside rlmx's own
+ *   1. **Local development checkout** — `npm install` inside mikro's own
  *      repo. husky is present as a devDependency; we want it to set up
  *      git hooks. The build step should also run so dist/ stays in
  *      sync with src/ for committers.
  *
  *   2. **Git-URL consumer install** — e.g.
- *      `bun add git+https://github.com/automagik-dev/rlmx#<sha>`.
+ *      `bun add git+https://github.com/automagik-dev/mikro#<sha>`.
  *      The consumer's package manager may or may not run prepare
  *      (bun blocks trusted scripts by default), and devDependencies
  *      that `tsc` needs (like `@types/js-yaml`) may not be installed
@@ -25,7 +25,7 @@
  *     build can't run (missing devDeps in consumer flows, husky
  *     untrusted-script block, etc.). The committed dist/ is the
  *     authoritative artifact consumers import; a failed local build
- *     doesn't stop them from using rlmx.
+ *     doesn't stop them from using mikro.
  *
  * When the committer forgets to run `npm run build` before
  * committing src/ changes, CI catches it via the `check` script plus
@@ -69,12 +69,12 @@ if (buildStatus !== 0) {
 	const distPresent = existsSync("dist/src/index.js");
 	if (distPresent) {
 		console.warn(
-			`[rlmx prepare] build step failed (exit ${buildStatus}) but dist/src/index.js is present from the committed tree — continuing install. If you're a committer, run \`npm run build\` manually and commit dist/ before pushing.`,
+			`[mikro prepare] build step failed (exit ${buildStatus}) but dist/src/index.js is present from the committed tree — continuing install. If you're a committer, run \`npm run build\` manually and commit dist/ before pushing.`,
 		);
 		process.exit(0);
 	}
 	console.error(
-		`[rlmx prepare] build failed (exit ${buildStatus}) and dist/ is missing. This is a genuine broken install. See build output above.`,
+		`[mikro prepare] build failed (exit ${buildStatus}) and dist/ is missing. This is a genuine broken install. See build output above.`,
 	);
 	process.exit(buildStatus);
 }

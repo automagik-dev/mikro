@@ -46,12 +46,12 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { RlmxConfig } from "../src/config.js";
+import type { MikroConfig } from "../src/config.js";
 import type { LoadedContext } from "../src/context.js";
 import type { UsageStats } from "../src/llm.js";
 import type { Microagent } from "../src/mcp/agents.js";
 import type { RuntimeBackend } from "../src/mcp/backend.js";
-import { LegacyRlmxBackend } from "../src/mcp/backends/legacy.js";
+import { LegacyMikroBackend } from "../src/mcp/backends/legacy.js";
 import {
   PrimeBackend,
   type PrimeEngine,
@@ -74,14 +74,14 @@ const SESSION_ID = "sess_contract0000000";
 /** Config whose fields the turn pipeline actually reads (model for the footer). */
 const CONFIG = {
   // The gate model (wish decision 7, as amended): deepseek/deepseek-v4-flash.
-  // The prime backend maps rlmx's deepseek addressing to prime's native
+  // The prime backend maps mikro's deepseek addressing to prime's native
   // deepseek provider verbatim; any other provider would be a loud failure,
   // which is not what this harness exists to compare.
   model: { provider: "deepseek", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" },
   budget: { maxCost: null, maxTokens: null, maxDepth: null },
   gemini: { thinkingLevel: null },
   contextConfig: {},
-} as unknown as RlmxConfig;
+} as unknown as MikroConfig;
 
 /** Footer cost formatting — pinned here so a format drift fails the contract. */
 function formatCost(cost: number): string {
@@ -110,7 +110,7 @@ const USAGE = {
 type StubLoop = (
   query: string,
   context: LoadedContext | null,
-  config: RlmxConfig,
+  config: MikroConfig,
   options?: Partial<RLMOptions>
 ) => Promise<RLMResult>;
 
@@ -200,7 +200,7 @@ interface Observed {
 
 interface Scenario {
   readonly name: string;
-  /** The resolved microagent, or undefined for the generic `rlmx_query` shape. */
+  /** The resolved microagent, or undefined for the generic `mikro_query` shape. */
   readonly agent: Microagent | undefined;
   readonly label: string;
   readonly query: string;
@@ -230,8 +230,8 @@ function backendsFor(
   primeEngine: PrimeEngine
 ): ReadonlyArray<{ name: string; backend: RuntimeBackend }> {
   return [
-    { name: "legacy#1", backend: new LegacyRlmxBackend({ loop }) },
-    { name: "legacy#2", backend: new LegacyRlmxBackend({ loop }) },
+    { name: "legacy#1", backend: new LegacyMikroBackend({ loop }) },
+    { name: "legacy#2", backend: new LegacyMikroBackend({ loop }) },
     { name: "prime", backend: new PrimeBackend({ engine: primeEngine }) },
   ];
 }
@@ -246,7 +246,7 @@ async function drive(backend: RuntimeBackend, scenario: Scenario): Promise<Obser
     scenario.query,
     SESSION_ID,
     scenario.contextPath,
-    "/tmp/rlmx-backend-contract",
+    "/tmp/mikro-backend-contract",
     (message) => progress.push(message),
     scenario.maxIterations
   );
@@ -277,7 +277,7 @@ interface ParsedFooter {
 }
 
 const FOOTER_RE =
-  /^rlmx · (?<label>[^·]+?) · (?<model>[^·]+?) · (?<iterations>\d+) iterations? · (?<input>[\d,]+) in \/ (?<output>[\d,]+) out · (?<cost>\$[\d.]+) · (?<seconds>\d+(?:\.\d+)?)s(?: · budget hit: (?<budget>[^·]+?))? · session (?<session>\S+)$/;
+  /^mikro · (?<label>[^·]+?) · (?<model>[^·]+?) · (?<iterations>\d+) iterations? · (?<input>[\d,]+) in \/ (?<output>[\d,]+) out · (?<cost>\$[\d.]+) · (?<seconds>\d+(?:\.\d+)?)s(?: · budget hit: (?<budget>[^·]+?))? · session (?<session>\S+)$/;
 
 function parseFooter(footer: string): ParsedFooter {
   const m = FOOTER_RE.exec(footer);
@@ -427,7 +427,7 @@ function assertPrimeForwarding(
     assert.ok(hasArgs(argv, ["--mode", "json", "-p"]), `${tag}: json mode, print-and-exit`);
     assert.ok(argv.includes("--no-session"), `${tag}: --no-session`);
     assert.ok(
-      hasArgs(argv, ["--cwd", "/tmp/rlmx-backend-contract"]),
+      hasArgs(argv, ["--cwd", "/tmp/mikro-backend-contract"]),
       `${tag}: the server's cwd must reach prime's --cwd`
     );
     for (const flag of ["-nc", "-ne", "-ns", "-np"]) {
@@ -466,7 +466,7 @@ function assertPrimeForwarding(
     );
     assert.ok(
       Number.isFinite(call.limits.deadlineMs) && call.limits.deadlineMs > 0,
-      `${tag}: an rlmx-owned wall-clock deadline is always set`
+      `${tag}: an mikro-owned wall-clock deadline is always set`
     );
   }
 }
@@ -497,7 +497,7 @@ const GENERIC_QUERY = "Where are the two call sites of rlmLoop?";
 
 const SCENARIOS: readonly Scenario[] = [
   {
-    name: "loop run with recursion (generic rlmx_query shape)",
+    name: "loop run with recursion (generic mikro_query shape)",
     agent: undefined,
     label: "query",
     query: GENERIC_QUERY,
@@ -586,7 +586,7 @@ const SCENARIOS: readonly Scenario[] = [
 function fakeAgent(backend: string | undefined): Microagent {
   return {
     name: "triage",
-    toolName: "rlmx_triage",
+    toolName: "mikro_triage",
     dir: "/tmp/triage",
     summary: "triage agent",
     spec: {
@@ -641,7 +641,7 @@ describe("backend contract — one harness, both backends", () => {
     // `@<abs path>` arg (a plain path would become a message and spawn a
     // garbage turn). The legacy engine, meanwhile, must receive the loaded
     // context itself — the same files, through its own seam.
-    const dir = await mkdtemp(join(tmpdir(), "rlmx-contract-ctx-"));
+    const dir = await mkdtemp(join(tmpdir(), "mikro-contract-ctx-"));
     try {
       await writeFile(join(dir, "note.md"), "Call sites: src/c.ts:42 and src/d.ts:7.\n");
       const scenario: Scenario = {
@@ -669,24 +669,24 @@ describe("backend contract — one harness, both backends", () => {
 
 describe("backend selection", () => {
   it("defaults an agent with no backend field to the legacy backend", () => {
-    assert.ok(selectBackend(fakeAgent(undefined)) instanceof LegacyRlmxBackend);
+    assert.ok(selectBackend(fakeAgent(undefined)) instanceof LegacyMikroBackend);
   });
 
-  it("honors an explicit backend: rlmx", () => {
-    assert.ok(selectBackend(fakeAgent("rlmx")) instanceof LegacyRlmxBackend);
+  it("honors an explicit backend: mikro", () => {
+    assert.ok(selectBackend(fakeAgent("mikro")) instanceof LegacyMikroBackend);
   });
 
-  it("runs rlmx_query — no spec, no backend field — on legacy, unconditionally", () => {
+  it("runs mikro_query — no spec, no backend field — on legacy, unconditionally", () => {
     // There is no selection path for the generic tool: it has no agent spec,
     // so there is no `backend` field to read.
-    assert.ok(selectBackend(undefined) instanceof LegacyRlmxBackend);
+    assert.ok(selectBackend(undefined) instanceof LegacyMikroBackend);
   });
 
   it("selects the prime backend for a spec naming backend: prime", async () => {
     // The prime backend's constructor pins the binary version, so the
     // selection test drives it with a version-only stub — the test suite
     // must not require the real prime-agent install.
-    const dir = await mkdtemp(join(tmpdir(), "rlmx-contract-prime-"));
+    const dir = await mkdtemp(join(tmpdir(), "mikro-contract-prime-"));
     try {
       const shim = join(dir, "prime-agent");
       await writeFile(
@@ -698,13 +698,13 @@ describe("backend selection", () => {
       );
       await chmod(shim, 0o755);
 
-      const previous = process.env.RLMX_PRIME_BINARY_PATH;
+      const previous = process.env.MIKRO_PRIME_BINARY_PATH;
       try {
-        process.env.RLMX_PRIME_BINARY_PATH = shim;
+        process.env.MIKRO_PRIME_BINARY_PATH = shim;
         assert.ok(selectBackend(fakeAgent("prime")) instanceof PrimeBackend);
       } finally {
-        if (previous === undefined) delete process.env.RLMX_PRIME_BINARY_PATH;
-        else process.env.RLMX_PRIME_BINARY_PATH = previous;
+        if (previous === undefined) delete process.env.MIKRO_PRIME_BINARY_PATH;
+        else process.env.MIKRO_PRIME_BINARY_PATH = previous;
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -736,8 +736,8 @@ describe("backend selection", () => {
 describe("agent.yaml backend field (internal, undocumented)", () => {
   const DIR = "/tmp/fake-agent";
 
-  it("parses rlmx | prime and stays undefined when absent", () => {
-    assert.equal(parseAgentSpec("backend: rlmx\n", DIR).backend, "rlmx");
+  it("parses mikro | prime and stays undefined when absent", () => {
+    assert.equal(parseAgentSpec("backend: mikro\n", DIR).backend, "mikro");
     assert.equal(parseAgentSpec("backend: prime\n", DIR).backend, "prime");
     assert.equal(parseAgentSpec("shape: loop\n", DIR).backend, undefined);
   });
@@ -745,7 +745,7 @@ describe("agent.yaml backend field (internal, undocumented)", () => {
   it("rejects a typo loudly instead of silently running the legacy engine", () => {
     assert.throws(
       () => parseAgentSpec("backend: prim\n", DIR),
-      /agent\.yaml: backend must be one of rlmx \| prime, got "prim"/
+      /agent\.yaml: backend must be one of mikro \| prime, got "prim"/
     );
     assert.throws(() => parseAgentSpec("backend: xhigh\n", DIR), /backend must be one of/);
   });
@@ -780,7 +780,7 @@ describe("the cross-backend comparator can fail", () => {
       expectedProgress: ["query · iteration 1"],
       isError: false,
     };
-    const base = await drive(new LegacyRlmxBackend({ loop }), scenario);
+    const base = await drive(new LegacyMikroBackend({ loop }), scenario);
 
     const corruptions: Array<{ name: string; mutate: (o: Observed) => Observed }> = [
       {
@@ -840,7 +840,7 @@ function cloneObserved(o: Observed): Observed {
 }
 
 describe("legacy timeout override", () => {
-  it("forwards RLMX_MCP_RUN_TIMEOUT_MS to the engine, and leaves it alone when unset", async () => {
+  it("forwards MIKRO_MCP_RUN_TIMEOUT_MS to the engine, and leaves it alone when unset", async () => {
     const stub: StubRun = {
       answer: "done",
       iterations: 1,
@@ -859,18 +859,18 @@ describe("legacy timeout override", () => {
       isError: false,
     };
 
-    const previous = process.env.RLMX_MCP_RUN_TIMEOUT_MS;
+    const previous = process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
     try {
-      delete process.env.RLMX_MCP_RUN_TIMEOUT_MS;
-      await drive(new LegacyRlmxBackend({ loop }), scenario);
+      delete process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
+      await drive(new LegacyMikroBackend({ loop }), scenario);
       assert.equal(calls[0]?.options.timeout, undefined, "no env → no timeout override");
 
-      process.env.RLMX_MCP_RUN_TIMEOUT_MS = "123456";
-      await drive(new LegacyRlmxBackend({ loop }), scenario);
+      process.env.MIKRO_MCP_RUN_TIMEOUT_MS = "123456";
+      await drive(new LegacyMikroBackend({ loop }), scenario);
       assert.equal(calls[1]?.options.timeout, 123456, "env override must reach the engine");
     } finally {
-      if (previous === undefined) delete process.env.RLMX_MCP_RUN_TIMEOUT_MS;
-      else process.env.RLMX_MCP_RUN_TIMEOUT_MS = previous;
+      if (previous === undefined) delete process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
+      else process.env.MIKRO_MCP_RUN_TIMEOUT_MS = previous;
     }
   });
 });

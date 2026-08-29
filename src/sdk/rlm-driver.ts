@@ -1,7 +1,7 @@
 /**
- * rlm-driver — Wish B Group 2b/c + rlmx#78.
+ * rlm-driver — Wish B Group 2b/c + mikro#78.
  *
- * Adapts the rlmx LLM backend to the `IterationDriver` contract
+ * Adapts the mikro LLM backend to the `IterationDriver` contract
  * defined in `src/sdk/agent.ts`. Two modes:
  *
  *   1. **Legacy one-shot mode** (no `tools` config) — the original
@@ -10,7 +10,7 @@
  *      byte-compatibly so existing consumers (cli cutover, simple
  *      agents without tools) keep working.
  *
- *   2. **Tool-dispatch mode** (rlmx#78, `tools` config present) —
+ *   2. **Tool-dispatch mode** (mikro#78, `tools` config present) —
  *      multi-turn conversation loop with native function-calling:
  *
  *        • ToolRegistry schemas → pi-ai `Tool[]` → provider-native
@@ -44,7 +44,7 @@
  *     preserving AssistantMessage across turns) is inherent to
  *     pi-ai's transport layer, so we bypass the legacy `llm.ts`
  *     wrapper rather than bolt tool support on there.
- *   • Python REPL tool-call parsing (rlmx-specific ```tool_call``` code
+ *   • Python REPL tool-call parsing (mikro-specific ```tool_call``` code
  *     blocks) is still NOT done here — that's the rlm.ts CLI's
  *     concern and a separate slice. This driver does NATIVE
  *     function-calling only, which is what Tier 2 brain-consuming
@@ -55,7 +55,7 @@
  *
  * Spec: `.genie/wishes/rlmx-sdk-upgrade/WISH.md` L93 (wave 5
  * dogfood), plus the "prove end-to-end wiring against real LLM"
- * mandate added in the G2b review cycle; rlmx#78 for the native
+ * mandate added in the G2b review cycle; mikro#78 for the native
  * tool-dispatch loop that unblocks Tier 2 agents.
  */
 
@@ -93,7 +93,7 @@ import type {
 import type { ToolRegistry, ToolSchema } from "./tool-registry.js";
 
 /**
- * Tool-dispatch config for rlmx#78. When present on `RlmDriverConfig`,
+ * Tool-dispatch config for mikro#78. When present on `RlmDriverConfig`,
  * the driver enters multi-turn tool-dispatch mode.
  */
 export interface RlmDriverToolsConfig {
@@ -145,7 +145,7 @@ export interface RlmDriverConfig {
 	 */
 	readonly retryHintFormatter?: (hint: string) => string;
 	/**
-	 * Tool-dispatch config (rlmx#78). When set, switches the driver
+	 * Tool-dispatch config (mikro#78). When set, switches the driver
 	 * into multi-turn native-function-calling mode.
 	 */
 	readonly tools?: RlmDriverToolsConfig;
@@ -276,7 +276,7 @@ function toPiTool(name: string, schema: ToolSchema): PiTool {
 
 /**
  * Build an `IterationDriver` that drives the LLM. Legacy one-shot
- * mode when `tools` is absent; multi-turn tool-dispatch mode (rlmx#78)
+ * mode when `tools` is absent; multi-turn tool-dispatch mode (mikro#78)
  * when `tools` is present and the registry has at least one schema.
  */
 export function rlmDriver(config: RlmDriverConfig): IterationDriver {
@@ -291,7 +291,7 @@ export function rlmDriver(config: RlmDriverConfig): IterationDriver {
 }
 
 /**
- * Legacy one-shot driver — preserved byte-compatibly from the pre-rlmx#78
+ * Legacy one-shot driver — preserved byte-compatibly from the pre-mikro#78
  * rlmDriver so existing tests + consumers keep passing. Yields a single
  * `message` step with the full response text followed by an `emit_done`
  * step carrying `{answer, usage, iteration}`.
@@ -333,7 +333,7 @@ function buildLegacyDriver(config: RlmDriverConfig): IterationDriver {
 }
 
 /**
- * Tool-dispatch driver (rlmx#78). Multi-turn loop that:
+ * Tool-dispatch driver (mikro#78). Multi-turn loop that:
  *   1. seeds the pi-ai Context with systemPrompt + user input
  *      (+ any retryHint),
  *   2. calls pi-ai completeSimple with tools=<registry schemas>,
@@ -370,7 +370,7 @@ function buildToolDispatchDriver(
 			if (modelCfg.provider === KHAL_PROVIDER_ID) {
 				await ensureKhalModels(piModels);
 			}
-			// Config-declared providers (rlmx.yaml / settings.json `providers`)
+			// Config-declared providers (mikro.yaml / settings.json `providers`)
 			// ride on the model config; register them before lookup (mirrors
 			// src/llm.ts resolveModel).
 			ensureCustomProviders(piModels, modelCfg.providers);

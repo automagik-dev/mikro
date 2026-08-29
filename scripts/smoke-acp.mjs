@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Automated ACP smoke test — wish rlmx-acp-adapter, Groups 1 + 2 + 3.
+ * Automated ACP smoke test — wish mikro-acp-adapter, Groups 1 + 2 + 3.
  *
  * Spawns `node dist/src/cli.js acp` as a stdio JSON-RPC agent and drives a
  * full lifecycle against it as a minimal ACP client:
@@ -23,7 +23,7 @@
  *
  *   --recursive — Group 2 integration proof. Drives a REAL recursive prompt
  *   that instructs the model to call rlm_query in the REPL, spawning a child
- *   rlmx run. Asserts the LIVE session/update stream contains the full
+ *   mikro run. Asserts the LIVE session/update stream contains the full
  *   translated shape (agent_message_chunk + tool_call + tool_call_update +
  *   Recurse-derived node with per-node metrics). SLOW; not part of the fast gate.
  *
@@ -37,8 +37,8 @@
  *     context genuinely survived is proven DETERMINISTICALLY off the durable
  *     store on disk (the persisted history carries the turn-1 codeword), so the
  *     gate does not depend on the local model verbatim-echoing it.
- *   The two agent processes share a scratch RLMX_ACP_SESSIONS_DIR so the store
- *   survives the restart without touching the real ~/.rlmx. Budget-capped like
+ *   The two agent processes share a scratch MIKRO_ACP_SESSIONS_DIR so the store
+ *   survives the restart without touching the real ~/.mikro. Budget-capped like
  *   the default gate to stay bounded on the local station NPU model.
  *
  * Exits 0 on success; non-zero with a printed reason on any failure.
@@ -67,7 +67,7 @@ const MODE = MULTITURN ? "multiturn" : RECURSIVE ? "recursive" : "default";
 // RECURSIVE: the run must complete >=6 iterations AND spawn a child, so the
 // tight cap is replaced with a generous token budget; the child leg alone
 // takes ~20-40s, so the overall timeout is ~10 min and the spawned agent's env
-// carries a long RLMX_REPL_TIMEOUT_MS (inherited by the child process).
+// carries a long MIKRO_REPL_TIMEOUT_MS (inherited by the child process).
 //
 // MULTITURN: two short station NPU turns bracketing an agent-process restart. A
 // modest budget (bigger than DEFAULT's forced-1-iteration cap) lets the model
@@ -110,26 +110,26 @@ function log(msg) {
 }
 
 // ── scratch project with a station-provider config ───────────────────────
-const projectDir = mkdtempSync(join(tmpdir(), "rlmx-acp-smoke-"));
-mkdirSync(join(projectDir, ".rlmx"), { recursive: true });
+const projectDir = mkdtempSync(join(tmpdir(), "mikro-acp-smoke-"));
+mkdirSync(join(projectDir, ".mikro"), { recursive: true });
 writeFileSync(
-  join(projectDir, ".rlmx", "rlmx.yaml"),
+  join(projectDir, ".mikro", "mikro.yaml"),
   `model:\n  provider: station\n  model: ${MODEL_ID}\n${BUDGET_YAML}`,
 );
 log(`scratch project: ${projectDir}`);
 
 // A durable ACP session store shared by every agent spawn in this run. For
 // MULTITURN this is what survives the agent restart; kept out of the real
-// ~/.rlmx so the smoke is hermetic.
+// ~/.mikro so the smoke is hermetic.
 const storeDir = join(projectDir, "acp-sessions");
 mkdirSync(storeDir, { recursive: true });
 
 // ── base env for spawned agents ──────────────────────────────────────────
 function baseEnv() {
-  const env = { ...process.env, RLMX_ACP_SESSIONS_DIR: storeDir };
+  const env = { ...process.env, MIKRO_ACP_SESSIONS_DIR: storeDir };
   if (RECURSIVE) {
-    env.RLMX_REPL_TIMEOUT_MS = "600000";
-    env.RLMX_ACP_RUN_TIMEOUT_MS = "660000";
+    env.MIKRO_REPL_TIMEOUT_MS = "600000";
+    env.MIKRO_ACP_RUN_TIMEOUT_MS = "660000";
   }
   return env;
 }
@@ -289,7 +289,7 @@ async function runRecursiveAttempt(agent, sessionId) {
   const toolCallUpdates = byType("tool_call_update");
   const recurseNodes = toolCalls.filter((u) => typeof u.toolCallId === "string" && u.toolCallId.startsWith("rlm:"));
   const recurseCompletions = toolCallUpdates.filter(
-    (u) => typeof u.toolCallId === "string" && u.toolCallId.startsWith("rlm:") && u._meta && u._meta["rlmx/node"],
+    (u) => typeof u.toolCallId === "string" && u.toolCallId.startsWith("rlm:") && u._meta && u._meta["mikro/node"],
   );
 
   const summary = {
@@ -308,7 +308,7 @@ async function runRecursiveAttempt(agent, sessionId) {
   if (recurseCompletions.length === 0) return { ok: false, reason: "no Recurse node carried per-node metrics", summary };
 
   const node = recurseCompletions[0];
-  const nodeMeta = node._meta["rlmx/node"];
+  const nodeMeta = node._meta["mikro/node"];
   if (nodeMeta.correlationId === undefined) return { ok: false, reason: "recurse node metrics missing correlationId", summary };
   if (nodeMeta.tokens === undefined && nodeMeta.costUsd === undefined) {
     return { ok: false, reason: "recurse node metrics missing tokens AND costUsd", summary };

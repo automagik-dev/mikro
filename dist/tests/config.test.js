@@ -4,16 +4,16 @@ import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { applyModelRef, loadConfig, parseModelRef, parseToolsMd } from "../src/config.js";
-/** Helper: create .rlmx/ dir with rlmx.yaml content */
+/** Helper: create .mikro/ dir with mikro.yaml content */
 async function makeConfig(dir, yamlContent) {
-    const rlmxDir = join(dir, ".rlmx");
-    await mkdir(rlmxDir, { recursive: true });
-    await writeFile(join(rlmxDir, "rlmx.yaml"), yamlContent);
+    const mikroDir = join(dir, ".mikro");
+    await mkdir(mikroDir, { recursive: true });
+    await writeFile(join(mikroDir, "mikro.yaml"), yamlContent);
 }
 describe("YAML config loading", () => {
     let dir;
-    it("loads valid .rlmx/rlmx.yaml with all fields", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+    it("loads valid .mikro/mikro.yaml with all fields", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, `model:
   provider: openai
   model: gpt-4
@@ -43,28 +43,28 @@ tools-level: standard
         assert.equal(cfg.configSource, "yaml");
         await rm(dir, { recursive: true });
     });
-    it("auto-loads SYSTEM.md and CRITERIA.md from .rlmx/", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+    it("auto-loads SYSTEM.md and CRITERIA.md from .mikro/", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "model:\n  provider: google\n");
-        await writeFile(join(dir, ".rlmx", "SYSTEM.md"), "You are a helper.");
-        await writeFile(join(dir, ".rlmx", "CRITERIA.md"), "Be concise.");
+        await writeFile(join(dir, ".mikro", "SYSTEM.md"), "You are a helper.");
+        await writeFile(join(dir, ".mikro", "CRITERIA.md"), "Be concise.");
         const cfg = await loadConfig(dir);
         assert.equal(cfg.system, "You are a helper.");
         assert.equal(cfg.criteria, "Be concise.");
         assert.equal(cfg.configSource, "yaml");
         await rm(dir, { recursive: true });
     });
-    it("auto-loads TOOLS.md from .rlmx/", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+    it("auto-loads TOOLS.md from .mikro/", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "model:\n  provider: google\n");
-        await writeFile(join(dir, ".rlmx", "TOOLS.md"), "## greet\n```python\ndef greet(name):\n    return f\"Hello {name}\"\n```\n");
+        await writeFile(join(dir, ".mikro", "TOOLS.md"), "## greet\n```python\ndef greet(name):\n    return f\"Hello {name}\"\n```\n");
         const cfg = await loadConfig(dir);
         assert.equal(cfg.tools.length, 1);
         assert.equal(cfg.tools[0].name, "greet");
         await rm(dir, { recursive: true });
     });
-    it("loads minimal .rlmx/rlmx.yaml with defaults", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+    it("loads minimal .mikro/mikro.yaml with defaults", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "model:\n  provider: anthropic\n");
         const cfg = await loadConfig(dir);
         assert.equal(cfg.model.provider, "anthropic");
@@ -73,56 +73,56 @@ tools-level: standard
         assert.equal(cfg.configSource, "yaml");
         await rm(dir, { recursive: true });
     });
-    it("returns defaults when no .rlmx/ exists", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+    it("returns defaults when no .mikro/ exists", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         const cfg = await loadConfig(dir);
         assert.equal(cfg.model.provider, "google");
         assert.equal(cfg.configSource, "defaults");
         await rm(dir, { recursive: true });
     });
-    it("ignores root rlmx.yaml (only .rlmx/ is checked)", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
-        await writeFile(join(dir, "rlmx.yaml"), "model:\n  provider: openai\n");
+    it("ignores root mikro.yaml (only .mikro/ is checked)", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await writeFile(join(dir, "mikro.yaml"), "model:\n  provider: openai\n");
         const cfg = await loadConfig(dir);
-        // Root rlmx.yaml should be ignored — defaults returned
+        // Root mikro.yaml should be ignored — defaults returned
         assert.equal(cfg.model.provider, "google");
         assert.equal(cfg.configSource, "defaults");
         await rm(dir, { recursive: true });
     });
     it("throws on invalid YAML", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "model: [\ninvalid yaml");
         await assert.rejects(() => loadConfig(dir), /Invalid YAML/);
         await rm(dir, { recursive: true });
     });
     it("rejects invalid tools-level", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "tools-level: mega\n");
         await assert.rejects(() => loadConfig(dir), /Invalid tools-level/);
         await rm(dir, { recursive: true });
     });
-    it("defaults rtk.enabled to auto when rlmx.yaml omits it", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+    it("defaults rtk.enabled to auto when mikro.yaml omits it", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "model:\n  provider: anthropic\n");
         const cfg = await loadConfig(dir);
         assert.equal(cfg.rtk.enabled, "auto");
         await rm(dir, { recursive: true });
     });
     it("accepts rtk.enabled: never", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "rtk:\n  enabled: never\n");
         const cfg = await loadConfig(dir);
         assert.equal(cfg.rtk.enabled, "never");
         await rm(dir, { recursive: true });
     });
     it("rejects invalid rtk.enabled", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "rtk:\n  enabled: banana\n");
         await assert.rejects(() => loadConfig(dir), /Invalid rtk\.enabled/);
         await rm(dir, { recursive: true });
     });
     it("default config (no yaml) sets rtk.enabled to auto", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-cfg-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         const cfg = await loadConfig(dir);
         assert.equal(cfg.rtk.enabled, "auto");
         assert.equal(cfg.configSource, "defaults");

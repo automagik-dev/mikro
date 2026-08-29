@@ -1,18 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "rlmx",
-  "displayName": "rlmx",
+  "name": "mikro",
+  "displayName": "mikro",
   "version": "0.1.0",
-  "description": "Registers the rlmx MCP server against the current project, so every agent.yaml microagent in the workspace becomes a callable tool.",
+  "description": "Registers the mikro MCP server against the current project, so every agent.yaml microagent in the workspace becomes a callable tool.",
   "author": {
     "name": "Automagik",
-    "url": "https://github.com/automagik-dev/rlmx"
+    "url": "https://github.com/automagik-dev/mikro"
   },
-  "homepage": "https://github.com/automagik-dev/rlmx/tree/main/plugins/claude-code",
-  "repository": "https://github.com/automagik-dev/rlmx",
+  "homepage": "https://github.com/automagik-dev/mikro/tree/main/plugins/claude-code",
+  "repository": "https://github.com/automagik-dev/mikro",
   "license": "MIT",
   "keywords": [
-    "rlmx",
+    "mikro",
     "mcp",
     "microagent",
     "offload"

@@ -1,5 +1,5 @@
 /**
- * rlmx#78 — tool-dispatch driver tests.
+ * mikro#78 — tool-dispatch driver tests.
  *
  * Covers the multi-turn native-function-calling loop added to
  * rlmDriver when a `tools` config is present. The legacy one-shot
@@ -511,7 +511,7 @@ describe("rlmDriver tool-dispatch — step shape (hermetic)", () => {
 describe("rlmDriver tier-2 integration — brain tools stub end-to-end", () => {
 	it("search → read → propose_yaml → final answer pipeline works", async () => {
 		// This is the "Tier 2 brain-consuming agent" pattern from
-		// brain's runbook/custom-rlmx-agents.md — the flow the issue
+		// brain's runbook/custom-mikro-agents.md — the flow the issue
 		// calls out as the killer use case. Stubs stand in for the
 		// real brain_tools.py handlers.
 		const registry = createToolRegistry();

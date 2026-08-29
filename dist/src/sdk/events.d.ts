@@ -1,5 +1,5 @@
 /**
- * SDK event types — Wish B Group 1 skeleton (issue rlmx-sdk-upgrade).
+ * SDK event types — Wish B Group 1 skeleton (issue mikro-sdk-upgrade).
  *
  * These 10 events are the contract the SDK exposes to consumers of
  * `runAgent()`. They are yielded in order by an async iterator (see
@@ -30,7 +30,7 @@ interface BaseEvent {
     readonly correlationId?: string;
     /**
      * The `correlationId` of the parent node — the ancestry edge. Maps to
-     * the child process's `RLMX_PARENT_RUN_ID`. Absent (undefined) for the
+     * the child process's `MIKRO_PARENT_RUN_ID`. Absent (undefined) for the
      * true root run. A `RecurseEvent`'s `parentRunId` is the spawning run's
      * self-correlation id; the spawned child node's `correlationId` is the
      * freshly minted id, so two siblings of one parent are always distinct.

@@ -1,5 +1,5 @@
 /**
- * ACP event-translation layer — wish rlmx-acp-adapter, Group 2.
+ * ACP event-translation layer — wish mikro-acp-adapter, Group 2.
  *
  * `translateEvent(ev, ctx)` turns each `AgentEvent` yielded by the
  * instrumented `rlmLoop` (see `src/sdk/events.ts`) into zero or more ACP
@@ -73,7 +73,7 @@
  *               back to the spawning run.
  * The child-completion `tool_call_update` then carries per-node cost / tokens
  * / latency both as a human-readable content line AND, machine-readably, in
- * `_meta["rlmx/node"]` (correlationId, depth, parentRunId, latencyMs, costUsd,
+ * `_meta["mikro/node"]` (correlationId, depth, parentRunId, latencyMs, costUsd,
  * tokens) so a richer client can reconstruct the exact tree.
  *
  * ── stdout discipline ────────────────────────────────────────────────────
@@ -100,13 +100,13 @@ import type {
 } from "../sdk/events.js";
 
 /** Machine-readable per-node metrics attached under this `_meta` key. */
-export const NODE_META_KEY = "rlmx/node";
+export const NODE_META_KEY = "mikro/node";
 
 /** Truncation cap for titles/previews so a spawn node stays legible. */
 const PREVIEW_CHARS = 80;
 
 /**
- * Payload-hygiene policy — the rlmx-live-tui final gate mandates THIS adapter
+ * Payload-hygiene policy — the mikro-live-tui final gate mandates THIS adapter
  * own truncation + redaction at the translator boundary. Every client-facing
  * field a tool-call node ships (its content text blocks AND the machine-readable
  * `rawInput` / `rawOutput`) is passed through `sanitizeText` / `sanitizeRaw`
@@ -125,7 +125,7 @@ const PREVIEW_CHARS = 80;
 const MAX_PAYLOAD_CHARS = 16_384;
 
 /** Marker key set on a raw field whose serialized form exceeded the cap. */
-const RAW_TRUNCATED_KEY = "rlmx/truncated";
+const RAW_TRUNCATED_KEY = "mikro/truncated";
 
 /**
  * Basic secret redaction. Deliberately pattern-targeted (not entropy heuristics)
@@ -186,7 +186,7 @@ function boundedRedact(text: string): string {
 	if (text.length <= MAX_PAYLOAD_CHARS) return redactSecrets(text);
 	const head = redactSecrets(text.slice(0, MAX_PAYLOAD_CHARS + REDACT_OVERLAP));
 	const omitted = text.length - MAX_PAYLOAD_CHARS;
-	return `${head.slice(0, MAX_PAYLOAD_CHARS)}\n…[rlmx: truncated ${omitted} of ${text.length} chars]`;
+	return `${head.slice(0, MAX_PAYLOAD_CHARS)}\n…[mikro: truncated ${omitted} of ${text.length} chars]`;
 }
 
 /** Bound + redact a client-facing string. */
@@ -274,7 +274,7 @@ function textContent(text: string): ToolCallContent {
 	return { type: "content", content: { type: "text", text: sanitizeText(text) } };
 }
 
-/** Map an rlmx tool name to the closest ACP `ToolKind`. */
+/** Map an mikro tool name to the closest ACP `ToolKind`. */
 function kindForTool(tool: string): ToolKind {
 	const t = tool.toLowerCase();
 	if (t === "repl" || t.includes("exec") || t.includes("python") || t.includes("bash"))
@@ -484,7 +484,7 @@ function translateToolCallAfter(
 			status: (ev.ok ? "completed" : "failed") satisfies ToolCallStatus,
 			content,
 			rawOutput: sanitizeRaw(ev.result),
-			_meta: { "rlmx/durationMs": ev.durationMs },
+			_meta: { "mikro/durationMs": ev.durationMs },
 		},
 	];
 }
@@ -563,7 +563,7 @@ function translateError(
 	// answer dedupe.
 	const content: ContentBlock = {
 		type: "text",
-		text: `rlmx error [${ev.phase}] ${ev.error.name}: ${ev.error.message}`,
+		text: `mikro error [${ev.phase}] ${ev.error.name}: ${ev.error.message}`,
 	};
 	return [
 		{

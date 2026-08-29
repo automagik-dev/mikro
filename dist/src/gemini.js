@@ -24,7 +24,7 @@ export function isGoogleProvider(provider) {
  *
  * Narrower than pi-ai's own `ThinkingLevel`, which also has `xhigh` and `max`.
  * Those two are only reachable on models that declare an explicit
- * `thinkingLevelMap` entry for them, so rlmx does not accept them yet.
+ * `thinkingLevelMap` entry for them, so mikro does not accept them yet.
  */
 export const THINKING_LEVELS = [
     "minimal",

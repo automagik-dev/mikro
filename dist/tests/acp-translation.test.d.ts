@@ -1,5 +1,5 @@
 /**
- * Deterministic translation gate — wish rlmx-acp-adapter, Group 2.
+ * Deterministic translation gate — wish mikro-acp-adapter, Group 2.
  *
  * Feeds a synthetic AgentEvent sequence (root iterations + 2 Recurse spawns
  * incl. sibling branches + bridged child completions + a repl tool call +

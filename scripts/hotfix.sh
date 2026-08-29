@@ -4,7 +4,7 @@ set -euo pipefail
 # hotfix.sh — Hotfix workflow automation with 30min timeout
 # Usage:
 #   ./scripts/hotfix.sh start  <gap-id>   # stash, branch, start timer
-#   ./scripts/hotfix.sh test   <gap-id>   # re-run original rlmx query
+#   ./scripts/hotfix.sh test   <gap-id>   # re-run original mikro query
 #   ./scripts/hotfix.sh finish <gap-id>   # test, merge, pop stash, update gap
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -90,7 +90,7 @@ cmd_start() {
   # Verify gap exists
   get_gap_field "$gap_id" "id" > /dev/null || die "Gap '$gap_id' not found in gaps.jsonl"
 
-  local branch_name="hotfix/rlmx-${gap_id}"
+  local branch_name="hotfix/mikro-${gap_id}"
 
   # Check branch doesn't already exist
   if git -C "$REPO_ROOT" rev-parse --verify "$branch_name" &>/dev/null; then
@@ -141,23 +141,23 @@ cmd_test() {
 
   # Read original query from gaps.jsonl
   local query
-  query="$(get_gap_field "$gap_id" "rlmx_query")" || die "Gap '$gap_id' not found in gaps.jsonl"
+  query="$(get_gap_field "$gap_id" "mikro_query")" || die "Gap '$gap_id' not found in gaps.jsonl"
   if [[ -z "$query" ]]; then
     die "No query found for gap '$gap_id'"
   fi
 
-  echo "=== Re-running rlmx query for gap '$gap_id' ==="
+  echo "=== Re-running mikro query for gap '$gap_id' ==="
   echo "Original query: $query"
   echo "---"
 
-  # Re-run via rlmx
-  if command -v rlmx &>/dev/null; then
-    rlmx "$query" || echo "rlmx exited with code $?"
+  # Re-run via mikro
+  if command -v mikro &>/dev/null; then
+    mikro "$query" || echo "mikro exited with code $?"
   elif [[ -x "${REPO_ROOT}/dist/src/cli.js" ]]; then
-    node "${REPO_ROOT}/dist/src/cli.js" "$query" || echo "rlmx exited with code $?"
+    node "${REPO_ROOT}/dist/src/cli.js" "$query" || echo "mikro exited with code $?"
   else
-    echo "WARNING: rlmx CLI not found. Build with 'npm run build' first." >&2
-    echo "Would run: rlmx \"$query\"" >&2
+    echo "WARNING: mikro CLI not found. Build with 'npm run build' first." >&2
+    echo "Would run: mikro \"$query\"" >&2
   fi
 }
 
@@ -173,7 +173,7 @@ cmd_finish() {
   stash_ref="$(grep '^stash_ref=' "$state_file" | cut -d= -f2)"
   start_ts="$(grep '^start_time=' "$state_file" | cut -d= -f2)"
 
-  local branch_name="hotfix/rlmx-${gap_id}"
+  local branch_name="hotfix/mikro-${gap_id}"
 
   # Check timeout -- if exceeded, defer
   if ! check_timeout "$gap_id"; then

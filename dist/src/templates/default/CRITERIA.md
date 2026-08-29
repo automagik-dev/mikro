@@ -4,7 +4,7 @@
      the iterative REPL reasoning — only the final output.
 
      Customize these to control format, length, style, and quality
-     of the answers rlmx produces. For example:
+     of the answers mikro produces. For example:
      - Add "Output as JSON" for structured responses
      - Add "Include code examples" for technical documentation
      - Add "Limit to 200 words" for concise summaries

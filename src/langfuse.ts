@@ -64,16 +64,16 @@ export class LangfuseTraceRecorder {
     this.traceId = data.runId;
     this.enqueue("trace-create", {
       id: data.runId,
-      name: "rlmx recursive run",
+      name: "mikro recursive run",
       input: data.query,
       userId: data.userId,
       sessionId: data.runId,
       metadata: {
-        organ: "rlmx",
+        organ: "mikro",
         model: data.model,
         ...(data.metadata ?? {}),
       },
-      tags: ["rlmx", "recursive-tree"],
+      tags: ["mikro", "recursive-tree"],
     });
   }
 

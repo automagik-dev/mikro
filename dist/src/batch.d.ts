@@ -6,7 +6,7 @@
  * and a final aggregate stats line.
  */
 import { type RLMOptions } from "./rlm.js";
-import type { RlmxConfig } from "./config.js";
+import type { MikroConfig } from "./config.js";
 import type { LoadedContext } from "./context.js";
 export interface BatchOptions extends Partial<RLMOptions> {
     maxCost?: number;
@@ -23,5 +23,5 @@ export interface BatchOptions extends Partial<RLMOptions> {
  * questions via provider-level prompt caching. Results are emitted as JSONL
  * to stdout (one JSON object per line), with a final aggregate stats line.
  */
-export declare function runBatch(questionsFile: string, context: LoadedContext | null, config: RlmxConfig, options?: BatchOptions): Promise<void>;
+export declare function runBatch(questionsFile: string, context: LoadedContext | null, config: MikroConfig, options?: BatchOptions): Promise<void>;
 //# sourceMappingURL=batch.d.ts.map

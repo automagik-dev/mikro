@@ -136,7 +136,7 @@ function makeMockResults() {
 describe("formatBenchmarkTable", () => {
     it("contains expected header", () => {
         const table = formatBenchmarkTable(makeMockResults());
-        assert.ok(table.includes("rlmx benchmark"), "should contain header");
+        assert.ok(table.includes("mikro benchmark"), "should contain header");
         assert.ok(table.includes("cost comparison"), "should contain mode label");
         assert.ok(table.includes("Question"), "should contain Question column");
         assert.ok(table.includes("Mode"), "should contain Mode column");
@@ -232,7 +232,7 @@ describe("aggregateTotals", () => {
 // ─── Results Saving ──────────────────────────────────────
 describe("saveBenchmarkResults", () => {
     it("writes results as parseable JSON file", async () => {
-        const tempDir = await mkdtemp(join(tmpdir(), "rlmx-bench-test-"));
+        const tempDir = await mkdtemp(join(tmpdir(), "mikro-bench-test-"));
         // Override homedir by setting env for the save call
         const origHome = process.env.HOME;
         process.env.HOME = tempDir;

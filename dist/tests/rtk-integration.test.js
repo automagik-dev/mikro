@@ -34,7 +34,7 @@ async function hasBinary(name) {
  * its argv, proving any rtk-routed subprocess actually hit the stub.
  */
 async function makeRtkStub() {
-    const stubDir = await mkdtemp(join(tmpdir(), "rlmx-rtk-int-"));
+    const stubDir = await mkdtemp(join(tmpdir(), "mikro-rtk-int-"));
     const stub = join(stubDir, "rtk");
     // Print a marker so integration assertions can detect rtk routing. The stub
     // then `exec`s the target command so stdout/exit-code parity is preserved.
@@ -58,11 +58,11 @@ describe("RTK integration (REPL routes run_cli through rtk)", () => {
         process.env.PATH = originalPath;
     });
     it("scaffolded project inherits run_cli example in TOOLS.md", async () => {
-        const dir = await mkdtemp(join(tmpdir(), "rlmx-rtk-scaffold-"));
+        const dir = await mkdtemp(join(tmpdir(), "mikro-rtk-scaffold-"));
         try {
             await scaffold(dir, "default");
             const { readFile } = await import("node:fs/promises");
-            const tools = await readFile(join(dir, ".rlmx", "TOOLS.md"), "utf-8");
+            const tools = await readFile(join(dir, ".mikro", "TOOLS.md"), "utf-8");
             assert.ok(tools.includes("run_cli"), "scaffolded TOOLS.md must mention run_cli");
             const parsed = parseToolsMd(tools);
             assert.ok(parsed.some((t) => t.code.includes("run_cli")), "scaffolded TOOLS.md must contain at least one tool using run_cli");

@@ -42,7 +42,7 @@ import { type ValidateSchema } from "./validate.js";
 /**
  * Outcome of a tool_call dispatch, fed back to the driver via
  * `AsyncGenerator.next(outcome)` so multi-turn drivers (rlmDriver
- * in tool-dispatch mode, rlmx#78) can fold the result into the
+ * in tool-dispatch mode, mikro#78) can fold the result into the
  * next LLM call as conversation history.
  */
 export interface ToolCallOutcome {
@@ -120,7 +120,7 @@ export interface IterationRequest {
  *
  * Drivers that don't care about tool outcomes (e.g. the legacy
  * one-shot rlmDriver path) can just `yield step` and ignore the
- * return value — behavior is unchanged from the pre-rlmx#78 contract.
+ * return value — behavior is unchanged from the pre-mikro#78 contract.
  */
 export type IterationDriver = (req: IterationRequest, signal: AbortSignal) => AsyncIterable<IterationStep> | AsyncGenerator<IterationStep, void, ToolCallOutcome | undefined>;
 /** Resolves a tool invocation. Called after a non-deny permission

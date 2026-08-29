@@ -1,5 +1,5 @@
 /**
- * Durable ACP session store + disconnect-hardening gate — wish rlmx-acp-adapter,
+ * Durable ACP session store + disconnect-hardening gate — wish mikro-acp-adapter,
  * Group 3.
  *
  * Deterministic, no-LLM proofs for the three Group 3 invariants that a live
@@ -35,21 +35,21 @@ import { abortActivePrompt, buildConversationalQuery } from "../src/acp/agent.js
 import { createEmitter } from "../src/sdk/emitter.js";
 
 let scratch: string;
-const prevEnv = process.env.RLMX_ACP_SESSIONS_DIR;
+const prevEnv = process.env.MIKRO_ACP_SESSIONS_DIR;
 
 before(() => {
-	scratch = mkdtempSync(join(tmpdir(), "rlmx-acp-store-"));
-	process.env.RLMX_ACP_SESSIONS_DIR = scratch;
+	scratch = mkdtempSync(join(tmpdir(), "mikro-acp-store-"));
+	process.env.MIKRO_ACP_SESSIONS_DIR = scratch;
 });
 
 after(() => {
-	if (prevEnv === undefined) delete process.env.RLMX_ACP_SESSIONS_DIR;
-	else process.env.RLMX_ACP_SESSIONS_DIR = prevEnv;
+	if (prevEnv === undefined) delete process.env.MIKRO_ACP_SESSIONS_DIR;
+	else process.env.MIKRO_ACP_SESSIONS_DIR = prevEnv;
 	rmSync(scratch, { recursive: true, force: true });
 });
 
 describe("acp session store — restore-on-empty across a restart", () => {
-	it("honors the RLMX_ACP_SESSIONS_DIR override", () => {
+	it("honors the MIKRO_ACP_SESSIONS_DIR override", () => {
 		assert.equal(storeDir(), scratch);
 	});
 
@@ -118,9 +118,9 @@ describe("acp session store — bounded growth", () => {
 
 	it("prunes the store dir to MAX_SESSION_FILES, deleting the oldest by mtime", async () => {
 		// Dedicated scratch dir so the cap experiment is isolated from other tests.
-		const dir = mkdtempSync(join(tmpdir(), "rlmx-acp-prune-"));
-		const prev = process.env.RLMX_ACP_SESSIONS_DIR;
-		process.env.RLMX_ACP_SESSIONS_DIR = dir;
+		const dir = mkdtempSync(join(tmpdir(), "mikro-acp-prune-"));
+		const prev = process.env.MIKRO_ACP_SESSIONS_DIR;
+		process.env.MIKRO_ACP_SESSIONS_DIR = dir;
 		try {
 			const store = new SessionStore();
 			const idOf = (i: number) => `${String(i).padStart(8, "0")}-0000-0000-0000-000000000000`;
@@ -150,8 +150,8 @@ describe("acp session store — bounded growth", () => {
 			assert.ok(await store.load(idOf(1)), "the next-oldest must survive");
 			assert.ok(await store.load(idOf(MAX_SESSION_FILES)), "the just-created newest must survive");
 		} finally {
-			if (prev === undefined) delete process.env.RLMX_ACP_SESSIONS_DIR;
-			else process.env.RLMX_ACP_SESSIONS_DIR = prev;
+			if (prev === undefined) delete process.env.MIKRO_ACP_SESSIONS_DIR;
+			else process.env.MIKRO_ACP_SESSIONS_DIR = prev;
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
@@ -223,7 +223,7 @@ describe("acp session store — path-traversal defense (final-gate finding)", ()
 	it("rejects a poisoned internal-id record and never writes outside the store dir", async () => {
 		// A valid-UUID-named file whose INTERNAL sessionId encodes traversal.
 		const id = "55555555-5555-5555-5555-555555555555";
-		const target = "/tmp/rlmx-pwned-write";
+		const target = "/tmp/mikro-pwned-write";
 		rmSync(`${target}.json`, { force: true });
 		writeFileSync(
 			join(scratch, `${id}.json`),

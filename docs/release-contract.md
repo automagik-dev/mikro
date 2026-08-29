@@ -1,15 +1,15 @@
-# RLMX Release Contract
+# MIKRO Release Contract
 
-RLMX follows the Hermes/Genie install/update shape:
+MIKRO follows the Hermes/Genie install/update shape:
 
 - `scripts/install.sh` is the canonical installer.
-- `rlmx update` updates an installed checkout by fetching the latest public `main` commits.
-- npm is SDK-only distribution. npm is not the canonical end-user CLI release channel.
+- `mikro update` updates an installed checkout by fetching the latest public `main` commits.
+- mikro is not published to npm. There is no registry channel of any kind.
 - The canonical release boundary is a PR merge into `main`.
 
 ## Versioning
 
-rlmx uses **calendar versioning**, not semantic versioning: `1.YYMMDD.N`, where
+mikro uses **calendar versioning**, not semantic versioning: `1.YYMMDD.N`, where
 `YYMMDD` is the **UTC** date of the build and `N` is one past the highest
 existing `v1.YYMMDD.*` tag. (The fixed major was bumped `0` → `1` on
 2026-08-17; `v0.*` tags remain in history and every `1.*` orders above them.) `scripts/version.mjs` computes it and syncs every
@@ -35,42 +35,25 @@ The CLI is git-installed:
 2. It checks out `main`.
 3. It installs dependencies.
 4. It builds local `dist/`.
-5. It links the `rlmx` executable into the user's bin directory.
+5. It links the `mikro` executable into the user's bin directory.
 
-After install, `rlmx update` performs the same update path in-place against `origin/main`.
+After install, `mikro update` performs the same update path in-place against `origin/main`.
 
-### npm channel
+### No npm channel
 
-The npm package is SDK-only:
+mikro is not published to npm. The SDK ships inside the same git checkout
+(`dist/` is committed) and is consumed as a git dependency
+(`npm install github:automagik-dev/mikro`). There is no publish workflow, no
+dist-tag, and no registry artifact to keep coherent with `main`.
 
-- npm publishes library/SDK artifacts for programmatic consumers.
-- npm dist-tags are not the canonical CLI release signal.
-- **Publishing is manual.** The `SDK Package` workflow runs on
-  `workflow_dispatch` only — it does not fire on a merge to `main`. Publish
-  when the SDK surface actually changed:
-
-  ```bash
-  gh workflow run "SDK Package"
-  ```
-
-  It publishes exactly the version `main` currently holds, which is always an
-  already-released, already-tagged version because `Release Metadata` bumped and
-  tagged it on merge. Do **not** run `npm run bump-version` first — that would
-  double-bump and publish a version no commit or tag matches.
-
-  This keeps the contract's invariant structurally true rather than merely
-  stated: a CLI release cannot trigger or imply an npm publish, and npm being
-  unavailable cannot make a CLI release look failed.
-- The `next` dist-tag is legacy — it was fed by a `dev` branch that no longer
-  exists, so it trails `latest`. Repoint or retire it manually.
-- `rlmx --version` reports the package/runtime version embedded in the checkout.
+- `mikro --version` reports the package/runtime version embedded in the checkout.
   Every release commit on `main` carries a released, tagged version, so this is a
   reliable release identifier — but the git commit on `main` remains the
   authority on CLI freshness.
 
 ## Main release boundary
 
-`main` is the canonical release branch and the expected branch for long-lived production checkouts (for example `~/prod/rlmx`).
+`main` is the canonical release branch and the expected branch for long-lived production checkouts (for example `~/prod/mikro`).
 
 Use short-lived topic branches for focused source changes, then return the production checkout to `main` after merge/dogfood. The current conventions are:
 
@@ -93,7 +76,7 @@ A release happens when a topic-branch PR merges into `main`:
    carries (so a reviewed bump inside the PR is honoured, never double-bumped).
 4. `main`'s HEAD is that release's commit, and it becomes the install/update
    target.
-5. `install.sh` and `rlmx update` fetch that commit.
+5. `install.sh` and `mikro update` fetch that commit.
 6. A GitHub release exists for it. **Every merge into `main` is covered by a
    release**, so release metadata always tracks `main` and never trails it. It is
    still not the install authority — the git commit on `main` is.
@@ -125,13 +108,13 @@ HEAD from CI even if the push were later moved to a PAT.
   (whose version files still hold the previous version), and it asserts the
   target commit's `package.json` and `src/version.ts` against the tag name before
   publishing, failing the run rather than cutting an incoherent tag.
-- `rlmx update` must never use npm to update the CLI application.
-- npm publishing must not create or imply a CLI release.
-- Deployment-specific private policy must stay outside public RLMX.
+- `mikro update` must never use npm to update the CLI application.
+- No step may publish mikro to a package registry.
+- Deployment-specific private policy must stay outside public MIKRO.
 
 ## Update semantics
 
-`rlmx update`:
+`mikro update`:
 
 - Runs from the installed repository root.
 - Fetches `origin main --tags`.
@@ -147,8 +130,7 @@ This mirrors the practical Hermes model: the installer owns the app checkout; th
 The release system follows this contract:
 
 - `CI` builds, typechecks, tests, and runs an install/update smoke against a temporary git `main` remote.
-- `SDK Package` publishes npm artifacts for programmatic consumers only.
-- The npm manifest does not expose a `bin`, so npm does not act as the canonical CLI installer.
+- No workflow publishes to a package registry.
 - `Release Metadata` runs on every push to `main` and guarantees a GitHub release
   for it: it computes the calendar version, commits the bump to `main` when the
   current version is already released, and tags the bump commit. Releases always
@@ -157,12 +139,12 @@ The release system follows this contract:
 
 ## Verifying a release
 
-Because npm does not ship a `bin`, `npx rlmx` cannot work and is not a valid
+Because npm does not ship a `bin`, `npx mikro` cannot work and is not a valid
 post-release check. Verify a release through the git channel instead:
 
 ```bash
 bash scripts/install.sh          # canonical install path
-rlmx update                      # in-place refresh against origin/main
-rlmx --version                   # must equal the tag and src/version.ts
+mikro update                      # in-place refresh against origin/main
+mikro --version                   # must equal the tag and src/version.ts
 node scripts/smoke-acp.mjs       # ACP handshake + prompt round-trip
 ```

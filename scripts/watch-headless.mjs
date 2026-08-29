@@ -10,11 +10,11 @@
  * `parentRunId` (NOT depth — depth cannot disambiguate sibling branches).
  * The tree is printed to stderr so stdout stays a pure event log.
  *
- * The same subscription shape is what the rlmx-acp adapter (web client) and
+ * The same subscription shape is what the mikro-acp adapter (web client) and
  * pi's native TUI consume — this ships events, not a renderer.
  *
  * Modes:
- *   • REAL  (RLMX_HEADLESS_REAL=1): loads the project config from cwd and
+ *   • REAL  (MIKRO_HEADLESS_REAL=1): loads the project config from cwd and
  *     runs the real `rlmLoop(prompt, null, config, { emitter })`. Requires a
  *     working model endpoint / provider credentials.
  *   • STUB  (default): drives the recursion bridge deterministically to
@@ -151,7 +151,7 @@ async function runStub(emitter) {
 	a.onChildEnd({ correlationId: "A1", depth: 2, result: mkResult(10, 5, 0.01), durationMs: 12 });
 	a.onChildEnd({ correlationId: "A2", depth: 2, result: mkResult(20, 8, 0.02), durationMs: 21 });
 	root.onChildEnd({ correlationId: "A", depth: 1, result: mkResult(40, 20, 0.05), durationMs: 130 });
-	root.onChildEnd({ correlationId: "B", depth: 1, result: mkResult(0, 0, 0), durationMs: 8, isError: true, errorMessage: "child rlmx exited with code 1" });
+	root.onChildEnd({ correlationId: "B", depth: 1, result: mkResult(0, 0, 0), durationMs: 8, isError: true, errorMessage: "child mikro exited with code 1" });
 
 	emitter.emit(makeEvent("EmitDone", { sessionId: "root", correlationId: "root", payload: { answer: "stub synthesis of A + B" } }));
 	emitter.emit(makeEvent("SessionClose", { sessionId: "root", correlationId: "root", reason: "complete" }));
@@ -176,7 +176,7 @@ async function runReal(emitter) {
 const emitter = createEmitter();
 const events = drain(emitter); // subscribe BEFORE the run starts
 
-const real = process.env.RLMX_HEADLESS_REAL === "1";
+const real = process.env.MIKRO_HEADLESS_REAL === "1";
 process.stderr.write(`# watch-headless: mode=${real ? "REAL" : "STUB"} prompt=${JSON.stringify(preview(prompt, 60))}\n`);
 
 let runPromise;

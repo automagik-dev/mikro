@@ -33,7 +33,7 @@ function makeSessionData(overrides?: Partial<SessionData>): SessionData {
 }
 
 describe("saveSession", () => {
-  const testDir = join(tmpdir(), `rlmx-session-test-${Date.now()}`);
+  const testDir = join(tmpdir(), `mikro-session-test-${Date.now()}`);
   const originalHome = process.env.HOME;
 
   before(async () => {
@@ -137,7 +137,7 @@ describe("saveSession", () => {
   it("writes empty trajectory when logPath points to non-existent file", async () => {
     const data = makeSessionData({
       runId: "test-trajectory-missing",
-      logPath: "/tmp/does-not-exist-rlmx-test.jsonl",
+      logPath: "/tmp/does-not-exist-mikro-test.jsonl",
     });
     const sessionDir = await saveSession(data);
 

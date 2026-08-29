@@ -1,8 +1,8 @@
-# rlmx SDK — Overview
+# mikro SDK — Overview
 
-The rlmx SDK lets you build **declarative, observable, resumable AI
+The mikro SDK lets you build **declarative, observable, resumable AI
 agents** from a folder of markdown + tool plugins. It sits alongside the
-existing rlmx CLI (`rlmx "query"`) — the CLI path keeps running the
+existing mikro CLI (`mikro "query"`) — the CLI path keeps running the
 recursion engine in `src/rlm.ts` unchanged, while the SDK exposes a
 finer-grained, programmatic surface for consumers who want to drive the
 loop from their own code.
@@ -40,12 +40,12 @@ loop from their own code.
 
 ## Design principles
 
-**Additive only.** Every SDK slice is a new namespace under `rlmx.sdk.*`
+**Additive only.** Every SDK slice is a new namespace under `mikro.sdk.*`
 — no existing export shape changed, no CLI behaviour modified.
 Consumers on the SDK path opt in; everything else keeps working.
 
 **Pluggable seams, not invasive patches.** When the SDK needs to
-cooperate with existing rlmx pieces (LLM transport, RTK detection), it
+cooperate with existing mikro pieces (LLM transport, RTK detection), it
 imports them and wraps them. It does not re-plumb `src/rlm.ts`
 internals. This trades some duplication for zero regression risk.
 
@@ -60,7 +60,7 @@ Live LLM smokes + Python protocol tests gate on env vars
 (`GEMINI_API_KEY`, `python3 --version`) so they degrade to SKIP rather
 than FAIL when the environment isn't there.
 
-**Backcompat is policy, not aspiration.** The existing `rlmx "query"`
+**Backcompat is policy, not aspiration.** The existing `mikro "query"`
 CLI is byte-for-byte identical to pre-SDK behaviour. The CLI cutover to
 use `runAgent()` is a deliberately separate slice.
 
@@ -82,14 +82,14 @@ use `runAgent()` is a deliberately separate slice.
 | `src/sdk/rtk-plugin.ts` | `registerRtkTool`. |
 | `src/sdk/metrics.ts` | `IterationMetrics`, `createMetricsRecorder`. |
 
-Public entry: `import { sdk } from "@automagik/rlmx"`.
+Public entry: `import { sdk } from "mikro"`.
 
 ## When to use the SDK vs the CLI
 
-**Use the CLI (`rlmx "query"`)** when:
+**Use the CLI (`mikro "query"`)** when:
 - You're running an ad-hoc query against a markdown-configured agent
-  directory and you want the canonical rlmx iteration loop.
-- You need tight compatibility with the existing `rlmx.yaml`
+  directory and you want the canonical mikro iteration loop.
+- You need tight compatibility with the existing `mikro.yaml`
   configuration surface.
 - You don't need per-iteration observability or programmatic control.
 
@@ -121,7 +121,7 @@ three bridge drivers (L1 triage, L2 preservation, L3 audit) into
 - **L3 audit** — sampled self-audit bridge shipping in a separate
   slice; same `IterationDriver`-wrapper pattern.
 
-Brain's bridge lives at `src/agent/rlmx-bridge.ts` — a 400-line
+Brain's bridge lives at `src/agent/mikro-bridge.ts` — a 400-line
 adapter that wraps the legacy pi-agent loop as a single outer
 iteration of `sdk.runAgent()`. Consumers migrating an existing
 agent to the SDK can use it as a reference: the approach preserves
@@ -132,8 +132,8 @@ checkpointing around it without rewriting internals.
 Evidence artefacts (metadata only; the brain repo is
 Stéfani-private and its conversation data never leaves that repo):
 
-- `brain-lab/rlmx-sdk-bridge-report/<YYYY-MM-DD>/SHIP-decision.md`
-- `brain-lab/rlmx-sdk-bridge-report-l2/<YYYY-MM-DD>/report.md`
+- `brain-lab/mikro-sdk-bridge-report/<YYYY-MM-DD>/SHIP-decision.md`
+- `brain-lab/mikro-sdk-bridge-report-l2/<YYYY-MM-DD>/report.md`
 
 These ship as shape (match rate, stop-reason distribution, cost and
 latency deltas) without any per-window content.

@@ -10,20 +10,20 @@
  *
  * The subject and the root are deliberately the same tree — this checkout:
  *
- *   `--dir <rlmx checkout>` → the server's cwd, the discovery root, and the
+ *   `--dir <mikro checkout>` → the server's cwd, the discovery root, and the
  *   REPL's cwd all agree, so a `file:line` the agent emits is resolvable by
  *   this script against the very tree the agent read. Point them at different
  *   trees and a "resolvable citation" stops meaning anything.
  *
- * The agent is installed at `<checkout>/.rlmx/agents/explore/` — the workspace
+ * The agent is installed at `<checkout>/.mikro/agents/explore/` — the workspace
  * convention, discovered through the ordinary precedence path (no
- * `RLMX_AGENTS_DIR` override, which would bypass what the gate protects). It is
+ * `MIKRO_AGENTS_DIR` override, which would bypass what the gate protects). It is
  * removed again on exit; a checkout that already had one there gets it copied
  * aside first and put back, because this script rewrites the `model:` line and
  * "it was already there" must not mean "keep the smoke copy".
  *
  * Arms:
- *   station — always, and the one that **gates**. `RLMX_SMOKE_MODEL` (default
+ *   station — always, and the one that **gates**. `MIKRO_SMOKE_MODEL` (default
  *             `station/Brain-35B`) keeps it runnable with no cloud key, the
  *             convention scripts/smoke-mcp.mjs and scripts/smoke-acp.mjs follow.
  *   khal    — additionally, when `KHAL_API_KEY` is set: the agent's own
@@ -58,7 +58,7 @@
  *
  *   node scripts/smoke-explore.mjs
  *   node scripts/smoke-explore.mjs --no-khal
- *   RLMX_SMOKE_MODEL=station/Brain-4B node scripts/smoke-explore.mjs
+ *   MIKRO_SMOKE_MODEL=station/Brain-4B node scripts/smoke-explore.mjs
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -81,18 +81,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const cli = join(root, "dist", "src", "cli.js");
 const recipe = join(root, "examples", "agents", "explore");
-const installed = join(root, ".rlmx", "agents", "explore");
+const installed = join(root, ".mikro", "agents", "explore");
 
 const skipKhal = process.argv.includes("--no-khal");
 
 // Brain-35B, not the 4B smoke-mcp uses: explore has to write search code, read
 // what came back, and cite it. A 4B model runs the protocol fine and fails the
 // task, which would make this gate about model capacity instead of the recipe.
-const STATION_MODEL = process.env.RLMX_SMOKE_MODEL ?? "station/Brain-35B";
+const STATION_MODEL = process.env.MIKRO_SMOKE_MODEL ?? "station/Brain-35B";
 
 /**
  * One fixed question about this repo. Answerable from a single grep, with a
- * uniquely-named answer (`RLMX_AGENTS_DIR` in src/mcp/agents.ts) so a right
+ * uniquely-named answer (`MIKRO_AGENTS_DIR` in src/mcp/agents.ts) so a right
  * answer is recognisable mechanically.
  */
 const QUESTION =
@@ -101,7 +101,7 @@ const QUESTION =
   "variable name and a file:line citation.";
 
 /** Reported, not gated: what a correct answer looks like. */
-const EXPECT_TOKEN = "RLMX_AGENTS_DIR";
+const EXPECT_TOKEN = "MIKRO_AGENTS_DIR";
 const EXPECT_FILE = "src/mcp/agents.ts";
 
 const log = (msg) => process.stdout.write(`# smoke-explore: ${msg}\n`);
@@ -149,7 +149,7 @@ function resolveCitation(relPath, lineNo) {
 
 /**
  * Identifiers, not English: a token is code-like when it carries an underscore
- * or an interior capital (`RLMX_AGENTS_DIR`, `agentRoots`). Plain words are
+ * or an interior capital (`MIKRO_AGENTS_DIR`, `agentRoots`). Plain words are
  * excluded because a comment line and an answer share those by accident.
  */
 function identifiers(text) {
@@ -217,7 +217,7 @@ async function runArm(label, model, scratchHome, gating) {
     command: process.execPath,
     args: [cli, "mcp", "--dir", root],
     cwd: tmpdir(),
-    env: { ...process.env, HOME: scratchHome, RLMX_AGENTS_DIR: "" },
+    env: { ...process.env, HOME: scratchHome, MIKRO_AGENTS_DIR: "" },
     stderr: "inherit",
   });
 
@@ -226,26 +226,26 @@ async function runArm(label, model, scratchHome, gating) {
     await client.connect(transport);
 
     const { tools } = await client.listTools();
-    const explore = tools.find((t) => t.name === "rlmx_explore");
+    const explore = tools.find((t) => t.name === "mikro_explore");
     assert(
       explore,
-      `rlmx_explore missing from tools/list; got ${tools.map((t) => t.name).join(", ")}`
+      `mikro_explore missing from tools/list; got ${tools.map((t) => t.name).join(", ")}`
     );
     assert(
       explore.description.includes("citation"),
       `the tool description must tell the host model it returns citations; got: ${explore.description}`
     );
-    log("✓ rlmx_explore discovered from <checkout>/.rlmx/agents/ via --dir");
+    log("✓ mikro_explore discovered from <checkout>/.mikro/agents/ via --dir");
 
     const started = Date.now();
     const res = await client.callTool(
-      { name: "rlmx_explore", arguments: { prompt: QUESTION } },
+      { name: "mikro_explore", arguments: { prompt: QUESTION } },
       undefined,
       LIVE_OPTS
     );
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     const text = textOf(res);
-    assert(!res.isError, `rlmx_explore call failed: ${text}`);
+    assert(!res.isError, `mikro_explore call failed: ${text}`);
 
     const [answer, footer] = text.split("\n---\n");
     assert(answer && answer.trim().length > 0, "the answer body is empty");
@@ -353,12 +353,12 @@ async function runArm(label, model, scratchHome, gating) {
   }
 }
 
-const scratch = mkdtempSync(join(tmpdir(), "rlmx-explore-smoke-"));
+const scratch = mkdtempSync(join(tmpdir(), "mikro-explore-smoke-"));
 const scratchHome = join(scratch, "home");
 mkdirSync(scratchHome, { recursive: true });
 
 /**
- * A checkout is allowed to ship its own `.rlmx/agents/explore/`, and this script
+ * A checkout is allowed to ship its own `.mikro/agents/explore/`, and this script
  * overwrites it — same paths, `model:` rewritten per arm. So it is copied aside
  * before the first install and put back on the way out. Treating "it was already
  * there" as "leave whatever is there now" would hand the user the smoke copy,
@@ -389,9 +389,9 @@ function cleanup() {
       return;
     }
   } else {
-    // Leave `.rlmx/agents/` behind only if something else already lives there.
+    // Leave `.mikro/agents/` behind only if something else already lives there.
     try {
-      rmdirSync(join(root, ".rlmx", "agents"));
+      rmdirSync(join(root, ".mikro", "agents"));
     } catch {
       // Non-empty or already gone — either way, nothing to clean.
     }
@@ -405,7 +405,7 @@ const results = [];
 try {
   results.push(await runArm("station", STATION_MODEL, scratchHome, true));
 
-  const khalKey = process.env.KHAL_API_KEY || process.env.RLMX_KHAL_API_KEY;
+  const khalKey = process.env.KHAL_API_KEY || process.env.MIKRO_KHAL_API_KEY;
   if (skipKhal) {
     log("• khal arm skipped (--no-khal)");
   } else if (!khalKey) {

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# rlmx Integration Tests — Group 3: Gemini 3 Verification (Tests 15-22)
+# mikro Integration Tests — Group 3: Gemini 3 Verification (Tests 15-22)
 #
 # Prerequisites:
 #   - GEMINI_API_KEY environment variable set
 #   - Node.js >= 18, Python 3.10+ installed
 #   - Project built (npm run build)
 #
-# Usage: cd /path/to/rlmx && bash tests/integration/03-gemini3.sh
+# Usage: cd /path/to/mikro && bash tests/integration/03-gemini3.sh
 
 set -euo pipefail
 
@@ -35,7 +35,7 @@ if [ -z "${GEMINI_API_KEY:-}" ]; then
   exit 1
 fi
 
-TMPDIR="/tmp/rlmx-gemini3-integration-$$"
+TMPDIR="/tmp/mikro-gemini3-integration-$$"
 mkdir -p "$TMPDIR"
 cleanup() { rm -rf "$TMPDIR"; }
 trap cleanup EXIT
@@ -44,7 +44,7 @@ pass() { PASSED=$((PASSED + 1)); echo "  PASS: $1"; }
 fail() { FAILED=$((FAILED + 1)); echo "  FAIL: $1 — $2"; }
 skip() { SKIPPED=$((SKIPPED + 1)); echo "  SKIP: $1 — $2"; }
 
-echo "=== rlmx Integration Tests — Group 3: Gemini 3 ==="
+echo "=== mikro Integration Tests — Group 3: Gemini 3 ==="
 echo ""
 
 # Ensure build is fresh
@@ -117,7 +117,7 @@ fi
 echo "[17/22] structured output with output.schema"
 SCHEMA_DIR="$TMPDIR/schema-test"
 mkdir -p "$SCHEMA_DIR"
-cat > "$SCHEMA_DIR/rlmx.yaml" <<'YAML'
+cat > "$SCHEMA_DIR/mikro.yaml" <<'YAML'
 model:
   provider: google
   model: gemini-3.1-flash-lite-preview
@@ -217,7 +217,7 @@ fi
 echo "[20/22] gemini.code-execution server-side Python"
 CE_DIR="$TMPDIR/code-exec-test"
 mkdir -p "$CE_DIR"
-cat > "$CE_DIR/rlmx.yaml" <<'YAML'
+cat > "$CE_DIR/mikro.yaml" <<'YAML'
 model:
   provider: google
   model: gemini-3.1-flash-lite-preview
@@ -311,7 +311,7 @@ echo "[22/22] graceful degradation: Gemini features ignored on non-Gemini provid
 GD_DIR="$TMPDIR/graceful-test"
 mkdir -p "$GD_DIR"
 # Create a config with ALL Gemini features enabled but provider=anthropic
-cat > "$GD_DIR/rlmx.yaml" <<'YAML'
+cat > "$GD_DIR/mikro.yaml" <<'YAML'
 model:
   provider: anthropic
   model: claude-sonnet-4-5

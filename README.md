@@ -1,4 +1,4 @@
-# rlmx
+# mikro
 
 RLM algorithm CLI for coding agents — prompt externalization, Python REPL with symbolic recursion, code-driven navigation.
 
@@ -6,73 +6,74 @@ Based on the [RLM paper](https://arxiv.org/abs/2501.12599) (REPL-based LLM Metho
 
 ## Install
 
-`scripts/install.sh` is the canonical installer — rlmx is git-installed, not
+`scripts/install.sh` is the canonical installer — mikro is git-installed, not
 npm-installed (see [`docs/release-contract.md`](docs/release-contract.md)):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/automagik-dev/rlmx/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/automagik-dev/mikro/main/scripts/install.sh | bash
 ```
 
-It clones to `~/.rlmx/rlmx`, runs `npm ci --include=dev` and `npm run build`,
-then symlinks `dist/src/cli.js` → `~/.local/bin/rlmx`. Re-running it against an
+It clones to `~/.mikro/mikro`, runs `npm ci --include=dev` and `npm run build`,
+then symlinks `dist/src/cli.js` → `~/.local/bin/mikro`. Re-running it against an
 existing checkout refreshes it in place. From a clone you already have,
 `bash scripts/install.sh` (or `npm run install:local`) does the same.
 
-Four env vars override the defaults: `RLMX_REPO_URL`, `RLMX_BRANCH`,
-`RLMX_INSTALL_DIR`, `RLMX_BIN_DIR`.
+Four env vars override the defaults: `MIKRO_REPO_URL`, `MIKRO_BRANCH`,
+`MIKRO_INSTALL_DIR`, `MIKRO_BIN_DIR`.
 
 ### Update
 
 ```bash
-rlmx update            # fetch origin/main, rebuild in place
-rlmx update --force    # same, discarding local changes in the checkout
+mikro update            # fetch origin/main, rebuild in place
+mikro update --force    # same, discarding local changes in the checkout
 ```
 
-`rlmx update` refuses to run over a dirty checkout without `--force`, then
+`mikro update` refuses to run over a dirty checkout without `--force`, then
 resets to `origin/main`, reinstalls, rebuilds, and prints the before commit,
-the target commit and the resulting version. Because `rlmx` is a symlink into
+the target commit and the resulting version. Because `mikro` is a symlink into
 that clone's `dist/`, this is what makes a new `main` commit take effect.
 
-### npm is SDK-only
+### Not on npm
+
+mikro is not published to npm — `install.sh` is the only distribution channel,
+and `mikro update` the only update path. The programmatic SDK still exists in
+the same checkout; consume it as a git dependency (`dist/` is committed, so no
+build step is needed on the consumer side):
 
 ```bash
-npm install @automagik/rlmx     # library, for programmatic consumers
+npm install github:automagik-dev/mikro   # package name: mikro
 ```
-
-The npm package ships **no `bin`** — by contract, and CI asserts it
-(`scripts/smoke-install-update.sh`). So `npx rlmx` cannot work and there is no
-`npm install -g` path. npm gets you the SDK; `install.sh` gets you the CLI.
 
 ## Quick Start
 
 ```bash
-# Scaffold .rlmx/ config in the current directory
-rlmx init
+# Scaffold .mikro/ config in the current directory
+mikro init
 
 # Run a query
-rlmx "What is the meaning of life?"
+mikro "What is the meaning of life?"
 
 # Query with context (directory of docs)
-rlmx "How does IPC work?" --context ./docs/
+mikro "How does IPC work?" --context ./docs/
 
 # Query with a single file as context
-rlmx "Summarize this paper" --context paper.md --output json
+mikro "Summarize this paper" --context paper.md --output json
 
 # Pipe data in
-cat data.csv | rlmx "Analyze this dataset"
+cat data.csv | mikro "Analyze this dataset"
 ```
 
-## Use rlmx from Claude Code / Codex (`rlmx mcp`)
+## Use mikro from Claude Code / Codex (`mikro mcp`)
 
 Offload repeatable work to a cheap or local model instead of paying host-model
 prices for it every time.
 
 ```bash
-claude mcp add rlmx -- rlmx mcp
+claude mcp add mikro -- mikro mcp
 ```
 
-That's it. Claude Code now has an `rlmx_query` tool, plus **one tool per
-microagent** you've defined — `rlmx_triage`, `rlmx_test_writer`, and so on — so
+That's it. Claude Code now has an `mikro_query` tool, plus **one tool per
+microagent** you've defined — `mikro_triage`, `mikro_test_writer`, and so on — so
 the model delegates to them by name.
 
 **Claude Code users: there is a plugin.** It registers the same server with
@@ -81,20 +82,20 @@ cwd agree with your project root instead of wherever the host spawned the
 process:
 
 ```bash
-claude plugin marketplace add ~/.rlmx/rlmx && claude plugin install rlmx@rlmx
+claude plugin marketplace add ~/.mikro/mikro && claude plugin install mikro@mikro
 ```
 
 The clone *is* the marketplace — `.claude-plugin/marketplace.json` sits at the
-repository root — and `~/.rlmx/rlmx` is exactly where `install.sh` put it.
-The plugin needs `rlmx` on `PATH`, which is what `install.sh` provides; if the
-server shows as failed in `claude mcp list`, check `command -v rlmx` in the
+repository root — and `~/.mikro/mikro` is exactly where `install.sh` put it.
+The plugin needs `mikro` on `PATH`, which is what `install.sh` provides; if the
+server shows as failed in `claude mcp list`, check `command -v mikro` in the
 shell that launched Claude Code. It ships that one server plus two skills
-(`/rlmx:offload-guidance`, `/rlmx:microagent-create`). Details, limits and
+(`/mikro:offload-guidance`, `/mikro:microagent-create`). Details, limits and
 honest positioning: [`plugins/claude-code/README.md`](plugins/claude-code/README.md).
 
 ### Tool contract
 
-Every tool — `rlmx_query` and each microagent — takes the same input, chosen to
+Every tool — `mikro_query` and each microagent — takes the same input, chosen to
 mirror the host's own Agent tool so the model uses it without being taught:
 
 | field | required | meaning |
@@ -103,7 +104,7 @@ mirror the host's own Agent tool so the model uses it without being taught:
 | `query` | — | Deprecated alias for `prompt`. Pass one or the other, never both. |
 | `session_id` | — | Continue an earlier call **on this same tool** — pass the `session_id` its result returned. |
 | `context` | — | Path to a file or directory to load as context, relative to the server's working directory. Same as the CLI's `--context`. |
-| `model` | — | `rlmx_query` only: override the model as `"<provider>/<model>"`, e.g. `station/Brain-35B`. |
+| `model` | — | `mikro_query` only: override the model as `"<provider>/<model>"`, e.g. `station/Brain-35B`. |
 
 `prompt` and `query` are both schema-*optional* and exactly one is demanded at
 runtime — JSON Schema can only say "exactly one of" via `anyOf`/`oneOf`, which
@@ -123,7 +124,7 @@ own named error. Resume is conversation replay, not REPL state — the Python RE
 is rebuilt per call and its state is deliberately not promised across turns.
 
 A run that fails **without throwing** comes back as `isError` with the reason in
-`answer`. rlmx's two designed aborts — three consecutive empty LLM responses and
+`answer`. mikro's two designed aborts — three consecutive empty LLM responses and
 the wall-clock timeout — return their reason as the answer rather than raising,
 so without this a host model would read the abort reason as the agent's report.
 Both are matched by exact signal (the abort's `budgetHit`, the timeout's
@@ -138,12 +139,12 @@ fires when the set actually changes — so an agent you author mid-session is
 listed and callable with no reconnect.
 
 Long runs emit `notifications/progress` per iteration, which keeps conforming
-clients from timing out mid-delegation. `RLMX_MCP_RUN_TIMEOUT_MS` lifts rlmx's
+clients from timing out mid-delegation. `MIKRO_MCP_RUN_TIMEOUT_MS` lifts mikro's
 own wall-clock cap.
 
-> Not to be confused with `rlmx acp` below. In ACP the *client* is an editor and
+> Not to be confused with `mikro acp` below. In ACP the *client* is an editor and
 > the *agent* is the AI tool — Claude Code and Codex are agents themselves, so
-> they can't drive rlmx over ACP. MCP is the protocol they speak as clients.
+> they can't drive mikro over ACP. MCP is the protocol they speak as clients.
 
 ## Microagents (`agent.yaml`)
 
@@ -151,23 +152,23 @@ A microagent is an `agent.yaml` folder ([full schema](docs/agent-yaml-schema.md)
 in any of:
 
 ```
-~/.rlmx/agents/<name>/         # global
+~/.mikro/agents/<name>/         # global
 <project>/.agents/<name>/      # project — supported alias
-<project>/.rlmx/agents/<name>/ # project — the convention
+<project>/.mikro/agents/<name>/ # project — the convention
 ```
 
-`<project>/.rlmx/agents/` is the convention: everything rlmx owns in a
-repository lives under one `.rlmx/` directory next to `rlmx.yaml`. `.agents/`
+`<project>/.mikro/agents/` is the convention: everything mikro owns in a
+repository lives under one `.mikro/` directory next to `mikro.yaml`. `.agents/`
 is scanned too and stays supported — an agent folder is portable between the
-two, and `.rlmx/agents/` wins when the same name exists in both. Project agents
-shadow global ones with the same name, and `RLMX_AGENTS_DIR` (colon-separated)
+two, and `.mikro/agents/` wins when the same name exists in both. Project agents
+shadow global ones with the same name, and `MIKRO_AGENTS_DIR` (colon-separated)
 replaces every root. Roots are listed above in precedence order, lowest first.
 
 Directory name → tool name: lowercased, anything outside `[a-z0-9_-]` folded to
-`_`, prefixed `rlmx_`. So `.rlmx/agents/explore-r/` becomes `rlmx_explore-r`.
+`_`, prefixed `mikro_`. So `.mikro/agents/explore-r/` becomes `mikro_explore-r`.
 
 ```yaml
-# ~/.rlmx/agents/triage/agent.yaml
+# ~/.mikro/agents/triage/agent.yaml
 schema_version: 1
 tools_api: 1
 shape: loop
@@ -229,7 +230,7 @@ your own schema without forking the parser.
 > [`examples/agents/`](examples/agents/) omits the field. Rationale and the
 > live-QA record: `src/station-provider.ts`.
 
-> **Choosing `shape`.** rlmx externalizes context into the Python REPL — the
+> **Choosing `shape`.** mikro externalizes context into the Python REPL — the
 > model has to *run code* to read it. So `shape: single-step` gives it one pass
 > and it answers **before ever opening your file**. Use `single-step` only when
 > the whole input fits in the prompt; use `loop` with a `budget.max_iterations`
@@ -242,14 +243,14 @@ A directory whose name ends `.proposed` (matched case-insensitively) is a draft
 awaiting human approval. Discovery skips it **before the spec is parsed**, and
 `tools/call` dispatches from that same scan, so a draft is neither listed nor
 callable — calling it by its would-be name answers
-`Unknown tool: rlmx_<name>_proposed`. Activation is a rename you perform:
+`Unknown tool: mikro_<name>_proposed`. Activation is a rename you perform:
 
 ```bash
-mv .rlmx/agents/<name>.proposed .rlmx/agents/<name>
+mv .mikro/agents/<name>.proposed .mikro/agents/<name>
 ```
 
 The tool appears on the next request. This is the propose-only boundary behind
-`/rlmx:microagent-create`. **The skip is silent by design**, so do not name a
+`/mikro:microagent-create`. **The skip is silent by design**, so do not name a
 real agent `<something>.proposed`.
 
 ### Ready-made ones
@@ -258,7 +259,7 @@ Copy from **[`examples/agents/`](examples/agents/)** — the single recipe tree
 ([index](examples/agents/README.md)). Start with
 [`explore/`](examples/agents/explore/): it answers a question about the repo it
 runs in with `file:line` citations. Install it as
-`<project>/.rlmx/agents/explore/` and Claude Code gets an `rlmx_explore` tool.
+`<project>/.mikro/agents/explore/` and Claude Code gets an `mikro_explore` tool.
 Also there: `codebase-qa`, `changelog` and `log-triage` (small, local-model,
 ungated), and `explore-r` (recursive). Which worker model to run them on, and
 what the evidence does and does not establish:
@@ -268,7 +269,7 @@ Each result ends with what it cost, so the offload is visible rather than
 assumed:
 
 ```
-rlmx · agent=triage · station/Qwen3.6-35B-A3B-MTP-GGUF · 3 iterations · 307 in / 36 out · $0.00 · 3.9s
+mikro · agent=triage · station/Qwen3.6-35B-A3B-MTP-GGUF · 3 iterations · 307 in / 36 out · $0.00 · 3.9s
 ```
 
 (`$0.00` is correct, not broken: `station/` models run locally and have no
@@ -278,9 +279,9 @@ Protocol and recipe smokes, run manually — CI does not:
 `node scripts/smoke-mcp.mjs` (protocol) and `node scripts/smoke-explore.mjs`
 (the `explore` recipe end to end, citations resolved against this checkout).
 
-## SDK (`rlmx.sdk.*`)
+## SDK (`mikro.sdk.*`)
 
-rlmx also ships a programmatic SDK for consumers that need to drive
+mikro also ships a programmatic SDK for consumers that need to drive
 agents from code — with per-iteration observability, permission
 hooks, validate-with-retry, session checkpointing, and a pluggable
 tool registry. The CLI path above is untouched; the SDK is purely
@@ -288,7 +289,7 @@ additive.
 
 ```ts
 import { readFile } from "node:fs/promises";
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const spec = await sdk.loadAgentSpec("./my-agent");
 const registry = sdk.createToolRegistry();
@@ -326,15 +327,15 @@ Deeper dives:
 - [`docs/tool-authoring.md`](docs/tool-authoring.md) — TS/MJS + Python plugin recipes, RTK integration.
 - [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) — `agent.yaml` field reference.
 - [`examples/agents/`](examples/agents/README.md) — **the** microagent recipe tree: `explore`, `explore-r`, `codebase-qa`, `changelog`, `log-triage`, plus the three runnable SDK walk-throughs with tests (hello-world / research-agent / brain-triage).
-- [`examples/`](examples/) — `rlmx.yaml` configuration examples (tauri-docs, paper-review, cag-*, gemini-*), which are not microagents.
+- [`examples/`](examples/) — `mikro.yaml` configuration examples (tauri-docs, paper-review, cag-*, gemini-*), which are not microagents.
 - [`docs/worker-models.md`](docs/worker-models.md) — which model to run a microagent on: the round-2 evidence, per-arm price and run date, and what each arm's `n` does and does not establish.
 
 ## Live event stream (`rlmLoop({ emitter })`)
 
 A real recursive `rlmLoop` run emits an observable, in-memory event
 stream over the SDK's `createEmitter()` bus. This is the shared substrate
-that the **rlmx-acp adapter** (web client) and **pi's native TUI** consume
-as renderers — rlmx itself ships the events, not a UI.
+that the **mikro-acp adapter** (web client) and **pi's native TUI** consume
+as renderers — mikro itself ships the events, not a UI.
 
 ### Subscribing (the contractual seam)
 
@@ -345,7 +346,7 @@ the emitter when it finishes (a `SessionClose` event, then the iterator
 returns).
 
 ```ts
-import { rlmLoop, sdk } from "@automagik/rlmx";
+import { rlmLoop, sdk } from "mikro";
 
 const emitter = sdk.createEmitter();
 
@@ -356,7 +357,7 @@ const emitter = sdk.createEmitter();
 	}
 })();
 
-await rlmLoop(query, context, config, { emitter }); // same signature the rlmx-acp adapter uses
+await rlmLoop(query, context, config, { emitter }); // same signature the mikro-acp adapter uses
 ```
 
 ### Event schema
@@ -368,7 +369,7 @@ path every event additionally carries two optional ancestry fields:
 | field | meaning |
 | --- | --- |
 | `correlationId` | Stable id of the node the event belongs to. For a spawned child it is the sortable `uuidv7()` minted at the spawn site; for a run's own iterations it is that run's self-correlation id. |
-| `parentRunId` | The `correlationId` of the parent node — the ancestry edge (maps to the child process's `RLMX_PARENT_RUN_ID`). Absent for the true root. |
+| `parentRunId` | The `correlationId` of the parent node — the ancestry edge (maps to the child process's `MIKRO_PARENT_RUN_ID`). Absent for the true root. |
 
 **Build the recursion tree by keying on `correlationId` / `parentRunId`,
 not `depth`** — `depth` cannot disambiguate sibling branches at the same
@@ -396,7 +397,7 @@ node scripts/watch-headless.mjs -- "decompose and recurse on each part"
 node scripts/watch-headless.mjs -- "…" | grep -c '"type":"Recurse"'   # one line per spawn
 
 # Against a real run (needs a working model endpoint / provider key):
-RLMX_HEADLESS_REAL=1 node scripts/watch-headless.mjs -- "your prompt"
+MIKRO_HEADLESS_REAL=1 node scripts/watch-headless.mjs -- "your prompt"
 ```
 
 ### Scope note
@@ -408,15 +409,15 @@ root subscriber sees its direct spawns, and a collector aggregating the
 process tree reconstructs deeper levels by `correlationId`. Streaming
 child-internal events into the parent stream is the documented next step.
 
-## ACP agent (`rlmx acp`) — wire rlmx into an ACP host
+## ACP agent (`mikro acp`) — wire mikro into an ACP host
 
-> **⚠️ Experimental.** `rlmx acp` works and is tested end-to-end, but its
+> **⚠️ Experimental.** `mikro acp` works and is tested end-to-end, but its
 > protocol surface may change without a deprecation cycle, and v1 **serializes
 > prompt turns within a single active session** — a concurrent
 > `session/prompt` is rejected with JSON-RPC `-32600` rather than queued. Every
-> other part of rlmx documented here is stable.
+> other part of mikro documented here is stable.
 
-`rlmx acp` is a stdio [Agent Client Protocol](https://agentclientprotocol.com)
+`mikro acp` is a stdio [Agent Client Protocol](https://agentclientprotocol.com)
 agent: newline-delimited JSON-RPC over **stdin/stdout**, so any ACP client can
 drive a real `rlmLoop` and render its live event stream. No port, no daemon —
 the client spawns the process and owns its lifetime.
@@ -429,35 +430,35 @@ Every host entry needs the **absolute** path to the built CLI. Compute it once:
 # From a clone of this repo:
 npm ci && npm run build
 node -e "console.log(require('path').resolve('dist/src/cli.js'))"
-# → /ABS/PATH/TO/rlmx/dist/src/cli.js   ← use THIS everywhere below
+# → /ABS/PATH/TO/mikro/dist/src/cli.js   ← use THIS everywhere below
 ```
 
-The launch command is always: **`node /ABS/PATH/TO/rlmx/dist/src/cli.js acp`**
-run **with `cwd` set to the project you want rlmx to operate in** (rlmx loads
-`.rlmx/rlmx.yaml` from `cwd`, exactly like the CLI). Substitute your real
-absolute path for `/ABS/PATH/TO/rlmx` in every snippet — nothing else changes.
+The launch command is always: **`node /ABS/PATH/TO/mikro/dist/src/cli.js acp`**
+run **with `cwd` set to the project you want mikro to operate in** (mikro loads
+`.mikro/mikro.yaml` from `cwd`, exactly like the CLI). Substitute your real
+absolute path for `/ABS/PATH/TO/mikro` in every snippet — nothing else changes.
 
-> Sessions are durable. rlmx persists each ACP session (conversation history +
-> cwd + config snapshot + any host MCP config) to `~/.rlmx/acp-sessions/<id>.json`,
+> Sessions are durable. mikro persists each ACP session (conversation history +
+> cwd + config snapshot + any host MCP config) to `~/.mikro/acp-sessions/<id>.json`,
 > so `session/load` and a follow-up prompt keep working **after the host
 > restarts the agent** — no "Invalid params". Override the store location with
-> `RLMX_ACP_SESSIONS_DIR`.
+> `MIKRO_ACP_SESSIONS_DIR`.
 
 ### From Claude Code, Codex, or Hermes — via `acpx`
 
 **This is the main path.** In ACP, the *client* is the editor and the *agent* is
 the AI tool. Claude Code and Codex are themselves **agents**, so they cannot
-consume `rlmx acp` directly — two agents don't speak to each other.
+consume `mikro acp` directly — two agents don't speak to each other.
 
 Bridge them with [`acpx`](https://github.com/openclaw/acpx), a headless ACP
 client (verified with acpx 0.12.0). Any harness that can run a shell command
-then drives rlmx:
+then drives mikro:
 
 ```bash
 # From /ABS/PATH/TO/your-project (this becomes the session cwd):
-AGENT="node /ABS/PATH/TO/rlmx/dist/src/cli.js acp"
+AGENT="node /ABS/PATH/TO/mikro/dist/src/cli.js acp"
 
-# One-time: register an acpx session for this cwd, driven by rlmx.
+# One-time: register an acpx session for this cwd, driven by mikro.
 npx --yes acpx --agent "$AGENT" --cwd "$PWD" sessions new
 
 # Then drive prompts by hand, repeating as you iterate (--approve-all skips
@@ -465,25 +466,25 @@ npx --yes acpx --agent "$AGENT" --cwd "$PWD" sessions new
 npx --yes acpx --agent "$AGENT" --cwd "$PWD" --approve-all "What does this repo do?"
 
 # Or the repo's own scripted end-to-end smoke (spawns + drives the agent):
-node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs              # fast handshake + prompt
-node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs --multiturn  # survives an agent restart
-node /ABS/PATH/TO/rlmx/scripts/smoke-acp.mjs --recursive  # live translated recursion stream
+node /ABS/PATH/TO/mikro/scripts/smoke-acp.mjs              # fast handshake + prompt
+node /ABS/PATH/TO/mikro/scripts/smoke-acp.mjs --multiturn  # survives an agent restart
+node /ABS/PATH/TO/mikro/scripts/smoke-acp.mjs --recursive  # live translated recursion stream
 ```
 
 ### From an ACP editor client
 
-Any editor that is a real ACP client can spawn rlmx directly — no `acpx` needed.
+Any editor that is a real ACP client can spawn mikro directly — no `acpx` needed.
 Zed is the reference implementation (Zed Industries authored ACP):
 
 ```jsonc
 // Zed settings.json
 {
   "agent_servers": {
-    "rlmx": {
+    "mikro": {
       "command": "node",
-      "args": ["/ABS/PATH/TO/rlmx/dist/src/cli.js", "acp"],
+      "args": ["/ABS/PATH/TO/mikro/dist/src/cli.js", "acp"],
       "cwd": "/ABS/PATH/TO/your-project",
-      "env": { "RLMX_ACP_RUN_TIMEOUT_MS": "660000" }
+      "env": { "MIKRO_ACP_RUN_TIMEOUT_MS": "660000" }
     }
   }
 }
@@ -494,7 +495,7 @@ whatever shape their config uses.
 
 ### Remote (stdio over SSH) — first-class
 
-Because the transport is pure stdio, a host on your laptop can drive rlmx on a
+Because the transport is pure stdio, a host on your laptop can drive mikro on a
 remote box with **no port, no tunnel, no `-t`** — SSH pipes stdin/stdout for
 you. Point the host's `command` at `ssh` and pass the remote launch as args:
 
@@ -503,7 +504,7 @@ you. Point the host's `command` at `ssh` and pass the remote launch as args:
   "command": "ssh",
   "args": [
     "REMOTE_HOST",
-    "/ABS/PATH/ON/REMOTE/node", "/ABS/PATH/ON/REMOTE/rlmx/dist/src/cli.js", "acp"
+    "/ABS/PATH/ON/REMOTE/node", "/ABS/PATH/ON/REMOTE/mikro/dist/src/cli.js", "acp"
   ],
   "cwd": "/ABS/PATH/TO/local-placeholder"
 }
@@ -524,37 +525,37 @@ you. Point the host's `command` at `ssh` and pass the remote launch as args:
   project dir where you launch, or by prefixing `cd /remote/project &&`.
 - To pass env to the remote agent, set it in the remote command (SSH does not
   forward local env by default), e.g.
-  `ssh REMOTE_HOST "RLMX_REPL_TIMEOUT_MS=600000 /ABS/PATH/ON/REMOTE/node /abs/…/cli.js acp"`.
+  `ssh REMOTE_HOST "MIKRO_REPL_TIMEOUT_MS=600000 /ABS/PATH/ON/REMOTE/node /abs/…/cli.js acp"`.
 
 ### Env legend
 
 | Env var | Effect |
 | --- | --- |
-| `RLMX_ACP_RUN_TIMEOUT_MS` | Override `rlmLoop`'s internal wall-clock cap for an ACP-hosted turn (default 300000). Raise it for recursive turns whose child spawns run long. |
-| `RLMX_REPL_TIMEOUT_MS` | Max time a single REPL cell may run before it is killed. Raise it when a recursive `rlm_query` cell must outlast a slow child. |
-| `RLMX_ACP_SESSIONS_DIR` | Override the durable session-store directory (default `~/.rlmx/acp-sessions`). Point it at scratch for hermetic tests. |
+| `MIKRO_ACP_RUN_TIMEOUT_MS` | Override `rlmLoop`'s internal wall-clock cap for an ACP-hosted turn (default 300000). Raise it for recursive turns whose child spawns run long. |
+| `MIKRO_REPL_TIMEOUT_MS` | Max time a single REPL cell may run before it is killed. Raise it when a recursive `rlm_query` cell must outlast a slow child. |
+| `MIKRO_ACP_SESSIONS_DIR` | Override the durable session-store directory (default `~/.mikro/acp-sessions`). Point it at scratch for hermetic tests. |
 | `STATION_BASE_URL` / `LEMONADE_BASE_URL` | Local station/Lemonade gateway base URL (default `http://localhost:13305/api/v1`). |
 
-Any provider API keys the chosen `.rlmx/rlmx.yaml` model needs are read from the
-environment / `~/.rlmx/settings.json` exactly as for the CLI.
+Any provider API keys the chosen `.mikro/mikro.yaml` model needs are read from the
+environment / `~/.mikro/settings.json` exactly as for the CLI.
 
 ### MCP servers (store + advertise only)
 
-`initialize` advertises `mcpCapabilities` (`http` + `sse`), and rlmx accepts and
+`initialize` advertises `mcpCapabilities` (`http` + `sse`), and mikro accepts and
 **persists** the `mcpServers` a host passes on `session/new` / `session/load`.
-rlmx does **not** yet execute tools against those servers — there is no MCP
+mikro does **not** yet execute tools against those servers — there is no MCP
 client wired in — so the config is stored/advertised for continuity, and MCP
 tool execution is a documented follow-on. A host is not misled: the advertised
-capability carries `_meta["rlmx/mcp"] = "store-and-advertise-only; no MCP client
+capability carries `_meta["mikro/mcp"] = "store-and-advertise-only; no MCP client
 execution yet"`.
 
 ### Node-field legend — `rlm:` tool-call nodes
 
 Each recursive `rlm_query` spawn surfaces as a flat ACP tool-call node with
 `toolCallId = "rlm:<childCorrelationId>"`. Its completion `tool_call_update`
-carries machine-readable per-node data under `_meta["rlmx/node"]`:
+carries machine-readable per-node data under `_meta["mikro/node"]`:
 
-| `_meta["rlmx/node"]` field | meaning |
+| `_meta["mikro/node"]` field | meaning |
 | --- | --- |
 | `correlationId` | The child node's stable id (sortable `uuidv7()` minted at the spawn site). Join key for the recursion tree. |
 | `parentRunId` | The spawning run's `correlationId` — the ancestry edge (absent for the root). |
@@ -565,13 +566,13 @@ carries machine-readable per-node data under `_meta["rlmx/node"]`:
 | `error` | `{ name, message }` when the child failed (node status `failed`). |
 
 A `tool_call_update` for an ordinary REPL execution instead carries
-`_meta["rlmx/durationMs"]`. Client-facing payloads (args / output / titles) are
+`_meta["mikro/durationMs"]`. Client-facing payloads (args / output / titles) are
 width-bounded and secret-redacted at the translator boundary before they cross
 the web boundary.
 
 ## RTK Integration (token savings)
 
-rlmx auto-detects [RTK](https://github.com/rtk-ai/rtk) and routes CLI subprocess calls through it when available, for 60-90% token savings on tool outputs.
+mikro auto-detects [RTK](https://github.com/rtk-ai/rtk) and routes CLI subprocess calls through it when available, for 60-90% token savings on tool outputs.
 
 ### Install RTK (optional)
 
@@ -583,30 +584,30 @@ cargo install --git https://github.com/rtk-ai/rtk                               
 
 ### How it works
 
-- In your `.rlmx/TOOLS.md`, use `run_cli(cmd, *args)` instead of raw `subprocess.run(...)`
+- In your `.mikro/TOOLS.md`, use `run_cli(cmd, *args)` instead of raw `subprocess.run(...)`
 - When RTK is installed, `run_cli` transparently prefixes with `rtk` → filtered output
 - When RTK is absent, `run_cli` passes through unchanged — no behavior break
 
 ### Configuration
 
 ```yaml
-# .rlmx/rlmx.yaml
+# .mikro/mikro.yaml
 rtk:
   enabled: auto   # auto | always | never (default: auto)
 ```
 
 - `auto` — use RTK when detected on PATH, otherwise pass through (fail-open)
-- `always` — require RTK; `rlmx doctor` exits **2** if it is missing
+- `always` — require RTK; `mikro doctor` exits **2** if it is missing
 - `never` — disable prefix even when RTK is installed
 
 ### Verify
 
 ```bash
-rlmx doctor         # shows RTK status (installed version + mode)
-rtk gain            # shows token savings from rlmx + other RTK integrations
+mikro doctor         # shows RTK status (installed version + mode)
+rtk gain            # shows token savings from mikro + other RTK integrations
 ```
 
-> `rlmx doctor` exits **1** if **any** of the six provider keys it checks is
+> `mikro doctor` exits **1** if **any** of the six provider keys it checks is
 > unset, so a healthy single-provider install still exits non-zero. Read its
 > output; don't script it as a pass/fail gate. Only exit 2 means a real config
 > error (`rtk.enabled=always` with rtk absent).
@@ -625,11 +626,11 @@ out = r["stdout"]   # filtered + compact; ~60-90% fewer tokens
 
 ## How It Works
 
-rlmx implements the RLM (REPL-LM) algorithm:
+mikro implements the RLM (REPL-LM) algorithm:
 
 1. **Prompt externalization** — Your context (files, directories) is loaded into a Python REPL as the `context` variable. Only metadata (type, size, chunk lengths) appears in the LLM message history. The LLM never sees the raw context in its messages.
 
-2. **Iterative REPL loop** — The LLM writes Python code in ` ```repl``` ` blocks. rlmx executes each block in a persistent Python subprocess, feeds results back, and the LLM iterates until it calls `FINAL()` or `FINAL_VAR()`.
+2. **Iterative REPL loop** — The LLM writes Python code in ` ```repl``` ` blocks. mikro executes each block in a persistent Python subprocess, feeds results back, and the LLM iterates until it calls `FINAL()` or `FINAL_VAR()`.
 
 3. **Recursive sub-calls** — Inside REPL code, the LLM can call:
    - `llm_query(prompt)` — single LLM completion (fast, one-shot)
@@ -666,8 +667,8 @@ The exact savings depend on your provider. Google and Anthropic both offer signi
 Process a list of questions against cached context:
 
 ```bash
-rlmx batch questions.txt --context ./docs/
-rlmx batch questions.txt --context ./docs/ --output json
+mikro batch questions.txt --context ./docs/
+mikro batch questions.txt --context ./docs/ --output json
 ```
 
 Each question in the file is run sequentially, reusing the cached context. The first question pays full cost; subsequent questions benefit from the cache. `--parallel <n>` runs them concurrently.
@@ -677,14 +678,14 @@ Each question in the file is run sequentially, reusing the cached context. The f
 Warm the cache and estimate costs before running queries:
 
 ```bash
-rlmx cache --context ./docs/ --estimate
+mikro cache --context ./docs/ --estimate
 ```
 
 This loads your context, calculates token counts, and shows estimated costs for cached vs uncached queries without making any LLM calls.
 
 ### YAML configuration
 
-Enable cache in your `.rlmx/rlmx.yaml`:
+Enable cache in your `.mikro/mikro.yaml`:
 
 ```yaml
 cache:
@@ -701,12 +702,12 @@ For detailed provider-specific TTL behavior (Google, Anthropic, Bedrock, OpenAI)
 
 ## Gemini 3 Native
 
-rlmx integrates Gemini 3 native features. All are opt-in, additive, and silently ignored on non-Google providers.
+mikro integrates Gemini 3 native features. All are opt-in, additive, and silently ignored on non-Google providers.
 
 ### Quick Start
 
 ```yaml
-# .rlmx/rlmx.yaml
+# .mikro/mikro.yaml
 model:
   provider: google
   model: gemini-3.1-flash-lite-preview
@@ -723,7 +724,7 @@ gemini:
 ```
 
 ```bash
-rlmx "Research latest AI developments" --context ./notes/ --tools standard --thinking high
+mikro "Research latest AI developments" --context ./notes/ --tools standard --thinking high
 ```
 
 ### Features
@@ -797,33 +798,33 @@ See `examples/` for complete configs:
 
 ## Config Files
 
-Config lives in a `.rlmx/` directory beside your project. `rlmx init` scaffolds
-it with inline comments; `rlmx init --template code` uses the code-oriented
-prompt set. **Only `.rlmx/` is read** — a `SYSTEM.md` at the repository root is
+Config lives in a `.mikro/` directory beside your project. `mikro init` scaffolds
+it with inline comments; `mikro init --template code` uses the code-oriented
+prompt set. **Only `.mikro/` is read** — a `SYSTEM.md` at the repository root is
 silently ignored.
 
 | File | Purpose |
 |------|---------|
-| `.rlmx/rlmx.yaml` | Model, context, budget, cache, storage, rtk, gemini config. Its presence is what makes rlmx use the directory at all; without it you get built-in defaults. |
-| `.rlmx/SYSTEM.md` | System prompt sent to the LLM. Default: the RLM paper prompt. |
-| `.rlmx/CRITERIA.md` | Output format criteria appended to the system prompt. |
-| `.rlmx/TOOLS.md` | Custom Python functions injected into the REPL namespace. |
+| `.mikro/mikro.yaml` | Model, context, budget, cache, storage, rtk, gemini config. Its presence is what makes mikro use the directory at all; without it you get built-in defaults. |
+| `.mikro/SYSTEM.md` | System prompt sent to the LLM. Default: the RLM paper prompt. |
+| `.mikro/CRITERIA.md` | Output format criteria appended to the system prompt. |
+| `.mikro/TOOLS.md` | Custom Python functions injected into the REPL namespace. |
 
-Model selection is the `model:` block in `.rlmx/rlmx.yaml`, `--model <ref>` for
-one run, or `rlmx config set model.provider …` globally. There is no
+Model selection is the `model:` block in `.mikro/mikro.yaml`, `--model <ref>` for
+one run, or `mikro config set model.provider …` globally. There is no
 `MODEL.md` — nothing loads it.
 
 ### Custom providers (`providers:`)
 
 Any OpenAI-compatible, Anthropic-compatible or OpenAI Responses endpoint can be
 declared in config and then used as `<id>/<model>` anywhere a model ref is
-accepted — `model:` in `rlmx.yaml`, `--model`, an agent's `model:` pin, or the
+accepted — `model:` in `mikro.yaml`, `--model`, an agent's `model:` pin, or the
 MCP `model` argument. Nothing per-vendor is hard-coded: the declaration *is*
 the provider.
 
 ```yaml
-# .rlmx/rlmx.yaml (project) — or the same keys under "providers" in
-# ~/.rlmx/settings.json (global; camelCase accepted). A project entry
+# .mikro/mikro.yaml (project) — or the same keys under "providers" in
+# ~/.mikro/settings.json (global; camelCase accepted). A project entry
 # replaces a global entry with the same id.
 providers:
   wafer:
@@ -846,8 +847,8 @@ providers:
 ```
 
 Keys are env-only — the config names the variable, never holds the value.
-`rlmx doctor` lists every declared provider, which key variable is set, and
-whether the configured `model:` resolves. `rlmx mcp` validates every
+`mikro doctor` lists every declared provider, which key variable is set, and
+whether the configured `model:` resolves. `mikro mcp` validates every
 microagent's pin at discovery time: a tool whose provider or model is not
 resolvable is advertised as **UNAVAILABLE** with the reason, and calling it
 returns that reason instead of starting a run. Declaring the provider heals it
@@ -876,21 +877,21 @@ def summarize_chunk(text, max_words=100):
 
 ## CLI Reference
 
-`rlmx --schema` prints the machine-readable flag/output/exit-code contract as
+`mikro --schema` prints the machine-readable flag/output/exit-code contract as
 JSON — that is the generated source of truth; this table is the readable copy.
 
 ```
-rlmx "query" [options]                              Run an RLM query
-rlmx init [--template default|code] [--dir <path>]  Scaffold .rlmx/ config
-rlmx cache [options]                                Pre-warm cache or estimate context size
-rlmx batch <file> [options]                         Bulk interrogation from a questions file
-rlmx benchmark <mode> [options]                     Run benchmarks (cost or oolong)
-rlmx stats [options]                                Query run history and cost breakdowns
-rlmx config <set|get|list|delete|path>              Manage ~/.rlmx/settings.json
-rlmx doctor                                         Health check: providers, RTK, config
-rlmx update [--force]                               Fetch latest main commit for a git install
-rlmx acp                                            Run as a stdio ACP agent (EXPERIMENTAL)
-rlmx mcp [--dir <path>]                             Run as a stdio MCP server (agents as tools)
+mikro "query" [options]                              Run an RLM query
+mikro init [--template default|code] [--dir <path>]  Scaffold .mikro/ config
+mikro cache [options]                                Pre-warm cache or estimate context size
+mikro batch <file> [options]                         Bulk interrogation from a questions file
+mikro benchmark <mode> [options]                     Run benchmarks (cost or oolong)
+mikro stats [options]                                Query run history and cost breakdowns
+mikro config <set|get|list|delete|path>              Manage ~/.mikro/settings.json
+mikro doctor                                         Health check: providers, RTK, config
+mikro update [--force]                               Fetch latest main commit for a git install
+mikro acp                                            Run as a stdio ACP agent (EXPERIMENTAL)
+mikro mcp [--dir <path>]                             Run as a stdio MCP server (agents as tools)
 
 Options:
   --context <path>        Path to context (directory or file)
@@ -923,9 +924,9 @@ Options:
 Sub-command shapes:
 
 ```bash
-rlmx benchmark cost [--output json]                 # built-in dataset
-rlmx benchmark oolong [--samples 5] [--idx 42]      # auto-installs HF datasets
-rlmx stats [--run <id>] [--costs] [--tools] [--since 24h|7d|30m] [--output json]
+mikro benchmark cost [--output json]                 # built-in dataset
+mikro benchmark oolong [--samples 5] [--idx 42]      # auto-installs HF datasets
+mikro stats [--run <id>] [--costs] [--tools] [--since 24h|7d|30m] [--output json]
 ```
 
 Exit codes: `0` success · `1` general/validation error, missing query, missing
@@ -941,7 +942,7 @@ Prints the final answer to stdout.
 ### JSON
 
 ```bash
-rlmx "query" --output json
+mikro "query" --output json
 ```
 
 Returns:
@@ -972,7 +973,7 @@ and `usage` always carries all six fields above. Optional additions:
 ### Stream
 
 ```bash
-rlmx "query" --output stream
+mikro "query" --output stream
 ```
 
 Emits JSONL events per iteration, then a final event.
@@ -988,17 +989,17 @@ Emits JSONL events per iteration, then a final event.
 
 ## Settings and Environment Variables
 
-Provider keys can live in the environment or in `~/.rlmx/settings.json`, which
-`rlmx config set` writes. Priority is **CLI flags > settings.json >
-`.rlmx/rlmx.yaml` > defaults** — settings.json outranks the project YAML on
-purpose, so `rlmx config set model.provider openai` takes effect in a checkout
+Provider keys can live in the environment or in `~/.mikro/settings.json`, which
+`mikro config set` writes. Priority is **CLI flags > settings.json >
+`.mikro/mikro.yaml` > defaults** — settings.json outranks the project YAML on
+purpose, so `mikro config set model.provider openai` takes effect in a checkout
 that has its own `model:` block.
 
 ```bash
-rlmx config set GEMINI_API_KEY <key>     # persisted, chmod-restricted
-rlmx config set model.provider google
-rlmx config list                         # API keys masked
-rlmx config path                         # ~/.rlmx/settings.json
+mikro config set GEMINI_API_KEY <key>     # persisted, chmod-restricted
+mikro config set model.provider google
+mikro config list                         # API keys masked
+mikro config path                         # ~/.mikro/settings.json
 ```
 
 Recognised provider keys, as env vars or settings keys: `GEMINI_API_KEY`,
@@ -1008,24 +1009,24 @@ Recognised provider keys, as env vars or settings keys: `GEMINI_API_KEY`,
 settings-file key is injected into the environment only when that env var is not
 already set, so the ambient environment always wins.
 
-Other environment variables rlmx reads:
+Other environment variables mikro reads:
 
 | Env var | Effect |
 | --- | --- |
-| `RLMX_AGENTS_DIR` | Colon-separated list that **replaces** the default microagent roots. |
-| `RLMX_MCP_RUN_TIMEOUT_MS` | Wall-clock cap for one `rlmx mcp` tool call. |
-| `RLMX_ACP_RUN_TIMEOUT_MS`, `RLMX_ACP_SESSIONS_DIR`, `RLMX_REPL_TIMEOUT_MS` | See the ACP env legend above. |
+| `MIKRO_AGENTS_DIR` | Colon-separated list that **replaces** the default microagent roots. |
+| `MIKRO_MCP_RUN_TIMEOUT_MS` | Wall-clock cap for one `mikro mcp` tool call. |
+| `MIKRO_ACP_RUN_TIMEOUT_MS`, `MIKRO_ACP_SESSIONS_DIR`, `MIKRO_REPL_TIMEOUT_MS` | See the ACP env legend above. |
 | `STATION_BASE_URL` / `LEMONADE_BASE_URL` | Local `station/` gateway base URL (default `http://localhost:13305/api/v1`). |
-| `KHAL_API_KEY` (or `RLMX_KHAL_API_KEY`) / `KHAL_BASE_URL` | Credentials and endpoint for the native `khal/` provider. |
+| `KHAL_API_KEY` (or `MIKRO_KHAL_API_KEY`) / `KHAL_BASE_URL` | Credentials and endpoint for the native `khal/` provider. |
 | `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | Enable Langfuse trace export. |
-| `RLMX_PARENT_RUN_ID`, `RLMX_CHILD_CORRELATION_ID`, `RLMX_RECURSION_DEPTH` | Set by rlmx on spawned recursive children — read, not authored by you. |
+| `MIKRO_PARENT_RUN_ID`, `MIKRO_CHILD_CORRELATION_ID`, `MIKRO_RECURSION_DEPTH` | Set by mikro on spawned recursive children — read, not authored by you. |
 
 ## Programmatic API
 
 ```typescript
-import { rlmLoop, loadConfig, loadContext } from "@automagik/rlmx";
+import { rlmLoop, loadConfig, loadContext } from "mikro";
 
-const config = await loadConfig("./");        // reads ./.rlmx/
+const config = await loadConfig("./");        // reads ./.mikro/
 const context = await loadContext("./docs/");
 
 const result = await rlmLoop("How does IPC work?", context, config, {
@@ -1047,7 +1048,7 @@ console.log(result.references);
 
 ## Versioning
 
-rlmx uses **calendar versioning**: `1.YYMMDD.N`, where `YYMMDD` is the UTC build
+mikro uses **calendar versioning**: `1.YYMMDD.N`, where `YYMMDD` is the UTC build
 date and `N` is a daily counter. The `1.` major (bumped from `0.` on
 2026-08-17) declares the public surface production-ready; the rest of the
 version still records *when* a build was cut, not what changed — read

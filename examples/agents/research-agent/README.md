@@ -23,7 +23,7 @@ examples/agents/research-agent/
 ```ts
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const dir = join(import.meta.dir, "..", "examples", "agents", "research-agent");
 const spec = await sdk.loadAgentSpec(dir);

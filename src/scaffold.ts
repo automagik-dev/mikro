@@ -18,12 +18,12 @@ const AVAILABLE_TEMPLATES = ["default", "code"] as const;
 
 /** Files that each template provides */
 const TEMPLATE_FILES: Record<string, string[]> = {
-  default: ["rlmx.yaml", "SYSTEM.md", "CRITERIA.md", "TOOLS.md"],
-  code: ["rlmx.yaml", "SYSTEM.md", "CRITERIA.md"],
+  default: ["mikro.yaml", "SYSTEM.md", "CRITERIA.md", "TOOLS.md"],
+  code: ["mikro.yaml", "SYSTEM.md", "CRITERIA.md"],
 };
 
 /**
- * Scaffold a .rlmx/ directory with template files.
+ * Scaffold a .mikro/ directory with template files.
  * Returns list of files that were created.
  */
 export async function scaffold(dir: string, template = "default"): Promise<string[]> {
@@ -34,15 +34,15 @@ export async function scaffold(dir: string, template = "default"): Promise<strin
     );
   }
 
-  const rlmxDir = join(dir, ".rlmx");
-  await mkdir(rlmxDir, { recursive: true });
+  const mikroDir = join(dir, ".mikro");
+  await mkdir(mikroDir, { recursive: true });
 
   const created: string[] = [];
   const templateDir = join(__dirname, "templates", template);
   const files = TEMPLATE_FILES[template];
 
   for (const file of files) {
-    const destPath = join(rlmxDir, file);
+    const destPath = join(mikroDir, file);
     if (await fileExists(destPath)) continue;
 
     const srcPath = join(templateDir, file);
@@ -53,7 +53,7 @@ export async function scaffold(dir: string, template = "default"): Promise<strin
 
   // Code template doesn't have its own TOOLS.md — copy from default
   if (template === "code") {
-    const toolsDest = join(rlmxDir, "TOOLS.md");
+    const toolsDest = join(mikroDir, "TOOLS.md");
     if (!(await fileExists(toolsDest))) {
       const defaultToolsSrc = join(__dirname, "templates", "default", "TOOLS.md");
       const content = await readFile(defaultToolsSrc, "utf-8");
@@ -66,8 +66,8 @@ export async function scaffold(dir: string, template = "default"): Promise<strin
 }
 
 /**
- * Check if config needs scaffolding (no .rlmx/rlmx.yaml).
+ * Check if config needs scaffolding (no .mikro/mikro.yaml).
  */
 export async function needsScaffold(dir: string): Promise<boolean> {
-  return !(await fileExists(join(dir, ".rlmx", "rlmx.yaml")));
+  return !(await fileExists(join(dir, ".mikro", "mikro.yaml")));
 }

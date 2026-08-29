@@ -42,10 +42,10 @@ describe("recursive RLM tracing helpers", () => {
       "--no-session",
     ]);
 
-    const env = buildChildEnv({ ...process.env, RLMX_RECURSION_DEPTH: "1" }, "parent-run", "child-corr");
-    assert.equal(env.RLMX_PARENT_RUN_ID, "parent-run");
-    assert.equal(env.RLMX_CHILD_CORRELATION_ID, "child-corr");
-    assert.equal(env.RLMX_RECURSION_DEPTH, "2");
+    const env = buildChildEnv({ ...process.env, MIKRO_RECURSION_DEPTH: "1" }, "parent-run", "child-corr");
+    assert.equal(env.MIKRO_PARENT_RUN_ID, "parent-run");
+    assert.equal(env.MIKRO_CHILD_CORRELATION_ID, "child-corr");
+    assert.equal(env.MIKRO_RECURSION_DEPTH, "2");
   });
 
   it("computes root/child/total usage splits", () => {
@@ -250,7 +250,7 @@ describe("classifyRlmChildResult", () => {
       model: "google/gemini-3.1-flash-lite-preview",
       usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0, llmCalls: 1 },
     });
-    const stderr = "rlmx [iter 0]: WARNING — LLM returned empty response. Possible context size limit.";
+    const stderr = "mikro [iter 0]: WARNING — LLM returned empty response. Possible context size limit.";
 
     const { result, isError, errorMessage } = classifyRlmChildResult(0, stdout, stderr);
     assert.equal(isError, true);
@@ -277,7 +277,7 @@ describe("classifyRlmChildResult", () => {
   it("keeps the existing non-zero-exit message shape", () => {
     const { result, isError, errorMessage } = classifyRlmChildResult(1, "", "boom");
     assert.equal(isError, true);
-    assert.equal(result.answer, "Error: child rlmx exited with code 1. boom");
+    assert.equal(result.answer, "Error: child mikro exited with code 1. boom");
     assert.equal(errorMessage, result.answer);
   });
 

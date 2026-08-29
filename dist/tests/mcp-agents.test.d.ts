@@ -1,5 +1,5 @@
 /**
- * Microagent discovery gate — `rlmx mcp`.
+ * Microagent discovery gate — `mikro mcp`.
  *
  * Deterministic, no-LLM proofs for the discovery contract that a live MCP
  * smoke cannot pin down precisely:

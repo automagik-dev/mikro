@@ -44,7 +44,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LegacyRlmxBackend } from "../src/mcp/backends/legacy.js";
+import { LegacyMikroBackend } from "../src/mcp/backends/legacy.js";
 import { PrimeBackend, } from "../src/mcp/backends/prime.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../src/rlm.js";
 import { parseAgentSpec } from "../src/sdk/agent-spec.js";
@@ -53,7 +53,7 @@ const SESSION_ID = "sess_contract0000000";
 /** Config whose fields the turn pipeline actually reads (model for the footer). */
 const CONFIG = {
     // The gate model (wish decision 7, as amended): deepseek/deepseek-v4-flash.
-    // The prime backend maps rlmx's deepseek addressing to prime's native
+    // The prime backend maps mikro's deepseek addressing to prime's native
     // deepseek provider verbatim; any other provider would be a loud failure,
     // which is not what this harness exists to compare.
     model: { provider: "deepseek", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" },
@@ -130,14 +130,14 @@ function bareProgress(scenario) {
  */
 function backendsFor(loop, primeEngine) {
     return [
-        { name: "legacy#1", backend: new LegacyRlmxBackend({ loop }) },
-        { name: "legacy#2", backend: new LegacyRlmxBackend({ loop }) },
+        { name: "legacy#1", backend: new LegacyMikroBackend({ loop }) },
+        { name: "legacy#2", backend: new LegacyMikroBackend({ loop }) },
         { name: "prime", backend: new PrimeBackend({ engine: primeEngine }) },
     ];
 }
 async function drive(backend, scenario) {
     const progress = [];
-    const outcome = await runTurn(backend, scenario.agent, CONFIG, scenario.label, scenario.query, SESSION_ID, scenario.contextPath, "/tmp/rlmx-backend-contract", (message) => progress.push(message), scenario.maxIterations);
+    const outcome = await runTurn(backend, scenario.agent, CONFIG, scenario.label, scenario.query, SESSION_ID, scenario.contextPath, "/tmp/mikro-backend-contract", (message) => progress.push(message), scenario.maxIterations);
     await drain(progress, scenario.expectedProgress.length);
     return { outcome, result: sessionResult(outcome.text, SESSION_ID, outcome.failed), progress };
 }
@@ -148,7 +148,7 @@ async function drain(progress, expected) {
         await new Promise((r) => setImmediate(r));
     }
 }
-const FOOTER_RE = /^rlmx · (?<label>[^·]+?) · (?<model>[^·]+?) · (?<iterations>\d+) iterations? · (?<input>[\d,]+) in \/ (?<output>[\d,]+) out · (?<cost>\$[\d.]+) · (?<seconds>\d+(?:\.\d+)?)s(?: · budget hit: (?<budget>[^·]+?))? · session (?<session>\S+)$/;
+const FOOTER_RE = /^mikro · (?<label>[^·]+?) · (?<model>[^·]+?) · (?<iterations>\d+) iterations? · (?<input>[\d,]+) in \/ (?<output>[\d,]+) out · (?<cost>\$[\d.]+) · (?<seconds>\d+(?:\.\d+)?)s(?: · budget hit: (?<budget>[^·]+?))? · session (?<session>\S+)$/;
 function parseFooter(footer) {
     const m = FOOTER_RE.exec(footer);
     const g = m?.groups;
@@ -258,7 +258,7 @@ function assertPrimeForwarding(calls, scenario, tag) {
         const { argv } = call;
         assert.ok(hasArgs(argv, ["--mode", "json", "-p"]), `${tag}: json mode, print-and-exit`);
         assert.ok(argv.includes("--no-session"), `${tag}: --no-session`);
-        assert.ok(hasArgs(argv, ["--cwd", "/tmp/rlmx-backend-contract"]), `${tag}: the server's cwd must reach prime's --cwd`);
+        assert.ok(hasArgs(argv, ["--cwd", "/tmp/mikro-backend-contract"]), `${tag}: the server's cwd must reach prime's --cwd`);
         for (const flag of ["-nc", "-ne", "-ns", "-np"]) {
             assert.ok(argv.includes(flag), `${tag}: host isolation flag ${flag}`);
         }
@@ -278,7 +278,7 @@ function assertPrimeForwarding(calls, scenario, tag) {
         assert.equal(call.limits.maxCost, null, `${tag}: null budget maxCost → null cost ceiling`);
         assert.equal(call.limits.maxTokens, null, `${tag}: null budget maxTokens → null token ceiling`);
         assert.equal(call.limits.maxTurns, scenario.maxIterations ?? null, `${tag}: the spec's iteration cap must reach the engine as the turn ceiling`);
-        assert.ok(Number.isFinite(call.limits.deadlineMs) && call.limits.deadlineMs > 0, `${tag}: an rlmx-owned wall-clock deadline is always set`);
+        assert.ok(Number.isFinite(call.limits.deadlineMs) && call.limits.deadlineMs > 0, `${tag}: an mikro-owned wall-clock deadline is always set`);
     }
 }
 const SECONDS_RE = / · \d+(?:\.\d+)?s ·/;
@@ -295,7 +295,7 @@ function assertRecordsEqual(a, b, tag) {
 const GENERIC_QUERY = "Where are the two call sites of rlmLoop?";
 const SCENARIOS = [
     {
-        name: "loop run with recursion (generic rlmx_query shape)",
+        name: "loop run with recursion (generic mikro_query shape)",
         agent: undefined,
         label: "query",
         query: GENERIC_QUERY,
@@ -382,7 +382,7 @@ const SCENARIOS = [
 function fakeAgent(backend) {
     return {
         name: "triage",
-        toolName: "rlmx_triage",
+        toolName: "mikro_triage",
         dir: "/tmp/triage",
         summary: "triage agent",
         spec: {
@@ -429,7 +429,7 @@ describe("backend contract — one harness, both backends", () => {
         // `@<abs path>` arg (a plain path would become a message and spawn a
         // garbage turn). The legacy engine, meanwhile, must receive the loaded
         // context itself — the same files, through its own seam.
-        const dir = await mkdtemp(join(tmpdir(), "rlmx-contract-ctx-"));
+        const dir = await mkdtemp(join(tmpdir(), "mikro-contract-ctx-"));
         try {
             await writeFile(join(dir, "note.md"), "Call sites: src/c.ts:42 and src/d.ts:7.\n");
             const scenario = {
@@ -457,37 +457,37 @@ describe("backend contract — one harness, both backends", () => {
 });
 describe("backend selection", () => {
     it("defaults an agent with no backend field to the legacy backend", () => {
-        assert.ok(selectBackend(fakeAgent(undefined)) instanceof LegacyRlmxBackend);
+        assert.ok(selectBackend(fakeAgent(undefined)) instanceof LegacyMikroBackend);
     });
-    it("honors an explicit backend: rlmx", () => {
-        assert.ok(selectBackend(fakeAgent("rlmx")) instanceof LegacyRlmxBackend);
+    it("honors an explicit backend: mikro", () => {
+        assert.ok(selectBackend(fakeAgent("mikro")) instanceof LegacyMikroBackend);
     });
-    it("runs rlmx_query — no spec, no backend field — on legacy, unconditionally", () => {
+    it("runs mikro_query — no spec, no backend field — on legacy, unconditionally", () => {
         // There is no selection path for the generic tool: it has no agent spec,
         // so there is no `backend` field to read.
-        assert.ok(selectBackend(undefined) instanceof LegacyRlmxBackend);
+        assert.ok(selectBackend(undefined) instanceof LegacyMikroBackend);
     });
     it("selects the prime backend for a spec naming backend: prime", async () => {
         // The prime backend's constructor pins the binary version, so the
         // selection test drives it with a version-only stub — the test suite
         // must not require the real prime-agent install.
-        const dir = await mkdtemp(join(tmpdir(), "rlmx-contract-prime-"));
+        const dir = await mkdtemp(join(tmpdir(), "mikro-contract-prime-"));
         try {
             const shim = join(dir, "prime-agent");
             await writeFile(shim, "#!/usr/bin/env node\n" +
                 "if (process.argv.includes('--version')) { process.stderr.write('0.7.2'); process.exit(0); }\n" +
                 "process.exit(1);\n", "utf-8");
             await chmod(shim, 0o755);
-            const previous = process.env.RLMX_PRIME_BINARY_PATH;
+            const previous = process.env.MIKRO_PRIME_BINARY_PATH;
             try {
-                process.env.RLMX_PRIME_BINARY_PATH = shim;
+                process.env.MIKRO_PRIME_BINARY_PATH = shim;
                 assert.ok(selectBackend(fakeAgent("prime")) instanceof PrimeBackend);
             }
             finally {
                 if (previous === undefined)
-                    delete process.env.RLMX_PRIME_BINARY_PATH;
+                    delete process.env.MIKRO_PRIME_BINARY_PATH;
                 else
-                    process.env.RLMX_PRIME_BINARY_PATH = previous;
+                    process.env.MIKRO_PRIME_BINARY_PATH = previous;
             }
         }
         finally {
@@ -510,13 +510,13 @@ describe("backend selection", () => {
 });
 describe("agent.yaml backend field (internal, undocumented)", () => {
     const DIR = "/tmp/fake-agent";
-    it("parses rlmx | prime and stays undefined when absent", () => {
-        assert.equal(parseAgentSpec("backend: rlmx\n", DIR).backend, "rlmx");
+    it("parses mikro | prime and stays undefined when absent", () => {
+        assert.equal(parseAgentSpec("backend: mikro\n", DIR).backend, "mikro");
         assert.equal(parseAgentSpec("backend: prime\n", DIR).backend, "prime");
         assert.equal(parseAgentSpec("shape: loop\n", DIR).backend, undefined);
     });
     it("rejects a typo loudly instead of silently running the legacy engine", () => {
-        assert.throws(() => parseAgentSpec("backend: prim\n", DIR), /agent\.yaml: backend must be one of rlmx \| prime, got "prim"/);
+        assert.throws(() => parseAgentSpec("backend: prim\n", DIR), /agent\.yaml: backend must be one of mikro \| prime, got "prim"/);
         assert.throws(() => parseAgentSpec("backend: xhigh\n", DIR), /backend must be one of/);
     });
     it("does not leak into the extras bag", () => {
@@ -548,7 +548,7 @@ describe("the cross-backend comparator can fail", () => {
             expectedProgress: ["query · iteration 1"],
             isError: false,
         };
-        const base = await drive(new LegacyRlmxBackend({ loop }), scenario);
+        const base = await drive(new LegacyMikroBackend({ loop }), scenario);
         const corruptions = [
             {
                 name: "answer",
@@ -600,7 +600,7 @@ function cloneObserved(o) {
     };
 }
 describe("legacy timeout override", () => {
-    it("forwards RLMX_MCP_RUN_TIMEOUT_MS to the engine, and leaves it alone when unset", async () => {
+    it("forwards MIKRO_MCP_RUN_TIMEOUT_MS to the engine, and leaves it alone when unset", async () => {
         const stub = {
             answer: "done",
             iterations: 1,
@@ -618,20 +618,20 @@ describe("legacy timeout override", () => {
             expectedProgress: ["query · iteration 1"],
             isError: false,
         };
-        const previous = process.env.RLMX_MCP_RUN_TIMEOUT_MS;
+        const previous = process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
         try {
-            delete process.env.RLMX_MCP_RUN_TIMEOUT_MS;
-            await drive(new LegacyRlmxBackend({ loop }), scenario);
+            delete process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
+            await drive(new LegacyMikroBackend({ loop }), scenario);
             assert.equal(calls[0]?.options.timeout, undefined, "no env → no timeout override");
-            process.env.RLMX_MCP_RUN_TIMEOUT_MS = "123456";
-            await drive(new LegacyRlmxBackend({ loop }), scenario);
+            process.env.MIKRO_MCP_RUN_TIMEOUT_MS = "123456";
+            await drive(new LegacyMikroBackend({ loop }), scenario);
             assert.equal(calls[1]?.options.timeout, 123456, "env override must reach the engine");
         }
         finally {
             if (previous === undefined)
-                delete process.env.RLMX_MCP_RUN_TIMEOUT_MS;
+                delete process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
             else
-                process.env.RLMX_MCP_RUN_TIMEOUT_MS = previous;
+                process.env.MIKRO_MCP_RUN_TIMEOUT_MS = previous;
         }
     });
 });

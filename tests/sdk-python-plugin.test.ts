@@ -230,10 +230,10 @@ describe(
 			const script = await writePyPlugin(
 				root,
 				"envread",
-				'import json, os, sys\njson.dump({"v": os.environ.get("RLMX_TEST_VAR", "<unset>")}, sys.stdout)\n',
+				'import json, os, sys\njson.dump({"v": os.environ.get("MIKRO_TEST_VAR", "<unset>")}, sys.stdout)\n',
 			);
 			const seen = await makePythonPluginHandler("envread", script, {
-				env: { RLMX_TEST_VAR: "hello", PATH: process.env.PATH ?? "" },
+				env: { MIKRO_TEST_VAR: "hello", PATH: process.env.PATH ?? "" },
 			})({}, ctx);
 			assert.deepEqual(seen, { v: "hello" });
 			const isolated = await makePythonPluginHandler("envread", script, {

@@ -49,7 +49,7 @@ Every time your tool fails or underperforms during development, log it.
 ### Format (JSONL)
 
 ```jsonl
-{"id":"gap-001","timestamp":"2026-03-26T14:30:00Z","group":1,"task":"understand cache.ts","native_tool":"Read","rlmx_query":"show contents of src/cache.ts","answer":"[summarized, not exact]","expected":"exact file contents","gap_type":"precision","severity":"high","status":"open"}
+{"id":"gap-001","timestamp":"2026-03-26T14:30:00Z","group":1,"task":"understand cache.ts","native_tool":"Read","mikro_query":"show contents of src/cache.ts","answer":"[summarized, not exact]","expected":"exact file contents","gap_type":"precision","severity":"high","status":"open"}
 ```
 
 ### Gap Types
@@ -180,10 +180,10 @@ Suppose you're building `codesearch`, a semantic code search CLI:
 5. **Hotfix**: Improve relevance scoring
 6. **Resume**: Fuzzy matching feature now benefits from better search
 
-## Real Examples from rlmx v0.3 Dogfood
+## Real Examples from mikro v0.3 Dogfood
 
 ### Gap: Context loading returns 0 items
-- **Query**: `rlmx cache --context ./src/ --estimate`
+- **Query**: `mikro cache --context ./src/ --estimate`
 - **Expected**: Token count for all .ts files in src/
 - **Actual**: "0 items, 0 tokens"
 - **Root cause**: Config extension filtering not applied in cache command
@@ -191,7 +191,7 @@ Suppose you're building `codesearch`, a semantic code search CLI:
 - **Fix**: Pass config context extensions through to loadContext in runCache
 
 ### Gap: No API key for LLM validation
-- **Query**: `rlmx "list files" --context ./src/ --tools standard`
+- **Query**: `mikro "list files" --context ./src/ --tools standard`
 - **Expected**: LLM-powered answer about the codebase
 - **Actual**: Empty answer, 0 tokens, 31 failed LLM calls
 - **Root cause**: No ANTHROPIC_API_KEY in environment; model switched to Gemini

@@ -6,7 +6,7 @@ body = """
 {%- if found | length > 0 %}
 ### {{ name }}
 {% for commit in found -%}
-- **{{ commit.scope | default(value="core") }}:** {{ commit.message | split(pat="\n") | first | trim }} ([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/automagik-dev/rlmx/commit/{{ commit.id }}))
+- **{{ commit.scope | default(value="core") }}:** {{ commit.message | split(pat="\n") | first | trim }} ([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/automagik-dev/mikro/commit/{{ commit.id }}))
 {% endfor %}
 {%- endif -%}
 {%- endmacro -%}

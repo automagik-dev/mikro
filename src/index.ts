@@ -1,5 +1,5 @@
 export { loadConfig, hasConfig, parseToolsMd } from "./config.js";
-export type { RlmxConfig, ToolDef, ModelConfig, BudgetConfig, ContextConfig, ToolsLevel, GeminiConfig, MediaResolutionConfig, OutputConfig } from "./config.js";
+export type { MikroConfig, ToolDef, ModelConfig, BudgetConfig, ContextConfig, ToolsLevel, GeminiConfig, MediaResolutionConfig, OutputConfig } from "./config.js";
 
 export {
   isGoogleProvider,
@@ -26,7 +26,7 @@ export type { PackageAvailability, PythonVersionInfo } from "./detect.js";
 export { BudgetTracker } from "./budget.js";
 export type { BudgetState } from "./budget.js";
 
-// ─── Observability (so SDK consumers can populate rlmx_sessions/events) ─
+// ─── Observability (so SDK consumers can populate mikro_sessions/events) ─
 export { PgStorage } from "./storage.js";
 export type { StorageConfig } from "./config.js";
 export { DEFAULT_STORAGE_CONFIG } from "./config.js";

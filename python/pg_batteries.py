@@ -1,5 +1,5 @@
 """
-pg_batteries.py — PostgreSQL storage query functions for rlmx.
+pg_batteries.py — PostgreSQL storage query functions for mikro.
 
 Provides pg_search(), pg_slice(), pg_time(), pg_count(), pg_query()
 that communicate with the Node.js PgStorage via the IPC bridge.

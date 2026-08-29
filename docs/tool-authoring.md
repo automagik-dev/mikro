@@ -1,6 +1,6 @@
 # Authoring tool plugins
 
-An rlmx agent is a folder with `agent.yaml`, optional `SYSTEM.md` /
+An mikro agent is a folder with `agent.yaml`, optional `SYSTEM.md` /
 `VALIDATE.md`, and a `tools/` subdirectory of per-tool plugin files.
 The SDK loads those files at runtime and exposes each as a named
 handler `runAgent()` can dispatch. Three flavours are supported.
@@ -34,7 +34,7 @@ Rules:
 Loading:
 
 ```ts
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const spec = await sdk.loadAgentSpec("/path/to/my-agent");
 const registry = sdk.createToolRegistry();
@@ -155,7 +155,7 @@ boundaries.
 ## Testing a plugin hermetically
 
 ```ts
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const registry = sdk.createToolRegistry();
 await sdk.loadPluginTools(spec, registry);
@@ -189,7 +189,7 @@ implementation of the pattern across three bridged agents, see
 
 Each folder carries the same `agent.yaml` + `SYSTEM.md` +
 `VALIDATE.md` shape this repo documents. The bridge driver
-(`src/agent/rlmx-bridge.ts` in brain) wraps each agent's existing
+(`src/agent/mikro-bridge.ts` in brain) wraps each agent's existing
 pi-agent loop as one outer iteration of `runAgent()`, preserving
 retry / validate / stop-reason semantics exactly while gaining
 SDK-level events, permissions, and session checkpointing.

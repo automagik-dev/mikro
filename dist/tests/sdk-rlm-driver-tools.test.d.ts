@@ -1,5 +1,5 @@
 /**
- * rlmx#78 — tool-dispatch driver tests.
+ * mikro#78 — tool-dispatch driver tests.
  *
  * Covers the multi-turn native-function-calling loop added to
  * rlmDriver when a `tools` config is present. The legacy one-shot

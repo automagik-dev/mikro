@@ -1,7 +1,7 @@
 schema_version: 1
 tools_api: 1
 
-# `loop`, never `single-step`: rlmx externalizes context into the Python REPL,
+# `loop`, never `single-step`: mikro externalizes context into the Python REPL,
 # so the model has to RUN code before it has seen a single line of the tree.
 # One pass means it answers from memory. The iteration cap is what keeps the
 # loop honest — it bounds the search instead of the shape doing it.

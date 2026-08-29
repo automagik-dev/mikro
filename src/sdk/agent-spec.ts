@@ -39,7 +39,7 @@ export interface AgentSpec {
 	readonly systemPath?: string;
 	/**
 	 * Reasoning effort for this agent's own model calls — the `agent.yaml`
-	 * equivalent of `rlmx --thinking`. `undefined` means "not declared".
+	 * equivalent of `mikro --thinking`. `undefined` means "not declared".
 	 *
 	 * Consumers apply it by writing `config.gemini.thinkingLevel`, the single
 	 * field `llmComplete` turns into pi-ai's `reasoning` option (see
@@ -63,12 +63,12 @@ export interface AgentSpec {
 	readonly budget?: AgentBudget;
 	/**
 	 * Internal, undocumented: which runtime backend executes this agent's
-	 * turns (wish rlmx-v2-prime-backend). Absent means `rlmx` — the legacy
+	 * turns (wish mikro-v2-prime-backend). Absent means `mikro` — the legacy
 	 * engine, which stays the default. Deliberately NOT part of the
 	 * documented `agent.yaml` schema: it is a gate/experiment selector that
 	 * may change without notice.
 	 */
-	readonly backend?: "rlmx" | "prime";
+	readonly backend?: "mikro" | "prime";
 	/** Preserved unrecognised keys — consumers layer their own schema. */
 	readonly extras: Readonly<Record<string, unknown>>;
 }
@@ -164,7 +164,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 	// arbitrary supported level instead of being rejected, so `thinking: hgih`
 	// would run at whatever effort the model happens to floor at and look like
 	// it worked. Fail loudly at parse time — which is discovery time for
-	// `rlmx mcp` — the way `shape` does.
+	// `mikro mcp` — the way `shape` does.
 	const thinkingRaw = asString(r.thinking);
 	if (thinkingRaw !== undefined && !isValidThinkingLevel(thinkingRaw)) {
 		throw new Error(
@@ -177,8 +177,8 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 	// silently fall back to the legacy engine and look like it worked, which
 	// is exactly the silent degradation a selection field must not allow.
 	const backendRaw = asString(r.backend);
-	if (backendRaw !== undefined && backendRaw !== "rlmx" && backendRaw !== "prime") {
-		throw new Error(`agent.yaml: backend must be one of rlmx | prime, got "${backendRaw}"`);
+	if (backendRaw !== undefined && backendRaw !== "mikro" && backendRaw !== "prime") {
+		throw new Error(`agent.yaml: backend must be one of mikro | prime, got "${backendRaw}"`);
 	}
 
 	// Build the "extras" bag by stripping the known keys from r.

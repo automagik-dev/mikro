@@ -17,9 +17,9 @@
  *
  *   2. **The gateway's aliases carry a redundant `khal/` prefix.** The live
  *      registry advertises `khal/deepseek-v4-flash`, and the request body must
- *      use that exact string — a bare `deepseek-v4-flash` is a 400. But rlmx
+ *      use that exact string — a bare `deepseek-v4-flash` is a 400. But mikro
  *      already namespaces by provider, so the ref users write is
- *      `khal/deepseek-v4-flash`, which every rlmx resolution path reduces to
+ *      `khal/deepseek-v4-flash`, which every mikro resolution path reduces to
  *      the bare `deepseek-v4-flash` (`splitModel` in src/mcp/agents.ts, then
  *      `normalizeProviderModelId` in src/llm.ts). The catalog therefore holds
  *      the bare id and {@link khalStreams} restores the wire alias on the way
@@ -57,7 +57,7 @@ export const KHAL_REJECTED_KEY_ERROR = "khal gateway rejected";
  */
 export const KHAL_EMPTY_CATALOG_ERROR = "khal catalog unavailable";
 /** Env vars carrying the gateway key, in precedence order. Key is env-only. */
-export const KHAL_API_KEY_ENV = ["KHAL_API_KEY", "RLMX_KHAL_API_KEY"];
+export const KHAL_API_KEY_ENV = ["KHAL_API_KEY", "MIKRO_KHAL_API_KEY"];
 function khalCredential() {
     for (const name of KHAL_API_KEY_ENV) {
         const value = process.env[name];
@@ -73,7 +73,7 @@ export function khalApiKey() {
 /**
  * Which env var actually supplied the key. Failure messages name *this* var
  * rather than the canonical one, so an operator running off the
- * `RLMX_KHAL_API_KEY` fallback is not sent to edit the wrong variable.
+ * `MIKRO_KHAL_API_KEY` fallback is not sent to edit the wrong variable.
  */
 export function khalApiKeySource() {
     return khalCredential()?.name;
@@ -110,7 +110,7 @@ function positiveInt(value) {
     return Math.floor(value);
 }
 /**
- * Strip the gateway's redundant `khal/` alias prefix. rlmx refs are already
+ * Strip the gateway's redundant `khal/` alias prefix. mikro refs are already
  * `<provider>/<model>`, so the alias `khal/deepseek-v4-flash` becomes the
  * catalog id `deepseek-v4-flash` and the ref stays `khal/deepseek-v4-flash`.
  * Aliases that are not so prefixed pass through untouched.
@@ -161,7 +161,7 @@ function toModel(draft) {
         id: draft.id,
         // Load-bearing, not cosmetic: `name` carries the gateway alias verbatim and
         // {@link khalStreams} reads it back to build the request. It also happens to
-        // be the right thing to display — it matches the `khal/<model>` rlmx ref.
+        // be the right thing to display — it matches the `khal/<model>` mikro ref.
         name: draft.wireId,
         api: "openai-completions",
         provider: KHAL_PROVIDER_ID,
@@ -254,7 +254,7 @@ function warnOnce(message) {
     if (warnedCatalog)
         return;
     warnedCatalog = true;
-    process.stderr.write(`rlmx: ${message}\n`);
+    process.stderr.write(`mikro: ${message}\n`);
 }
 /**
  * Why the last fetch came back empty (both endpoints, with their reasons).
@@ -364,7 +364,7 @@ export async function fetchKhalModels() {
  *
  * This has to be a transport wrapper rather than a field on the model: pi-ai
  * uses `model.id` both as the `getModel()` lookup key and as the request-body
- * `model`, and rlmx's own `normalizeProviderModelId` strips the `khal/` prefix
+ * `model`, and mikro's own `normalizeProviderModelId` strips the `khal/` prefix
  * off any ref before lookup — so a catalog keyed by the alias could never be
  * resolved from a `khal/<model>` ref.
  *

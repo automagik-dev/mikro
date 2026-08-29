@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { RlmxConfig, ToolDef } from "./config.js";
+import type { MikroConfig, ToolDef } from "./config.js";
 import type { LoadedContext, ContextItem } from "./context.js";
 import { buildCachedSystemPrompt, computeContentHash, buildSessionId, estimateTokens } from "./cache.js";
 import { REPL } from "./repl.js";
@@ -63,7 +63,7 @@ import type {
 // abort from a report has to test for them explicitly. These are the exact
 // discriminators, exported so every caller keys off one value instead of
 // re-deriving it from the prose: the CLI's exit code (`src/cli.ts`) and
-// `rlmx mcp`'s `isError` (`src/mcp/server.ts`) both read them. Sniffing the
+// `mikro mcp`'s `isError` (`src/mcp/server.ts`) both read them. Sniffing the
 // answer text cannot work — `answer` is the model's own final report, and one
 // that opens with `Error: …` is a normal outcome, not a failure (quoting the
 // failing line out of a log is what the `log-triage` recipe is for).
@@ -94,7 +94,7 @@ export interface RLMOptions {
    * events (AgentStart / Iteration* / ToolCall* / Recurse / child-completion
    * / Session*) stream live from the first emission. When omitted, rlmLoop
    * creates its own internal emitter. This is the contractual seam the
-   * headless subscriber and the rlmx-acp adapter both consume — the run
+   * headless subscriber and the mikro-acp adapter both consume — the run
    * closes the emitter when it finishes.
    */
   emitter?: EmitterAndStream;
@@ -112,7 +112,7 @@ const DEFAULT_OPTIONS: RLMOptions = {
  * Check if structured output mode is active.
  * Structured output is when output.schema is set and provider is Google (Gemini).
  */
-function isStructuredOutputMode(config: RlmxConfig): boolean {
+function isStructuredOutputMode(config: MikroConfig): boolean {
   return config.output.schema !== null && isGoogleProvider(config.model.provider);
 }
 
@@ -120,7 +120,7 @@ function isStructuredOutputMode(config: RlmxConfig): boolean {
  * Build the system prompt from config, tools, criteria, and context metadata.
  */
 function buildSystemPrompt(
-  config: RlmxConfig,
+  config: MikroConfig,
   _context: LoadedContext | null,
   storageRecordCount?: number
 ): string {
@@ -236,7 +236,7 @@ function prepareReplContext(
 export async function rlmLoop(
   query: string,
   context: LoadedContext | null,
-  config: RlmxConfig,
+  config: MikroConfig,
   options: Partial<RLMOptions> = {}
 ): Promise<RLMResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
@@ -266,9 +266,9 @@ export async function rlmLoop(
   // This run's ancestry identity. When this process was itself spawned as
   // a recursive child, `buildChildEnv` stamped its correlation id + parent
   // run id into the environment; at the true root neither is set.
-  const selfCorrelationId = process.env.RLMX_CHILD_CORRELATION_ID ?? (opts.logger?.runId ?? runId);
-  const selfParentRunId = process.env.RLMX_PARENT_RUN_ID;
-  const selfDepth = Number.parseInt(process.env.RLMX_RECURSION_DEPTH ?? "0", 10) || 0;
+  const selfCorrelationId = process.env.MIKRO_CHILD_CORRELATION_ID ?? (opts.logger?.runId ?? runId);
+  const selfParentRunId = process.env.MIKRO_PARENT_RUN_ID;
+  const selfDepth = Number.parseInt(process.env.MIKRO_RECURSION_DEPTH ?? "0", 10) || 0;
   const metrics = createMetricsRecorder();
   let currentIteration = 0;
   const recursionBridge = createRecursionBridge({
@@ -311,7 +311,7 @@ export async function rlmLoop(
   // construction) runs BEFORE the main `try` below. A throw here — most
   // plausibly `storage.start()` when Postgres is unreachable, or context
   // ingestion — must NOT escape without closing the emitter: a caller that
-  // supplied its own emitter (the headless + rlmx-acp seam) is already
+  // supplied its own emitter (the headless + mikro-acp seam) is already
   // subscribed and its `for await` would hang forever with no SessionClose.
   // So we guard the setup: on failure emit an Error, close the emitter, then
   // propagate as before. These vars are assigned inside the guard and used by
@@ -332,7 +332,7 @@ export async function rlmLoop(
       if (context) {
         storageRecordCount = await storage.ingest(context);
         if (opts.verbose) {
-          process.stderr.write(`rlmx: ingested ${storageRecordCount} records into pgserve storage\n`);
+          process.stderr.write(`mikro: ingested ${storageRecordCount} records into pgserve storage\n`);
         }
       }
 
@@ -415,7 +415,7 @@ export async function rlmLoop(
     const rtk = await detectRtk();
     if (config.rtk.enabled === "always" && !rtk.available) {
       throw new Error(
-        "rlmx config: rtk.enabled=always but rtk is not installed on PATH."
+        "mikro config: rtk.enabled=always but rtk is not installed on PATH."
       );
     }
     const rtkEnabled =
@@ -523,7 +523,7 @@ export async function rlmLoop(
       }
       await repl.stop();
       await langfuse.flush().catch((err) => {
-        if (opts.verbose) process.stderr.write(`rlmx: Langfuse flush failed: ${err instanceof Error ? err.message : String(err)}\n`);
+        if (opts.verbose) process.stderr.write(`mikro: Langfuse flush failed: ${err instanceof Error ? err.message : String(err)}\n`);
       });
       if (storage) await storage.stop();
       emitter.emit(makeEvent<EmitDoneEvent>("EmitDone", {
@@ -648,7 +648,7 @@ export async function rlmLoop(
           // Truly empty — no thinking, no text
           consecutiveEmpty++;
           process.stderr.write(
-            `rlmx [iter ${iteration}]: WARNING — LLM returned empty response. Possible context size limit.\n`
+            `mikro [iter ${iteration}]: WARNING — LLM returned empty response. Possible context size limit.\n`
           );
           if (consecutiveEmpty >= 3) {
             emptyAbort = true;
@@ -842,7 +842,7 @@ export async function rlmLoop(
     if (emptyAbort) {
       // Aborted due to consecutive empty responses (issue #14)
       process.stderr.write(
-        `rlmx: 3 consecutive empty LLM responses — aborting. Context may exceed API limits.\n`
+        `mikro: 3 consecutive empty LLM responses — aborting. Context may exceed API limits.\n`
       );
       clearTimeout(timeoutHandle);
       if (recorder) recorder.recordError(EMPTY_RESPONSES_BUDGET_HIT);
@@ -918,7 +918,7 @@ export async function rlmLoop(
  */
 async function forceFinalAnswer(
   messages: ChatMessage[],
-  config: RlmxConfig,
+  config: MikroConfig,
   usage: UsageStats,
   signal?: AbortSignal,
   cacheConfig?: CacheLLMConfig,
@@ -991,7 +991,7 @@ function buildUsageBreakdown(total: UsageStats, child: UsageStats): UsageBreakdo
 }
 
 /** Return remaining global budget to hand down to recursive child processes. */
-function buildRemainingChildBudget(config: RlmxConfig, budget: BudgetTracker): {
+function buildRemainingChildBudget(config: MikroConfig, budget: BudgetTracker): {
   maxCost: number | null;
   maxTokens: number | null;
 } {
@@ -1013,7 +1013,7 @@ function buildResult(
   answer: string,
   usage: UsageStats,
   iterations: number,
-  config: RlmxConfig,
+  config: MikroConfig,
   budgetHit?: string | null,
   geminiCounts?: GeminiCallCounts,
   geminiBatteriesUsed?: string[],

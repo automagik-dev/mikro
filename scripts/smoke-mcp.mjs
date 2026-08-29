@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
- * smoke-mcp.mjs — end-to-end gate for `rlmx mcp`.
+ * smoke-mcp.mjs — end-to-end gate for `mikro mcp`.
  *
  * Spawns the real server as a subprocess and drives it with the MCP SDK's own
  * client, so this proves genuine protocol compatibility rather than our own
  * framing of it. No mocks, no stubs.
  *
- * The workspace is a real one: a temp directory holding `.rlmx/rlmx.yaml` and
- * `.rlmx/agents/<name>/`, discovered through the ordinary precedence path.
- * `RLMX_AGENTS_DIR` is deliberately NOT set — the override would bypass the
+ * The workspace is a real one: a temp directory holding `.mikro/mikro.yaml` and
+ * `.mikro/agents/<name>/`, discovered through the ordinary precedence path.
+ * `MIKRO_AGENTS_DIR` is deliberately NOT set — the override would bypass the
  * very code path this gate exists to protect. The server is spawned from a
  * *different* cwd and pointed at the workspace with `--dir`, so a passing run
  * also proves the `--dir` contract: discovery, `loadConfig`, and the run all
  * agree on the directory the flag names, not on where the process started.
  *
  * Verifies:
- *   1. initialize handshake completes, serverInfo.name === "rlmx", and the
+ *   1. initialize handshake completes, serverInfo.name === "mikro", and the
  *      server declares tools.listChanged (a capability it genuinely emits).
- *   2. tools/list exposes rlmx_query plus one tool per discovered agent.yaml,
+ *   2. tools/list exposes mikro_query plus one tool per discovered agent.yaml,
  *      each with an MCP-legal name, a spawn-style description, the Agent-tool
  *      input shape (`prompt` + deprecated `query` + `session_id`, nothing
  *      required, no anyOf), and the `{answer, session_id}` output schema.
@@ -37,12 +37,12 @@
  *
  * The live legs run real rlmLoop turns against the local station/Lemonade
  * gateway — no cloud keys, same convention as scripts/smoke-acp.mjs. Override
- * with RLMX_SMOKE_MODEL=<provider>/<model>. `--no-live` skips them and gates
+ * with MIKRO_SMOKE_MODEL=<provider>/<model>. `--no-live` skips them and gates
  * the protocol surface alone (useful where no gateway is running).
  *
  *   node scripts/smoke-mcp.mjs
  *   node scripts/smoke-mcp.mjs --no-live
- *   RLMX_SMOKE_MODEL=station/Brain-35B node scripts/smoke-mcp.mjs
+ *   MIKRO_SMOKE_MODEL=station/Brain-35B node scripts/smoke-mcp.mjs
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -63,8 +63,8 @@ const MCP_TOOL_NAME = /^[a-zA-Z0-9_-]{1,128}$/;
 // A small local model keeps the live legs fast and keyless; the turn budget
 // bounds each run to a couple of real iterations. Brain-4B answers a smoke
 // prompt in ~1s and stays terse — larger station models are correct here too,
-// just slower (RLMX_SMOKE_MODEL overrides).
-const SMOKE_MODEL = process.env.RLMX_SMOKE_MODEL ?? "station/Brain-4B";
+// just slower (MIKRO_SMOKE_MODEL overrides).
+const SMOKE_MODEL = process.env.MIKRO_SMOKE_MODEL ?? "station/Brain-4B";
 const slash = SMOKE_MODEL.indexOf("/");
 const MODEL_PROVIDER = slash > 0 ? SMOKE_MODEL.slice(0, slash) : "station";
 const MODEL_ID = slash > 0 ? SMOKE_MODEL.slice(slash + 1) : SMOKE_MODEL;
@@ -101,13 +101,13 @@ const LIVE_OPTS = {
 };
 
 // ── Fixture: a real workspace root with one microagent ────────────────────
-const tmp = mkdtempSync(join(tmpdir(), "rlmx-mcp-smoke-"));
-// A scratch HOME so the global discovery root (~/.rlmx/agents) is empty and
+const tmp = mkdtempSync(join(tmpdir(), "mikro-mcp-smoke-"));
+// A scratch HOME so the global discovery root (~/.mikro/agents) is empty and
 // this machine's real agents cannot drift the assertions.
 const scratchHome = join(tmp, "home");
 mkdirSync(scratchHome, { recursive: true });
 
-const agentsRoot = join(tmp, ".rlmx", "agents");
+const agentsRoot = join(tmp, ".mikro", "agents");
 
 function writeAgent(name, body) {
   const dir = join(agentsRoot, name);
@@ -118,7 +118,7 @@ function writeAgent(name, body) {
 
 mkdirSync(agentsRoot, { recursive: true });
 writeFileSync(
-  join(tmp, ".rlmx", "rlmx.yaml"),
+  join(tmp, ".mikro", "mikro.yaml"),
   `model:\n  provider: ${MODEL_PROVIDER}\n  model: ${MODEL_ID}\nbudget:\n  max-tokens: 900\n`,
   "utf-8"
 );
@@ -138,7 +138,7 @@ try {
     command: process.execPath,
     args: [cli, "mcp", "--dir", tmp],
     cwd: tmpdir(),
-    env: { ...process.env, HOME: scratchHome, RLMX_AGENTS_DIR: "" },
+    env: { ...process.env, HOME: scratchHome, MIKRO_AGENTS_DIR: "" },
     stderr: "inherit",
   });
 
@@ -149,7 +149,7 @@ try {
   await client.connect(transport);
 
   const info = client.getServerVersion();
-  assert(info?.name === "rlmx", `expected serverInfo.name "rlmx", got ${info?.name}`);
+  assert(info?.name === "mikro", `expected serverInfo.name "mikro", got ${info?.name}`);
   log(`✓ handshake complete — server ${info.name} ${info.version}`);
 
   const caps = client.getServerCapabilities();
@@ -164,12 +164,12 @@ try {
   const names = tools.map((t) => t.name);
   log(`✓ tools/list returned ${tools.length}: ${names.join(", ")}`);
 
-  assert(names.includes("rlmx_query"), "rlmx_query must always be present");
+  assert(names.includes("mikro_query"), "mikro_query must always be present");
   assert(
-    names.includes("rlmx_smoke-echo"),
+    names.includes("mikro_smoke-echo"),
     `agent from --dir workspace missing from tools; got ${names.join(", ")}`
   );
-  log("✓ --dir workspace discovered (.rlmx/agents/smoke-echo → rlmx_smoke-echo)");
+  log("✓ --dir workspace discovered (.mikro/agents/smoke-echo → mikro_smoke-echo)");
 
   // ── schema shape: isomorphic to the host's native Agent tool ────────────
   for (const tool of tools) {
@@ -215,7 +215,7 @@ try {
   log("✓ every tool: legal name, spawn-style description, prompt/query/session_id optional, no anyOf, {answer, session_id} output schema");
 
   // ── argument validation: exactly one of prompt/query ────────────────────
-  const neither = await client.callTool({ name: "rlmx_query", arguments: {} });
+  const neither = await client.callTool({ name: "mikro_query", arguments: {} });
   assert(neither.isError === true, "a call with no prompt should return a tool error");
   assert(
     textOf(neither).includes("prompt"),
@@ -223,13 +223,13 @@ try {
   );
   log(`✓ neither prompt nor query rejected: "${textOf(neither).slice(0, 72)}…"`);
 
-  const blank = await client.callTool({ name: "rlmx_query", arguments: { query: "   " } });
+  const blank = await client.callTool({ name: "mikro_query", arguments: { query: "   " } });
   assert(blank.isError === true, "a blank query should return a tool error");
   assert(textOf(blank).includes("prompt"), "the blank-input error must name \"prompt\"");
   log("✓ blank input rejected as a tool error");
 
   const both = await client.callTool({
-    name: "rlmx_query",
+    name: "mikro_query",
     arguments: { prompt: "a", query: "b" },
   });
   assert(both.isError === true, "passing both prompt and query should return a tool error");
@@ -239,12 +239,12 @@ try {
   );
   log(`✓ prompt+query together rejected: "${textOf(both).slice(0, 72)}…"`);
 
-  const unknown = await client.callTool({ name: "rlmx_nope", arguments: { prompt: "hi" } });
+  const unknown = await client.callTool({ name: "mikro_nope", arguments: { prompt: "hi" } });
   assert(unknown.isError === true, "unknown tool should return a tool error");
   log("✓ unknown tool rejected as a tool error");
 
   const staleSession = await client.callTool({
-    name: "rlmx_query",
+    name: "mikro_query",
     arguments: { prompt: "hi", session_id: "sess_deadbeefdeadbeef" },
   });
   assert(staleSession.isError === true, "an unknown session_id should return a tool error");
@@ -272,7 +272,7 @@ try {
   await delay(100);
   const createdNames = afterCreate.tools.map((t) => t.name);
   assert(
-    createdNames.includes("rlmx_smoke-fresh"),
+    createdNames.includes("mikro_smoke-fresh"),
     `mid-session agent missing from tools/list; got ${createdNames.join(", ")}`
   );
   assert(
@@ -293,7 +293,7 @@ try {
 
     const first = await client.callTool(
       {
-        name: "rlmx_smoke-fresh",
+        name: "mikro_smoke-fresh",
         arguments: {
           prompt: `Remember the codeword ${CODEWORD}. Reply with exactly: noted ${CODEWORD} /no_think`,
         },
@@ -305,7 +305,7 @@ try {
     log("✓ the mid-session agent is callable without a reconnect");
 
     const firstText = textOf(first);
-    assert(firstText.includes("rlmx ·"), "result must carry the cost footer");
+    assert(firstText.includes("mikro ·"), "result must carry the cost footer");
     sessionId = first.structuredContent?.session_id;
     assert(
       typeof sessionId === "string" && sessionId.length > 0,
@@ -320,7 +320,7 @@ try {
       firstText.includes(`session ${sessionId}`),
       "the footer must echo session_id for hosts that render only text"
     );
-    log(`  ${firstText.slice(firstText.lastIndexOf("rlmx ·")).trim()}`);
+    log(`  ${firstText.slice(firstText.lastIndexOf("mikro ·")).trim()}`);
 
     // Resume and session-busy in one flight: the follow-up is still running
     // when the second call on the same session arrives. The follow-up goes in
@@ -328,7 +328,7 @@ try {
     // resume works and that the old param still runs.
     const resuming = client.callTool(
       {
-        name: "rlmx_smoke-fresh",
+        name: "mikro_smoke-fresh",
         arguments: {
           query: "What was the codeword? Reply with just the word. /no_think",
           session_id: sessionId,
@@ -339,7 +339,7 @@ try {
     );
     await delay(400);
     const busy = await client.callTool({
-      name: "rlmx_smoke-fresh",
+      name: "mikro_smoke-fresh",
       arguments: { prompt: "and again", session_id: sessionId },
     });
     assert(busy.isError === true, "a concurrent call on a live session must be rejected");
@@ -384,12 +384,12 @@ try {
     );
 
     const crossTool = await client.callTool({
-      name: "rlmx_query",
+      name: "mikro_query",
       arguments: { prompt: "whose session is this?", session_id: sessionId },
     });
     assert(crossTool.isError === true, "a session_id must not be usable on another tool");
     assert(
-      textOf(crossTool).includes("rlmx_smoke-fresh"),
+      textOf(crossTool).includes("mikro_smoke-fresh"),
       `the cross-tool error must name the owning tool; got: ${textOf(crossTool)}`
     );
     log(`✓ cross-tool session reuse rejected: "${textOf(crossTool).slice(0, 72)}…"`);
@@ -403,14 +403,14 @@ try {
   const afterDelete = await client.listTools();
   await delay(100);
   assert(
-    !afterDelete.tools.map((t) => t.name).includes("rlmx_smoke-fresh"),
+    !afterDelete.tools.map((t) => t.name).includes("mikro_smoke-fresh"),
     "a deleted agent must drop out of tools/list"
   );
   assert(listChanged === 2, `expected a second list_changed for the deletion, saw ${listChanged}`);
   log("✓ agent deleted mid-session drops out + one more list_changed");
 
   const orphan = await client.callTool({
-    name: "rlmx_smoke-fresh",
+    name: "mikro_smoke-fresh",
     arguments: { prompt: "still there?", ...(sessionId ? { session_id: sessionId } : {}) },
   });
   assert(orphan.isError === true, "a deleted agent must stop dispatching");
@@ -422,7 +422,7 @@ try {
 
   const healthy = await client.listTools();
   assert(
-    healthy.tools.map((t) => t.name).includes("rlmx_query"),
+    healthy.tools.map((t) => t.name).includes("mikro_query"),
     "server must survive every failed call"
   );
   log("✓ server still healthy after all failed calls");

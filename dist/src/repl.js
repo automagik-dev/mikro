@@ -39,7 +39,7 @@ const GEMINI_BATTERY_FUNCTION_NAMES = [
     "generate_image",
 ];
 function defaultReplTimeoutMs() {
-    const raw = process.env.RLMX_REPL_TIMEOUT_MS;
+    const raw = process.env.MIKRO_REPL_TIMEOUT_MS;
     if (!raw)
         return 30_000;
     const parsed = Number(raw);
@@ -79,7 +79,7 @@ export class REPL {
             env: {
                 ...process.env,
                 PYTHONUNBUFFERED: "1",
-                _RLMX_RTK_MODE: options.rtkEnabled ? "on" : "off",
+                _MIKRO_RTK_MODE: options.rtkEnabled ? "on" : "off",
             },
         });
         this.readline = createInterface({ input: this.process.stdout });

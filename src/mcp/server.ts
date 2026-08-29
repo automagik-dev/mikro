@@ -1,15 +1,15 @@
 /**
- * `rlmx mcp` — expose rlmx to MCP clients (Claude Code, Codex, …).
+ * `mikro mcp` — expose mikro to MCP clients (Claude Code, Codex, …).
  *
  * Why this exists: ACP's *client* is an editor and its *agent* is the AI tool,
- * so `rlmx acp` is an Agent — and Claude Code and Codex are Agents too. Two
+ * so `mikro acp` is an Agent — and Claude Code and Codex are Agents too. Two
  * agents cannot drive each other over ACP. MCP is the protocol those harnesses
- * *do* speak as clients, which makes it the native way to hand rlmx work.
+ * *do* speak as clients, which makes it the native way to hand mikro work.
  *
- *   claude mcp add rlmx -- rlmx mcp
+ *   claude mcp add mikro -- mikro mcp
  *
  * Every discovered `agent.yaml` microagent becomes its own tool, so the host
- * model sees `rlmx_test_writer` / `rlmx_triage` as distinct capabilities it
+ * model sees `mikro_test_writer` / `mikro_triage` as distinct capabilities it
  * can delegate to, rather than one opaque escape hatch it has to be told how
  * to use. Each tool runs on whatever model its `agent.yaml` names — a local
  * `station/<model>` or a cheap cloud model — which is how repeatable work gets
@@ -48,21 +48,21 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { applyModelRef, loadConfig, type RlmxConfig } from "../config.js";
+import { applyModelRef, loadConfig, type MikroConfig } from "../config.js";
 import { loadContext, type LoadedContext } from "../context.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../rlm.js";
 import { VERSION } from "../version.js";
 import { checkModelConfig } from "../llm.js";
 import { discoverAgents, splitModel, type Microagent } from "./agents.js";
 import type { MicroagentResult, RuntimeBackend } from "./backend.js";
-import { LegacyRlmxBackend } from "./backends/legacy.js";
+import { LegacyMikroBackend } from "./backends/legacy.js";
 import { PrimeBackend } from "./backends/prime.js";
 
 /**
  * Emits `notifications/progress` for a single tool call.
  *
  * This is load-bearing, not cosmetic: MCP clients time a request out (the
- * reference client defaults to 60s), and delegated rlmx work — a recursive run
+ * reference client defaults to 60s), and delegated mikro work — a recursive run
  * on a local model — routinely runs longer than that. Progress notifications
  * are what let a conforming client extend its deadline, and they surface the
  * delegated agent's iterations in the host transcript while it works.
@@ -73,7 +73,7 @@ export type ProgressSink = (message: string) => void;
 const HEARTBEAT_MS = 15_000;
 
 /** Tool always present, so the server is useful before any agent is authored. */
-const GENERIC_TOOL = "rlmx_query";
+const GENERIC_TOOL = "mikro_query";
 
 /**
  * Input surface, deliberately isomorphic to the host's native Agent tool:
@@ -90,7 +90,7 @@ const GENERIC_TOOL = "rlmx_query";
 const PROMPT_PROPERTY = {
   type: "string",
   description:
-    "The task for rlmx to perform. Write it as a complete, standalone " +
+    "The task for mikro to perform. Write it as a complete, standalone " +
     "instruction: the agent runs autonomously to completion and cannot ask " +
     "follow-up questions mid-run.",
 } as const;
@@ -190,19 +190,19 @@ function describeAgent(agent: Microagent): string {
     );
   }
   return (
-    `Launch the "${agent.name}" rlmx agent to handle a task autonomously. ` +
+    `Launch the "${agent.name}" mikro agent to handle a task autonomously. ` +
     `${agent.summary}${model} Give it a complete, standalone prompt — it runs ` +
     `to completion and returns a single final report, and cannot ask ` +
     `follow-up questions mid-run. The result carries the tokens and cost it ` +
     `used plus a session_id; pass that session_id back to this tool to ` +
     `continue the conversation. ` +
-    `(rlmx microagent "${agent.name}", shape=${agent.spec.shape}` +
+    `(mikro microagent "${agent.name}", shape=${agent.spec.shape}` +
     `${agent.spec.thinking ? `, thinking=${agent.spec.thinking}` : ""})`
   );
 }
 
 const GENERIC_DESCRIPTION =
-  "Launch a general-purpose rlmx agent to handle a self-contained task " +
+  "Launch a general-purpose mikro agent to handle a self-contained task " +
   "autonomously (RLM loop: Python REPL plus recursion). Use it to offload " +
   "work you would otherwise grind through inline — analysis over a large " +
   "body of files, repeated extraction, wide searches. Give it a complete, " +
@@ -505,7 +505,7 @@ export function agentMaxIterations(agent: Microagent): number | undefined {
  * Apply an agent's `agent.yaml` to the ambient config for one run.
  *
  * An agent's `model:` re-pins the sub-call model too. Spreading `config.model`
- * alone kept the *ambient* `rlmx.yaml`'s `sub-call-model` while replacing
+ * alone kept the *ambient* `mikro.yaml`'s `sub-call-model` while replacing
  * provider and model, so an agent declaring `khal/deepseek-v4-flash` under a
  * root whose yaml says `sub-call-model: gemini-3.1-flash-lite-preview`
  * composed `provider: khal` with a Google model id, and every bare
@@ -513,8 +513,8 @@ export function agentMaxIterations(agent: Microagent): number | undefined {
  * provider "khal"`. `agent.yaml` has no sub-call-model key of its own, so the
  * agent's model is the only sensible default.
  */
-export function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
-  const next: RlmxConfig = { ...config };
+export function applyAgent(config: MikroConfig, agent: Microagent): MikroConfig {
+  const next: MikroConfig = { ...config };
 
   // Unchanged from before: a model string with no provider prefix is ignored.
   if (agent.spec.model && splitModel(agent.spec.model)) {
@@ -534,7 +534,7 @@ export function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
   // `llmComplete` as `options.thinkingLevel` and which becomes pi-ai's
   // `reasoning`. Reusing that field rather than adding a per-agent channel is
   // the point: there is a single answer to "what effort is this call running
-  // at", and the agent's declaration simply outranks the ambient rlmx.yaml the
+  // at", and the agent's declaration simply outranks the ambient mikro.yaml the
   // same way the flag does.
   //
   // `next` is a shallow copy, so `next.gemini` still aliases the caller's
@@ -550,7 +550,7 @@ export function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig {
  * Validate each discovered agent's `model:` pin against the runtime it will
  * actually run on, so `tools/list` never advertises a tool whose first call
  * is guaranteed to fail with "Unknown model". Only the pi-ai backed backend
- * (`rlmx`, the default) resolves models this way; other backends own their
+ * (`mikro`, the default) resolves models this way; other backends own their
  * model universe and are left alone. The config is re-read per scan so a
  * newly declared provider heals a degraded agent on the next request.
  */
@@ -559,25 +559,25 @@ export async function validateAgentModels(
   agents: readonly Microagent[]
 ): Promise<Microagent[]> {
   if (agents.length === 0) return [];
-  let config: RlmxConfig;
+  let config: MikroConfig;
   try {
     config = await loadConfig(cwd);
   } catch (err: unknown) {
-    // A broken rlmx.yaml fails every run the same way; let the call surface it.
+    // A broken mikro.yaml fails every run the same way; let the call surface it.
     process.stderr.write(
-      `rlmx mcp: could not load config for model validation: ${err instanceof Error ? err.message : String(err)}\n`
+      `mikro mcp: could not load config for model validation: ${err instanceof Error ? err.message : String(err)}\n`
     );
     return [...agents];
   }
   return agents.map((agent) => {
-    if ((agent.spec.backend ?? "rlmx") !== "rlmx") return agent;
+    if ((agent.spec.backend ?? "mikro") !== "mikro") return agent;
     const problem = checkModelConfig(applyAgent(config, agent).model);
     if (!problem) return agent;
     return { ...agent, modelProblem: problem };
   });
 }
 
-function applyModelOverride(config: RlmxConfig, model: string): RlmxConfig {
+function applyModelOverride(config: MikroConfig, model: string): MikroConfig {
   if (!splitModel(model)) return config;
   return { ...config, model: applyModelRef(config.model, model) };
 }
@@ -590,7 +590,7 @@ function formatCost(cost: number): string {
 
 function formatFooter(
   label: string,
-  config: RlmxConfig,
+  config: MikroConfig,
   result: MicroagentResult,
   elapsedMs: number,
   sessionId: string
@@ -604,7 +604,7 @@ function formatFooter(
   // The session id is echoed in prose as well as structuredContent: a host
   // that renders only the text block still shows the model how to follow up.
   return (
-    `rlmx · ${label} · ${model} · ${result.iterations} iteration` +
+    `mikro · ${label} · ${model} · ${result.iterations} iteration` +
     `${result.iterations === 1 ? "" : "s"} · ${tokensIn} in / ${tokensOut} out ` +
     `· ${formatCost(result.usage.totalCost)} · ${seconds}s${budget}` +
     ` · session ${sessionId}`
@@ -700,7 +700,7 @@ export interface TurnOutcome {
  * "not wired", never to a truthy prototype property that is not a backend.
  */
 const BACKENDS: ReadonlyMap<string, RuntimeBackend> = new Map([
-  ["rlmx", new LegacyRlmxBackend()],
+  ["mikro", new LegacyMikroBackend()],
 ]);
 
 /**
@@ -716,19 +716,19 @@ let primeBackend: PrimeBackend | undefined;
 /**
  * The backend a turn runs on.
  *
- * `rlmx_query` (the generic tool) has no agent spec and therefore no
+ * `mikro_query` (the generic tool) has no agent spec and therefore no
  * `backend` field: it always runs on the legacy backend, unconditionally —
- * there is no selection path for it. Agents default to `rlmx` unless their
+ * there is no selection path for it. Agents default to `mikro` unless their
  * spec names another backend.
  */
 export function selectBackend(agent: Microagent | undefined): RuntimeBackend {
-  const selected = agent?.spec.backend ?? "rlmx";
+  const selected = agent?.spec.backend ?? "mikro";
   const backend =
     BACKENDS.get(selected) ??
     (selected === "prime" ? (primeBackend ??= new PrimeBackend()) : undefined);
   if (!backend) {
     throw new Error(
-      `agent "${agent?.name ?? "rlmx_query"}": backend "${selected}" is not wired into this build`
+      `agent "${agent?.name ?? "mikro_query"}": backend "${selected}" is not wired into this build`
     );
   }
   return backend;
@@ -749,7 +749,7 @@ export function selectBackend(agent: Microagent | undefined): RuntimeBackend {
 export async function runTurn(
   backend: RuntimeBackend,
   agent: Microagent | undefined,
-  config: RlmxConfig,
+  config: MikroConfig,
   label: string,
   query: string,
   sessionId: string,
@@ -850,19 +850,19 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
   // reported as a change.
   const initial = await registry.refresh();
   process.stderr.write(
-    `rlmx mcp: ${initial.agents.length} microagent${initial.agents.length === 1 ? "" : "s"} discovered` +
+    `mikro mcp: ${initial.agents.length} microagent${initial.agents.length === 1 ? "" : "s"} discovered` +
       `${initial.agents.length ? ` (${initial.agents.map((a) => a.name).join(", ")})` : ""}\n`
   );
   for (const agent of initial.agents) {
     if (agent.modelProblem) {
       process.stderr.write(
-        `rlmx mcp: agent "${agent.name}" is UNAVAILABLE — ${agent.modelProblem}\n`
+        `mikro mcp: agent "${agent.name}" is UNAVAILABLE — ${agent.modelProblem}\n`
       );
     }
   }
 
   const server = new Server(
-    { name: "rlmx", version: VERSION },
+    { name: "mikro", version: VERSION },
     // listChanged is declared because it is genuinely emitted — a capability
     // claimed and never honored is worse than none at all.
     { capabilities: { tools: { listChanged: true } } }
@@ -927,7 +927,7 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
     if (agent?.modelProblem) {
       // Refuse up front: the run would die on its first model call with the
       // same message, after paying for context loading and a REPL spawn.
-      return textResult(`rlmx ${name} cannot run: ${agent.modelProblem}`, true);
+      return textResult(`mikro ${name} cannot run: ${agent.modelProblem}`, true);
     }
 
     const promptArg = readArg(args?.prompt);
@@ -973,7 +973,7 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
       if (existing.busy) {
         return textResult(
           `${name}: session ${requestedSession} is busy — a call on it is already ` +
-            `in flight. rlmx serializes calls per session; retry once it returns.`,
+            `in flight. mikro serializes calls per session; retry once it returns.`,
           true
         );
       }
@@ -1027,7 +1027,7 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
       // A failing run must fail only this tool call, never the server process.
       // The session survives so the caller can retry on it.
       const message = err instanceof Error ? err.message : String(err);
-      return sessionResult(`rlmx ${name} failed: ${message}`, session.id, true);
+      return sessionResult(`mikro ${name} failed: ${message}`, session.id, true);
     } finally {
       session.busy = false;
     }

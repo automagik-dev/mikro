@@ -11,24 +11,24 @@ examples/agents/codebase-qa/
 ```
 
 > Not to be confused with [`examples/codebase-qa/`](../../codebase-qa/), which
-> is an `rlmx.yaml` **config** example (a whole-project setup for `rlmx
+> is an `mikro.yaml` **config** example (a whole-project setup for `mikro
 > "query" --context ./src/`). This directory is an `agent.yaml`
 > **microagent** — a different artifact with a different install path.
 
 ## Install
 
 ```bash
-cp -r examples/agents/codebase-qa ~/.rlmx/agents/codebase-qa          # global
-cp -r examples/agents/codebase-qa <project>/.rlmx/agents/codebase-qa  # project
+cp -r examples/agents/codebase-qa ~/.mikro/agents/codebase-qa          # global
+cp -r examples/agents/codebase-qa <project>/.mikro/agents/codebase-qa  # project
 ```
 
-A host running `rlmx mcp` then sees an `rlmx_codebase-qa` tool.
+A host running `mikro mcp` then sees an `mikro_codebase-qa` tool.
 
 ## Use
 
-An `agent.yaml` recipe has no CLI entry point — `rlmx "query"` runs the ambient
-config, not an agent (`rlmx --help`). A microagent is reached **as an MCP
-tool**: run `rlmx mcp` from your host and call `rlmx_codebase-qa` with the
+An `agent.yaml` recipe has no CLI entry point — `mikro "query"` runs the ambient
+config, not an agent (`mikro --help`). A microagent is reached **as an MCP
+tool**: run `mikro mcp` from your host and call `mikro_codebase-qa` with the
 question as `prompt` and the directory as `context` (every agent tool takes
 both — `src/mcp/server.ts`, `CONTEXT_PROPERTY`; `context` is resolved relative
 to the server's working directory). In-process, the SDK path is
@@ -81,8 +81,8 @@ directory is not it.
 
 ## Provenance
 
-Copied verbatim from this host's `~/.rlmx/agents/codebase-qa/` on 2026-07-27
-under wish `rlmx-microagent-plugin` (B5). Both files are byte-identical to the
+Copied verbatim from this host's `~/.mikro/agents/codebase-qa/` on 2026-07-27
+under wish `mikro-microagent-plugin` (B5). Both files are byte-identical to the
 source:
 
 | file | sha256 |
@@ -92,17 +92,17 @@ source:
 
 The host copy dates from 2026-07-25.
 
-## Removing the host copy — a user step, not something rlmx did
+## Removing the host copy — a user step, not something mikro did
 
 The archival that put this file here **did not delete anything under your home
-directory**, and nothing in rlmx will. Given the section above, think twice:
-removing `~/.rlmx/agents/codebase-qa/` costs you a working tool on the strength
+directory**, and nothing in mikro will. Given the section above, think twice:
+removing `~/.mikro/agents/codebase-qa/` costs you a working tool on the strength
 of a replacement claim that no run in this repository supports. If you still
 want it gone, that is your command:
 
 ```bash
-rm -rf ~/.rlmx/agents/codebase-qa
+rm -rf ~/.mikro/agents/codebase-qa
 ```
 
-Removing the host copy removes `rlmx_codebase-qa` from every host session until
+Removing the host copy removes `mikro_codebase-qa` from every host session until
 you install it again from here.

@@ -1,15 +1,15 @@
 /**
- * `rlmx mcp` — expose rlmx to MCP clients (Claude Code, Codex, …).
+ * `mikro mcp` — expose mikro to MCP clients (Claude Code, Codex, …).
  *
  * Why this exists: ACP's *client* is an editor and its *agent* is the AI tool,
- * so `rlmx acp` is an Agent — and Claude Code and Codex are Agents too. Two
+ * so `mikro acp` is an Agent — and Claude Code and Codex are Agents too. Two
  * agents cannot drive each other over ACP. MCP is the protocol those harnesses
- * *do* speak as clients, which makes it the native way to hand rlmx work.
+ * *do* speak as clients, which makes it the native way to hand mikro work.
  *
- *   claude mcp add rlmx -- rlmx mcp
+ *   claude mcp add mikro -- mikro mcp
  *
  * Every discovered `agent.yaml` microagent becomes its own tool, so the host
- * model sees `rlmx_test_writer` / `rlmx_triage` as distinct capabilities it
+ * model sees `mikro_test_writer` / `mikro_triage` as distinct capabilities it
  * can delegate to, rather than one opaque escape hatch it has to be told how
  * to use. Each tool runs on whatever model its `agent.yaml` names — a local
  * `station/<model>` or a cheap cloud model — which is how repeatable work gets
@@ -38,14 +38,14 @@
  * the same contract `src/acp/agent.ts` follows.
  */
 import { type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
-import { type RlmxConfig } from "../config.js";
+import { type MikroConfig } from "../config.js";
 import { type Microagent } from "./agents.js";
 import type { MicroagentResult, RuntimeBackend } from "./backend.js";
 /**
  * Emits `notifications/progress` for a single tool call.
  *
  * This is load-bearing, not cosmetic: MCP clients time a request out (the
- * reference client defaults to 60s), and delegated rlmx work — a recursive run
+ * reference client defaults to 60s), and delegated mikro work — a recursive run
  * on a local model — routinely runs longer than that. Progress notifications
  * are what let a conforming client extend its deadline, and they surface the
  * delegated agent's iterations in the host transcript while it works.
@@ -181,7 +181,7 @@ export declare function agentMaxIterations(agent: Microagent): number | undefine
  * Apply an agent's `agent.yaml` to the ambient config for one run.
  *
  * An agent's `model:` re-pins the sub-call model too. Spreading `config.model`
- * alone kept the *ambient* `rlmx.yaml`'s `sub-call-model` while replacing
+ * alone kept the *ambient* `mikro.yaml`'s `sub-call-model` while replacing
  * provider and model, so an agent declaring `khal/deepseek-v4-flash` under a
  * root whose yaml says `sub-call-model: gemini-3.1-flash-lite-preview`
  * composed `provider: khal` with a Google model id, and every bare
@@ -189,12 +189,12 @@ export declare function agentMaxIterations(agent: Microagent): number | undefine
  * provider "khal"`. `agent.yaml` has no sub-call-model key of its own, so the
  * agent's model is the only sensible default.
  */
-export declare function applyAgent(config: RlmxConfig, agent: Microagent): RlmxConfig;
+export declare function applyAgent(config: MikroConfig, agent: Microagent): MikroConfig;
 /**
  * Validate each discovered agent's `model:` pin against the runtime it will
  * actually run on, so `tools/list` never advertises a tool whose first call
  * is guaranteed to fail with "Unknown model". Only the pi-ai backed backend
- * (`rlmx`, the default) resolves models this way; other backends own their
+ * (`mikro`, the default) resolves models this way; other backends own their
  * model universe and are left alone. The config is re-read per scan so a
  * newly declared provider heals a degraded agent on the next request.
  */
@@ -259,9 +259,9 @@ export interface TurnOutcome {
 /**
  * The backend a turn runs on.
  *
- * `rlmx_query` (the generic tool) has no agent spec and therefore no
+ * `mikro_query` (the generic tool) has no agent spec and therefore no
  * `backend` field: it always runs on the legacy backend, unconditionally —
- * there is no selection path for it. Agents default to `rlmx` unless their
+ * there is no selection path for it. Agents default to `mikro` unless their
  * spec names another backend.
  */
 export declare function selectBackend(agent: Microagent | undefined): RuntimeBackend;
@@ -277,7 +277,7 @@ export declare function selectBackend(agent: Microagent | undefined): RuntimeBac
  * and presentation stay server concerns while event translation stays the
  * backend's.
  */
-export declare function runTurn(backend: RuntimeBackend, agent: Microagent | undefined, config: RlmxConfig, label: string, query: string, sessionId: string, contextPath: string | undefined, cwd: string, progress?: ProgressSink, maxIterations?: number): Promise<TurnOutcome>;
+export declare function runTurn(backend: RuntimeBackend, agent: Microagent | undefined, config: MikroConfig, label: string, query: string, sessionId: string, contextPath: string | undefined, cwd: string, progress?: ProgressSink, maxIterations?: number): Promise<TurnOutcome>;
 /**
  * Run the MCP server on stdio until the client disconnects.
  *

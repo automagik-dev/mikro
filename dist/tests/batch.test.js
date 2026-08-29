@@ -17,7 +17,7 @@ describe("runBatch", () => {
 describe("batch question file parsing", () => {
     let dir;
     it("reads questions from a file (one per line)", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
         const questionsPath = join(dir, "questions.txt");
         await writeFile(questionsPath, "What is TypeScript?\nHow does caching work?\nExplain recursion.\n");
         const content = await readFile(questionsPath, "utf-8");
@@ -32,7 +32,7 @@ describe("batch question file parsing", () => {
         await rm(dir, { recursive: true });
     });
     it("skips empty lines", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
         const questionsPath = join(dir, "questions.txt");
         await writeFile(questionsPath, "First question\n\n\nSecond question\n\n");
         const content = await readFile(questionsPath, "utf-8");
@@ -46,7 +46,7 @@ describe("batch question file parsing", () => {
         await rm(dir, { recursive: true });
     });
     it("skips comment lines starting with #", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
         const questionsPath = join(dir, "questions.txt");
         await writeFile(questionsPath, "# This is a comment\nActual question\n# Another comment\nSecond question\n");
         const content = await readFile(questionsPath, "utf-8");
@@ -60,7 +60,7 @@ describe("batch question file parsing", () => {
         await rm(dir, { recursive: true });
     });
     it("trims whitespace from questions", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
         const questionsPath = join(dir, "questions.txt");
         await writeFile(questionsPath, "  padded question  \n\tanother one\t\n");
         const content = await readFile(questionsPath, "utf-8");
@@ -74,7 +74,7 @@ describe("batch question file parsing", () => {
         await rm(dir, { recursive: true });
     });
     it("handles file with only comments and empty lines", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
         const questionsPath = join(dir, "questions.txt");
         await writeFile(questionsPath, "# comment\n\n# another comment\n\n");
         const content = await readFile(questionsPath, "utf-8");
@@ -86,7 +86,7 @@ describe("batch question file parsing", () => {
         await rm(dir, { recursive: true });
     });
     it("handles single question file", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
         const questionsPath = join(dir, "questions.txt");
         await writeFile(questionsPath, "Just one question\n");
         const content = await readFile(questionsPath, "utf-8");
@@ -99,7 +99,7 @@ describe("batch question file parsing", () => {
         await rm(dir, { recursive: true });
     });
     it("preserves question content with special characters", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-batch-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-batch-"));
         const questionsPath = join(dir, "questions.txt");
         await writeFile(questionsPath, 'What is O(n^2)?\nHow does `async/await` work?\nExplain "prompt caching".\n');
         const content = await readFile(questionsPath, "utf-8");

@@ -1,5 +1,5 @@
 /**
- * Deterministic translation gate — wish rlmx-acp-adapter, Group 2.
+ * Deterministic translation gate — wish mikro-acp-adapter, Group 2.
  *
  * Feeds a synthetic AgentEvent sequence (root iterations + 2 Recurse spawns
  * incl. sibling branches + bridged child completions + a repl tool call +
@@ -325,10 +325,10 @@ describe("acp translation — payload hygiene (truncation + redaction)", () => {
         const text = contentText(after);
         // Bounded far below the original 200K, with a self-describing marker.
         assert.ok(text.length < 20_000, `content bounded (was ${text.length})`);
-        assert.match(text, /rlmx: truncated \d+ of 200000 chars/);
+        assert.match(text, /mikro: truncated \d+ of 200000 chars/);
         // rawOutput becomes a truncation marker rather than the whole 200KB blob.
         const raw = after.rawOutput;
-        assert.equal(raw["rlmx/truncated"], true);
+        assert.equal(raw["mikro/truncated"], true);
         assert.equal(typeof raw.originalChars, "number");
     });
     it("redacts a hostile keyword-repeat payload in bounded time (ReDoS guard)", () => {
@@ -369,7 +369,7 @@ describe("acp translation — payload hygiene (truncation + redaction)", () => {
         assert.ok(after);
         assert.ok(contentText(after).length < 20_000, "content capped");
         const raw = after.rawOutput;
-        assert.equal(raw["rlmx/truncated"], true);
+        assert.equal(raw["mikro/truncated"], true);
     });
     it("redacts a secret in the retained head of an oversized payload (no leak past truncation)", () => {
         // A secret living just before the width cap, inside an oversized payload,

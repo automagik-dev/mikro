@@ -77,7 +77,7 @@ import {
 /**
  * Outcome of a tool_call dispatch, fed back to the driver via
  * `AsyncGenerator.next(outcome)` so multi-turn drivers (rlmDriver
- * in tool-dispatch mode, rlmx#78) can fold the result into the
+ * in tool-dispatch mode, mikro#78) can fold the result into the
  * next LLM call as conversation history.
  */
 export interface ToolCallOutcome {
@@ -151,7 +151,7 @@ export interface IterationRequest {
  *
  * Drivers that don't care about tool outcomes (e.g. the legacy
  * one-shot rlmDriver path) can just `yield step` and ignore the
- * return value — behavior is unchanged from the pre-rlmx#78 contract.
+ * return value — behavior is unchanged from the pre-mikro#78 contract.
  */
 export type IterationDriver = (
 	req: IterationRequest,
@@ -374,7 +374,7 @@ async function drive(
 				if (!step) continue;
 				// Re-check abort AFTER the driver yielded — the driver
 				// itself may have triggered the abort in its yield
-				// prelude. Matches the pre-rlmx#78 `for await` semantics
+				// prelude. Matches the pre-mikro#78 `for await` semantics
 				// which checked before processing each step.
 				if (ac.signal.aborted) break iterationLoop;
 

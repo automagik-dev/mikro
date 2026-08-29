@@ -8,7 +8,7 @@
  * - FINAL/FINAL_VAR termination detection
  * - Recursive sub-calls via llm_query/rlm_query
  */
-import type { RlmxConfig } from "./config.js";
+import type { MikroConfig } from "./config.js";
 import type { LoadedContext } from "./context.js";
 import { type RLMResult } from "./output.js";
 import type { Logger } from "./logger.js";
@@ -33,7 +33,7 @@ export interface RLMOptions {
      * events (AgentStart / Iteration* / ToolCall* / Recurse / child-completion
      * / Session*) stream live from the first emission. When omitted, rlmLoop
      * creates its own internal emitter. This is the contractual seam the
-     * headless subscriber and the rlmx-acp adapter both consume — the run
+     * headless subscriber and the mikro-acp adapter both consume — the run
      * closes the emitter when it finishes.
      */
     emitter?: EmitterAndStream;
@@ -41,5 +41,5 @@ export interface RLMOptions {
 /**
  * Main RLM loop entry point.
  */
-export declare function rlmLoop(query: string, context: LoadedContext | null, config: RlmxConfig, options?: Partial<RLMOptions>): Promise<RLMResult>;
+export declare function rlmLoop(query: string, context: LoadedContext | null, config: MikroConfig, options?: Partial<RLMOptions>): Promise<RLMResult>;
 //# sourceMappingURL=rlm.d.ts.map

@@ -1,5 +1,5 @@
 /**
- * Runtime backend seam — Wish rlmx-v2-prime-backend Group 1.
+ * Runtime backend seam — Wish mikro-v2-prime-backend Group 1.
  *
  * The MCP server used to call `rlmLoop` directly; it now calls a backend.
  * That inversion is the whole point of this module: the server owns the
@@ -14,7 +14,7 @@
  * `maxIterations`/`timeout` → `budgetHit` behavior; a future backend owns a
  * deadline/kill of its own.
  */
-import type { RlmxConfig } from "../config.js";
+import type { MikroConfig } from "../config.js";
 import type { LoadedContext } from "../context.js";
 import type { Microagent } from "./agents.js";
 /** Everything one backend needs to execute one delegated turn. */
@@ -24,7 +24,7 @@ export interface BackendRequest {
     /** Context loaded from the caller's `context:` argument, if any. */
     readonly context: LoadedContext | null;
     /** Config resolved for this run (`applyAgent` / model override applied). */
-    readonly config: RlmxConfig;
+    readonly config: MikroConfig;
     /** Iteration cap implied by the agent's spec (`shape`/`budget`), if any. */
     readonly maxIterations?: number;
     /**
@@ -65,7 +65,7 @@ export interface MicroagentResult {
  * One execution backend: runs a single delegated turn to completion.
  *
  * `agent` is the resolved microagent — `undefined` for the generic
- * `rlmx_query` tool, which has no agent spec. `request` carries the resolved
+ * `mikro_query` tool, which has no agent spec. `request` carries the resolved
  * config and query; `emit` reports progress messages (without the tool label —
  * the server prefixes it) while the run executes. A throw is a *failed run*
  * the server reports as a tool error; the two designed non-throwing aborts
