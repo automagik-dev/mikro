@@ -189,9 +189,10 @@ jobs:
               echo "superseded=true" >> "$GITHUB_OUTPUT"
               echo "${GITHUB_REF_NAME} advanced to ${TIP:0:7} while this run was bumping ${GITHUB_SHA:0:7} — superseded; the queued run releases."
               exit 0
+            else
+              echo "::error::version bump push failed and remote ${TIP:0:7} does not supersede ${GITHUB_SHA:0:7}"
+              exit 1
             fi
-            echo "::error::version bump push failed and remote ${TIP:0:7} does not supersede ${GITHUB_SHA:0:7}"
-            exit 1
           fi
 
           echo "superseded=false" >> "$GITHUB_OUTPUT"
