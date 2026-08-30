@@ -3,7 +3,7 @@ name: Release Metadata
 # Every merge into main produces a GitHub release that matches main.
 #
 # main is the CLI/application release boundary consumed by scripts/install.sh
-# and `rlmx update`. This workflow keeps release metadata in lockstep with it:
+# and `mikro update`. This workflow keeps release metadata in lockstep with it:
 #   - If main's package.json version is already released, bump the calendar
 #     version (scripts/version.mjs), commit that bump to main, tag the bump
 #     commit.

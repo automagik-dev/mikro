@@ -1,10 +1,10 @@
 name: SDK Package
 
-# Single source of SDK-only npm publishing for @automagik/rlmx.
+# Single source of SDK-only npm publishing for @automagik/mikro.
 #
 # npm is NOT the canonical CLI/application release channel. End-user CLI
 # installs and updates are git-managed through scripts/install.sh and
-# `rlmx update`, with public `main` as the release boundary after a reviewed
+# `mikro update`, with public `main` as the release boundary after a reviewed
 # topic-branch -> main merge.
 #
 #   Trigger                Context   npm tag   Bump?
@@ -20,7 +20,7 @@ name: SDK Package
 #
 # The `next` dist-tag is legacy: it was fed by a `dev` branch that no longer
 # exists, so it trails `latest`. Repoint or retire it manually:
-#   npm dist-tag add @automagik/rlmx@<version> next
+#   npm dist-tag add @automagik/mikro@<version> next
 #
 # Auth: npm OIDC Trusted Publishing. The package's only Trusted
 # Publisher entry on npmjs.com is THIS file (version.yml). All other
@@ -32,7 +32,7 @@ name: SDK Package
 # imply a CLI release". While this fired automatically on every main push, the
 # two were coupled in practice — a CLI change attempted an SDK publish, and a
 # publish outage looked like a release failure. The CLI release boundary is the
-# git merge itself, consumed by scripts/install.sh and `rlmx update`; npm is a
+# git merge itself, consumed by scripts/install.sh and `mikro update`; npm is a
 # separate, SDK-only artifact that ships when the SDK surface actually changes.
 #
 # To publish the SDK: run this workflow from the Actions tab (or
@@ -173,5 +173,5 @@ jobs:
           TAG="${{ steps.context.outputs.npm_tag }}"
           if ! npm publish --access public --tag "$TAG" 2>&1; then
             echo "Publish failed (likely already published) — adding dist-tag $TAG..."
-            npm dist-tag add "@automagik/rlmx@${VERSION}" "$TAG"
+            npm dist-tag add "@automagik/mikro@${VERSION}" "$TAG"
           fi
