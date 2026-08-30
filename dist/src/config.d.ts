@@ -167,7 +167,7 @@ export declare function loadGlobalProviders(): Promise<CustomProviderConfig[]>;
 export declare function loadConfig(dir: string): Promise<MikroConfig>;
 /**
  * Check if any config exists in a directory.
- * Only checks .mikro/mikro.yaml.
+ * Checks .mikro/mikro.yaml, then the legacy .rlmx/rlmx.yaml.
  */
 export declare function hasConfig(dir: string): Promise<boolean>;
 //# sourceMappingURL=config.d.ts.map

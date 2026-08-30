@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
@@ -60,6 +61,10 @@ Usage:
   mikro stats [options]           Query run history and cost breakdowns
   mikro doctor                    Health check: providers, RTK, config
   mikro update [--force]          Fetch latest main commit for a git install
+  mikro migrate [--apply]         Find legacy rlmx artifacts (config dirs, .mcp.json,
+                                  Claude plugin registration) and rewrite them for mikro.
+                                  Dry-run unless --apply; --root <dir> adds scan roots,
+                                  --exclude <substr> skips paths (backups), --depth <n>
   mikro acp                       Run as a stdio ACP agent (EXPERIMENTAL)
   mikro mcp [--dir <path>]        Run as a stdio MCP server (agents as tools)
 
@@ -182,9 +187,10 @@ function parseCliArgs(args) {
                         : positionals[0] === "stats" ? "stats"
                             : positionals[0] === "doctor" ? "doctor"
                                 : positionals[0] === "update" ? "update"
-                                    : positionals[0] === "acp" ? "acp"
-                                        : positionals[0] === "mcp" ? "mcp"
-                                            : "query";
+                                    : positionals[0] === "migrate" || positionals[0] === "upgrade" ? "migrate"
+                                        : positionals[0] === "acp" ? "acp"
+                                            : positionals[0] === "mcp" ? "mcp"
+                                                : "query";
     const query = command === "query" ? positionals[0] ?? null : null;
     const batchFile = command === "batch" ? positionals[1] ?? null : null;
     const dir = values.dir || process.cwd();
@@ -843,6 +849,50 @@ function runGit(root, args) {
 function runCommand(root, command, args) {
     execFileSync(command, args, { cwd: root, stdio: "inherit" });
 }
+/**
+ * `mikro migrate [--apply] [--root <dir>]... [--depth <n>] [--json]`
+ *
+ * Dry-run prints the plan; `--apply` performs it. See src/migrate.ts for the
+ * artifact types covered and why the scan is bounded rather than machine-wide.
+ */
+async function runMigrate(args) {
+    const { scanLegacy, applyPlan, formatPlan } = await import("./migrate.js");
+    const apply = args.includes("--apply");
+    const json = args.includes("--json");
+    const roots = [];
+    const exclude = [];
+    let maxDepth;
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === "--root" && args[i + 1])
+            roots.push(args[++i]);
+        else if (args[i] === "--exclude" && args[i + 1])
+            exclude.push(args[++i]);
+        else if (args[i] === "--depth" && args[i + 1])
+            maxDepth = Number(args[++i]);
+    }
+    const plan = await scanLegacy({
+        roots: roots.length ? [...roots, process.cwd(), homedir()] : undefined,
+        maxDepth: Number.isFinite(maxDepth) ? maxDepth : undefined,
+        exclude,
+    });
+    if (json) {
+        console.log(JSON.stringify({ roots: plan.roots, actions: plan.actions.map(({ kind, path, detail, reportOnly }) => ({ kind, path, detail, reportOnly: Boolean(reportOnly) })) }, null, 2));
+    }
+    else {
+        console.log(formatPlan(plan));
+    }
+    const writable = plan.actions.filter((a) => a.apply).length;
+    if (!apply) {
+        if (writable > 0)
+            console.log(`\n${writable} change${writable === 1 ? "" : "s"} pending — re-run with --apply to perform them.`);
+        return;
+    }
+    const done = await applyPlan(plan);
+    console.log(`\napplied ${done.length} change${done.length === 1 ? "" : "s"}.`);
+    if (done.some((a) => a.kind === "rewrite-claude-plugin")) {
+        console.log("Claude Code plugin registration rewritten — restart Claude Code (or /reload-plugins) to pick it up.");
+    }
+}
 async function runUpdate(args) {
     const force = args.includes("--force") || args.includes("-f");
     const { dirname, resolve: resolvePath } = await import("node:path");
@@ -860,6 +910,7 @@ async function runUpdate(args) {
         throw new Error("Refusing to update with local changes. Commit/stash them or rerun with --force for managed installs.");
     }
     console.log(`mikro update: ${root}`);
+    console.log("tip: `mikro migrate` finds legacy rlmx config dirs, .mcp.json entries and plugin registrations left by the rename.");
     if (root.includes("/.rlmx/")) {
         console.log("note: this checkout lives under the legacy ~/.rlmx path; re-run scripts/install.sh to migrate it to ~/.mikro.");
     }
@@ -931,6 +982,9 @@ async function main() {
             break;
         case "update":
             await runUpdate(process.argv.slice(3));
+            break;
+        case "migrate":
+            await runMigrate(process.argv.slice(3));
             break;
         case "acp": {
             const { runAcp } = await import("./acp/agent.js");

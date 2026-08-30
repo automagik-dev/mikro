@@ -814,6 +814,28 @@ Model selection is the `model:` block in `.mikro/mikro.yaml`, `--model <ref>` fo
 one run, or `mikro config set model.provider …` globally. There is no
 `MODEL.md` — nothing loads it.
 
+### Migrating from `rlmx` (`mikro migrate`)
+
+Everything public was renamed from `rlmx` to `mikro` on 2026-08-29: the
+binary, `.rlmx/rlmx.yaml` → `.mikro/mikro.yaml`, `~/.rlmx` → `~/.mikro`, the
+MCP server key, the Claude Code plugin id, `RLMX_*` env vars. Old config is
+still *read* (with a warning) so nothing breaks the day you update, but the
+Claude Code plugin registration and any `.mcp.json` that spawns `rlmx mcp`
+cannot fall back — there is no `rlmx` binary any more.
+
+```bash
+mikro migrate                      # dry-run: list every legacy artifact found
+mikro migrate --apply              # perform the rewrites (JSON files are backed up beside themselves)
+mikro migrate --root ~/work --exclude backups --depth 4   # widen / narrow the scan
+```
+
+It scans the current directory and `$HOME` (bounded depth, skipping
+`node_modules`, `.git`, dot-directories) for: project `.rlmx/` dirs,
+`.mcp.json` servers with `command: rlmx`, `~/.rlmx`, the `~/.local/bin/rlmx`
+symlink, and the plugin registration under `~/.claude/`. Shell rc lines and
+`RLMX_*` env vars are reported for you to edit — they encode intent the tool
+should not guess. `mikro upgrade` is an alias.
+
 ### Custom providers (`providers:`)
 
 Any OpenAI-compatible, Anthropic-compatible or OpenAI Responses endpoint can be
