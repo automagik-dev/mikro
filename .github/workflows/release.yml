@@ -135,16 +135,30 @@ jobs:
           # in release notes, and carry [auto-version] so this workflow skips it.
           git commit -m "chore(version): bump to ${VERSION} [auto-version]"
 
-          # No `|| true`: a non-fast-forward must fail the run. A silently
-          # skipped release is the exact bug this workflow exists to prevent.
-          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          # A newer merge can land after the upfront stale check but before this
+          # push. That non-fast-forward is healthy supersession only when the
+          # run's original SHA is now an ancestor of the remote tip; any other
+          # push failure remains fatal.
+          if ! git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"; then
+            git fetch --quiet origin "${GITHUB_REF_NAME}"
+            TIP=$(git rev-parse "origin/${GITHUB_REF_NAME}")
+            if git merge-base --is-ancestor "$GITHUB_SHA" "$TIP"; then
+              echo "superseded=true" >> "$GITHUB_OUTPUT"
+              echo "${GITHUB_REF_NAME} advanced to ${TIP:0:7} while this run was bumping ${GITHUB_SHA:0:7} — superseded; the queued run releases."
+              exit 0
+            fi
+            echo "::error::version bump push failed and remote ${TIP:0:7} does not supersede ${GITHUB_SHA:0:7}"
+            exit 1
+          fi
+
+          echo "superseded=false" >> "$GITHUB_OUTPUT"
 
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "Bumped ${GITHUB_REF_NAME} to ${TAG} ($(git rev-parse --short HEAD))"
 
       - name: Resolve release target
-        if: steps.stale.outputs.superseded != 'true'
+        if: steps.stale.outputs.superseded != 'true' && (steps.bump.outputs.superseded != 'true')
         id: target
         env:
           TAG: ${{ steps.bump.outputs.tag || steps.ver.outputs.tag }}
@@ -175,7 +189,7 @@ jobs:
           echo "Releasing ${TAG} at ${SHA}"
 
       - name: Find previous release tag
-        if: steps.stale.outputs.superseded != 'true'
+        if: steps.stale.outputs.superseded != 'true' && (steps.bump.outputs.superseded != 'true')
         id: prev
         env:
           TAG: ${{ steps.target.outputs.tag }}
@@ -192,7 +206,7 @@ jobs:
       - name: Generate changelog
         uses: orhun/git-cliff-action@v4
         id: cliff
-        if: steps.stale.outputs.superseded != 'true' && (steps.prev.outputs.tag != '')
+        if: steps.stale.outputs.superseded != 'true' && (steps.bump.outputs.superseded != 'true') && (steps.prev.outputs.tag != '')
         with:
           config: cliff.toml
           args: ${{ format('{0}..{1}', steps.prev.outputs.tag, steps.target.outputs.sha) }}
@@ -200,7 +214,7 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
 
       - name: Create release
-        if: steps.stale.outputs.superseded != 'true'
+        if: steps.stale.outputs.superseded != 'true' && (steps.bump.outputs.superseded != 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: ${{ steps.cliff.outputs.content }}
