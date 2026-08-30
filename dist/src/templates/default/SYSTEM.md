@@ -2,7 +2,7 @@
      This file is the system prompt sent to the LLM at the start of each RLM session.
      It defines the REPL environment, available functions, and behavioral guidelines.
      Edit this file to customize the LLM's behavior, persona, or instructions.
-     Place this file in your project's .rlmx/ directory. -->
+     Place this file in your project's .mikro/ directory. -->
 
 <!-- ── Role & Context ─────────────────────────────────────────────────
      This opening block establishes the LLM's role: answering a query

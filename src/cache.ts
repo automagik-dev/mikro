@@ -8,7 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { RlmxConfig, CacheConfig } from "./config.js";
+import type { MikroConfig, CacheConfig } from "./config.js";
 import type { LoadedContext, ContextItem } from "./context.js";
 
 // Provider context window limits (approximate token counts)
@@ -118,7 +118,7 @@ export function buildSessionId(prefix: string | undefined, hash: string): string
  *   ```
  */
 export function buildCachedSystemPrompt(
-  config: RlmxConfig,
+  config: MikroConfig,
   context: LoadedContext | null
 ): string {
   let system = config.system ?? "";

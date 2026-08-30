@@ -14,17 +14,17 @@ examples/agents/log-triage/
 ## Install
 
 ```bash
-cp -r examples/agents/log-triage ~/.rlmx/agents/log-triage          # global
-cp -r examples/agents/log-triage <project>/.rlmx/agents/log-triage  # project
+cp -r examples/agents/log-triage ~/.mikro/agents/log-triage          # global
+cp -r examples/agents/log-triage <project>/.mikro/agents/log-triage  # project
 ```
 
-A host running `rlmx mcp` then sees an `rlmx_log-triage` tool.
+A host running `mikro mcp` then sees an `mikro_log-triage` tool.
 
 ## Use
 
-An `agent.yaml` recipe has no CLI entry point — `rlmx "query"` runs the ambient
-config, not an agent (`rlmx --help`). A microagent is reached **as an MCP
-tool**: run `rlmx mcp` from your host and call `rlmx_log-triage` with the log
+An `agent.yaml` recipe has no CLI entry point — `mikro "query"` runs the ambient
+config, not an agent (`mikro --help`). A microagent is reached **as an MCP
+tool**: run `mikro mcp` from your host and call `mikro_log-triage` with the log
 text as the prompt. In-process, the SDK path is `sdk.loadAgentSpec(dir)` +
 `runAgent(...)` — see [`../hello-world/README.md`](../hello-world/README.md)
 for a worked example.
@@ -51,8 +51,8 @@ cost. Change the `model:` line for any other provider.
 
 ## Provenance
 
-Copied verbatim from this host's `~/.rlmx/agents/log-triage/` on 2026-07-27
-under wish `rlmx-microagent-plugin` (B5). Both files are byte-identical to the
+Copied verbatim from this host's `~/.mikro/agents/log-triage/` on 2026-07-27
+under wish `mikro-microagent-plugin` (B5). Both files are byte-identical to the
 source:
 
 | file | sha256 |
@@ -62,15 +62,15 @@ source:
 
 The host copy dates from 2026-07-25.
 
-## Removing the host copy — a user step, not something rlmx did
+## Removing the host copy — a user step, not something mikro did
 
 The archival that put this file here **did not delete anything under your home
-directory**, and nothing in rlmx will. If you want the global copy gone now
+directory**, and nothing in mikro will. If you want the global copy gone now
 that the recipe is in the repo:
 
 ```bash
-rm -rf ~/.rlmx/agents/log-triage
+rm -rf ~/.mikro/agents/log-triage
 ```
 
-Removing the host copy removes `rlmx_log-triage` from every host session until
+Removing the host copy removes `mikro_log-triage` from every host session until
 you install it again from here.

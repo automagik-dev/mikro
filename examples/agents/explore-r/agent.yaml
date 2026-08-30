@@ -41,7 +41,7 @@ budget:
   # parent's own cap, unreduced. So this number is simultaneously the parent's
   # turn budget AND every sub-agent's. That second role dominates, because the
   # fan-out blocks the parent's REPL and the whole batch has to finish inside
-  # RLMX_REPL_TIMEOUT_MS (see INSTALL REQUIREMENT 1) or the run returns nothing.
+  # MIKRO_REPL_TIMEOUT_MS (see INSTALL REQUIREMENT 1) or the run returns nothing.
   #
   # Measured on khal/deepseek-v4-flash against this tree:
   #   · one child, alone, focused question ....... 3 iterations,  27s
@@ -85,12 +85,12 @@ budget:
   # a separate path (`agentMaxIterations`, src/mcp/server.ts:474-478); max_depth
   # has no such path. The effective ceiling is
   # `config.budget.maxDepth ?? 3` (src/rlm.ts:438) read from the *ambient*
-  # rlmx.yaml at the server's --dir. It is stated here because the intent is
+  # mikro.yaml at the server's --dir. It is stated here because the intent is
   # real — this agent wants one level of children and no grandchildren — and
   # because a reader is entitled to know the key is inert.
   max_depth: 2
 
-# ── INSTALL REQUIREMENT 1 of 2 — RLMX_REPL_TIMEOUT_MS. ─────────────────────
+# ── INSTALL REQUIREMENT 1 of 2 — MIKRO_REPL_TIMEOUT_MS. ─────────────────────
 #
 # `rlm_query_batched` BLOCKS the parent's Python REPL until every child exits
 # (python/llm_bridge.py:33-40). The parent's per-block REPL timeout defaults to
@@ -99,36 +99,36 @@ budget:
 # (src/rlm.ts:436-437). Nothing reconciles the two. At 30s the wait is killed,
 # `src/repl.ts:427` rejects, and because `repl.execute` at src/rlm.ts:681 is
 # not wrapped, the rejection escapes rlmLoop entirely: the MCP handler returns
-# `rlmx <tool> failed: REPL execution timed out after 30000ms` with no answer
+# `mikro <tool> failed: REPL execution timed out after 30000ms` with no answer
 # at all. Measured, not theorised — parity/round2/smoke/smoke-2.json.
 #
-# So the environment MUST set, on the `rlmx mcp` process:
+# So the environment MUST set, on the `mikro mcp` process:
 #
-#   RLMX_REPL_TIMEOUT_MS=600000
+#   MIKRO_REPL_TIMEOUT_MS=600000
 #
-# There is no in-repo way to set it: `RLMX_MCP_RUN_TIMEOUT_MS` lifts the *run*
+# There is no in-repo way to set it: `MIKRO_MCP_RUN_TIMEOUT_MS` lifts the *run*
 # wall clock only (src/mcp/server.ts:562-570) and has no per-block equivalent.
 # 600000 leaves ~300s of a 900s run for the phases either side of the fan-out.
 #
 # ── INSTALL REQUIREMENT 2 of 2 — the child model pin. ──────────────────────
 #
 # The `model:` above pins THIS agent. It does NOT pin its recursive children.
-# `rlm_query` spawns a fresh `rlmx` CLI process (src/llm.ts:558-566) whose argv
+# `rlm_query` spawns a fresh `mikro` CLI process (src/llm.ts:558-566) whose argv
 # carries no --model (src/llm.ts:457-469; the CLI has no such flag at all,
 # src/cli.ts:148-174). The child resolves its own model by the ordinary
-# precedence: ~/.rlmx/settings.json > <--dir>/.rlmx/rlmx.yaml > the hardcoded
+# precedence: ~/.mikro/settings.json > <--dir>/.mikro/mikro.yaml > the hardcoded
 # google default (src/cli.ts:34-38, src/cli.ts:324-325, src/config.ts:122-125).
 #
 # So the environment that runs this agent MUST place, in the HOME the server
 # and its children inherit:
 #
-#   ~/.rlmx/settings.json
+#   ~/.mikro/settings.json
 #   { "model.provider": "khal",
 #     "model.model": "deepseek-v4-flash",
 #     "model.sub-call-model": "deepseek-v4-flash" }
 #
 # (the API key comes from the environment, never from this file). Without it
-# the children run whatever the target repo's rlmx.yaml says — and if no key
+# the children run whatever the target repo's mikro.yaml says — and if no key
 # for that provider is present they exit 0 with an empty answer, which
 # src/repl.ts:449-462 hands back as a normal result and nothing anywhere
 # reports. That is not hypothetical: it is what happened to the only three

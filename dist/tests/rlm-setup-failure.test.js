@@ -12,12 +12,12 @@ import { createEmitter } from "../src/sdk/index.js";
  * A throw in rlmLoop's SETUP region — the storage start/ingest, prompt build
  * and cache hashing that run BEFORE the main run loop's `try` — must still
  * close a caller-supplied emitter. Otherwise the headless subscriber / the
- * rlmx-acp adapter, which subscribe BEFORE the run starts, would `for await`
+ * mikro-acp adapter, which subscribe BEFORE the run starts, would `for await`
  * forever because no SessionClose is emitted and emitter.close() never runs.
  */
 describe("rlmLoop — setup-region failure closes a caller-supplied emitter", () => {
     it("emits Error + SessionClose and closes the emitter when setup throws", async () => {
-        const dir = await mkdtemp(join(tmpdir(), "rlmx-gap1-"));
+        const dir = await mkdtemp(join(tmpdir(), "mikro-gap1-"));
         const config = await loadConfig(dir); // defaults — no infra needed
         const emitter = createEmitter();
         // Subscribe BEFORE the run starts (the seam the fix protects).

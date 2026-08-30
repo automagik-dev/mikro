@@ -131,7 +131,7 @@ describe("settings API key env injection", () => {
 });
 
 describe("saveSettings + loadSettings roundtrip", () => {
-  const testDir = join(tmpdir(), `rlmx-test-${Date.now()}`);
+  const testDir = join(tmpdir(), `mikro-test-${Date.now()}`);
   const originalHome = process.env.HOME;
 
   before(async () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scan-transcripts.mjs — the measurement half of `/rlmx:microagent-create`.
+ * scan-transcripts.mjs — the measurement half of `/mikro:microagent-create`.
  *
  * Reads recent Claude Code transcripts (`~/.claude/projects/**\/*.jsonl`) and
  * reports where this host's context actually went, bucketed into offload
@@ -215,7 +215,7 @@ async function* transcripts(dir) {
   }
 }
 
-/** `-home-namastex-prod-rlmx` → the project slug the transcript belongs to. */
+/** `-home-namastex-prod-mikro` → the project slug the transcript belongs to. */
 function projectOf(path) {
   const rel = path.slice(ROOT.length + 1);
   const slug = rel.split("/")[0] ?? "?";
@@ -523,7 +523,7 @@ if (AS_JSON) {
 }
 
 const out = [];
-out.push(`rlmx microagent-create — transcript scan`);
+out.push(`mikro microagent-create — transcript scan`);
 out.push(`  window        last ${HOURS}h (since ${report.window.since})`);
 out.push(`  root          ${ROOT}`);
 out.push(`  scanned       ${num(files)} transcripts, ${num(lines)} lines${skipped ? `, ${num(skipped)} unparsable` : ""}`);

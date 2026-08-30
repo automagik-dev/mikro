@@ -1,6 +1,6 @@
 # TTL Control — Provider-Specific Cache Behavior
 
-rlmx passes `cacheRetention` and `sessionId` to pi/ai's `completeSimple`, which maps them to each provider's native caching mechanism. This document describes the TTL (time-to-live) semantics for each supported provider.
+mikro passes `cacheRetention` and `sessionId` to pi/ai's `completeSimple`, which maps them to each provider's native caching mechanism. This document describes the TTL (time-to-live) semantics for each supported provider.
 
 ## Overview
 
@@ -18,14 +18,14 @@ Anthropic supports explicit cache control via the `cache_control` header on mess
 - **`short`** (retention) → TTL rounds to **300 seconds** (5 minutes)
 - **`long`** (retention) → TTL rounds to **3600 seconds** (1 hour)
 
-Anthropic rounds all TTL values to the nearest supported increment (300s or 3600s). Note: the `cache.ttl` field is parsed by config but **not yet wired through to the provider call** — only `retention` (as `cacheRetention`) and `sessionId` reach pi/ai (`src/llm.ts`); `ttl` is used only by the `rlmx cache --estimate` display.
+Anthropic rounds all TTL values to the nearest supported increment (300s or 3600s). Note: the `cache.ttl` field is parsed by config but **not yet wired through to the provider call** — only `retention` (as `cacheRetention`) and `sessionId` reach pi/ai (`src/llm.ts`); `ttl` is used only by the `mikro cache --estimate` display.
 
 Cache hits return tokens in `usage.cacheRead`; initial caching reports tokens in `usage.cacheWrite`.
 
 ### Example config
 
 ```yaml
-# rlmx.yaml — Anthropic with long cache retention
+# mikro.yaml — Anthropic with long cache retention
 model:
   provider: anthropic
   model: claude-sonnet-4-5
@@ -46,7 +46,7 @@ OpenAI uses a `prompt_cache_key` derived from the `sessionId` for stable cache r
 ### Example config
 
 ```yaml
-# rlmx.yaml — OpenAI with cache routing
+# mikro.yaml — OpenAI with cache routing
 model:
   provider: openai
   model: gpt-4o
@@ -78,7 +78,7 @@ Explicit caching requires the `onPayload` hook in pi/ai to inject `cachedContent
 ### Example config
 
 ```yaml
-# rlmx.yaml — Google implicit caching (recommended)
+# mikro.yaml — Google implicit caching (recommended)
 model:
   provider: google
   model: gemini-2.0-flash
@@ -87,7 +87,7 @@ cache:
   retention: long
   session-prefix: paper-review
 
-# rlmx.yaml — Google explicit caching with expiry
+# mikro.yaml — Google explicit caching with expiry
 model:
   provider: google
   model: gemini-2.0-flash
@@ -111,7 +111,7 @@ pi/ai maps `cacheRetention` to the appropriate `cachePoint` TTL when the underly
 ### Example config
 
 ```yaml
-# rlmx.yaml — Bedrock with cache
+# mikro.yaml — Bedrock with cache
 model:
   provider: bedrock
   model: anthropic.claude-sonnet-4-5-v2
@@ -123,7 +123,7 @@ cache:
 
 ## Cache Config Reference
 
-Full `cache` block options in `rlmx.yaml`:
+Full `cache` block options in `mikro.yaml`:
 
 ```yaml
 cache:

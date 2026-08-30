@@ -6,7 +6,7 @@
  * This enables provider-level prompt caching (Gemini, Anthropic, etc.)
  * for repeated queries over the same context.
  */
-import type { RlmxConfig } from "./config.js";
+import type { MikroConfig } from "./config.js";
 import type { LoadedContext } from "./context.js";
 export declare const PROVIDER_LIMITS: Record<string, number>;
 /**
@@ -52,5 +52,5 @@ export declare function buildSessionId(prefix: string | undefined, hash: string)
  *   {content}
  *   ```
  */
-export declare function buildCachedSystemPrompt(config: RlmxConfig, context: LoadedContext | null): string;
+export declare function buildCachedSystemPrompt(config: MikroConfig, context: LoadedContext | null): string;
 //# sourceMappingURL=cache.d.ts.map

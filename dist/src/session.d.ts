@@ -1,11 +1,11 @@
 /**
- * Session persistence — auto-save every rlmx run to ~/.rlmx/sessions/<runId>/.
+ * Session persistence — auto-save every mikro run to ~/.mikro/sessions/<runId>/.
  *
  * Each session directory contains:
  *   meta.json        — run metadata (runId, query, context, timestamp, version)
  *   usage.json       — token usage and cost statistics
  *   answer.txt       — final answer text
- *   config.yaml      — snapshot of the RlmxConfig used
+ *   config.yaml      — snapshot of the MikroConfig used
  *   trajectory.jsonl  — copy of the JSONL log (if --log was specified)
  */
 /** Data required to persist a session. */
@@ -28,7 +28,7 @@ export interface SessionData {
     logPath: string | null;
 }
 /**
- * Save session artifacts to ~/.rlmx/sessions/<runId>/.
+ * Save session artifacts to ~/.mikro/sessions/<runId>/.
  * Returns the session directory path.
  */
 export declare function saveSession(data: SessionData): Promise<string>;

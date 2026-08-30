@@ -156,9 +156,9 @@ describe("python plugin handler — subprocess protocol (G3b)", { skip: !HAVE_PY
         await assert.rejects(handler({}, { ...ctx, signal: ac.signal }), /aborted|killed/);
     });
     it("forwards env when passed + isolates when env={}", async () => {
-        const script = await writePyPlugin(root, "envread", 'import json, os, sys\njson.dump({"v": os.environ.get("RLMX_TEST_VAR", "<unset>")}, sys.stdout)\n');
+        const script = await writePyPlugin(root, "envread", 'import json, os, sys\njson.dump({"v": os.environ.get("MIKRO_TEST_VAR", "<unset>")}, sys.stdout)\n');
         const seen = await makePythonPluginHandler("envread", script, {
-            env: { RLMX_TEST_VAR: "hello", PATH: process.env.PATH ?? "" },
+            env: { MIKRO_TEST_VAR: "hello", PATH: process.env.PATH ?? "" },
         })({}, ctx);
         assert.deepEqual(seen, { v: "hello" });
         const isolated = await makePythonPluginHandler("envread", script, {

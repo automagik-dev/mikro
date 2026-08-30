@@ -2,8 +2,8 @@
 
 **Date:** 2026-03-26
 **Scope:** Historical spike originally run against the previous pi-ai package scope at version `0.62.0`.
-**Current package:** live RLMX imports the maintained package `@earendil-works/pi-ai`.
-**Verdict:** 3 features are NATIVE, 3 features require rlmx-side implementation
+**Current package:** live MIKRO imports the maintained package `@earendil-works/pi-ai`.
+**Verdict:** 3 features are NATIVE, 3 features require mikro-side implementation
 
 ---
 
@@ -22,9 +22,9 @@ Live code and dependency manifests use `@earendil-works/pi-ai`.
 | **1. Thinking Levels** | ✅ NATIVE | GoogleOptions.thinking config + GoogleThinkingLevel type | N/A |
 | **2. Thought Signatures** | ✅ NATIVE | ThinkingContent.thinkingSignature + TextContent.textSignature fields | N/A |
 | **3. onPayload Hook** | ✅ NATIVE | StreamOptions.onPayload in types.d.ts | N/A |
-| **4. Media Resolution** | ❌ RLMX-SIDE | No media_resolution field in GoogleOptions | Use onPayload to inject |
-| **5. Structured Outputs** | ❌ RLMX-SIDE | No response_json_schema field in GoogleOptions | Use onPayload to inject |
-| **6. Built-in Tools** | ❌ RLMX-SIDE | No google_search/url_context/code_execution in tool defs | Use REPL batteries + onPayload |
+| **4. Media Resolution** | ❌ MIKRO-SIDE | No media_resolution field in GoogleOptions | Use onPayload to inject |
+| **5. Structured Outputs** | ❌ MIKRO-SIDE | No response_json_schema field in GoogleOptions | Use onPayload to inject |
+| **6. Built-in Tools** | ❌ MIKRO-SIDE | No google_search/url_context/code_execution in tool defs | Use REPL batteries + onPayload |
 
 ---
 
@@ -50,7 +50,7 @@ export type GoogleThinkingLevel =
     "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
 ```
 
-**How rlmx uses it:**
+**How mikro uses it:**
 - Map `--thinking minimal|low|medium|high` → GoogleOptions.thinking.level
 - streamSimple() already handles thinking level selection (SimpleStreamOptions.reasoning)
 
@@ -96,7 +96,7 @@ export interface ToolCall {
 - Can appear on ANY part type (text, functionCall, etc.)
 - Must be preserved as-is during persistence/replay
 
-**Fallback:** Store signatures in rlmx message history and replay manually if pi/ai drops them
+**Fallback:** Store signatures in mikro message history and replay manually if pi/ai drops them
 
 ---
 
@@ -114,7 +114,7 @@ export interface StreamOptions {
 }
 ```
 
-**How rlmx uses it:**
+**How mikro uses it:**
 - Intercept payload before sending to API
 - Inject Gemini-specific fields not exposed in GoogleOptions
 - Return modified payload or undefined (leave unchanged)
@@ -137,7 +137,7 @@ const options = {
 
 ---
 
-## ❌ RLMX-SIDE: Media Resolution (Feature #4)
+## ❌ MIKRO-SIDE: Media Resolution (Feature #4)
 
 **Status:** No pi/ai support found
 **Where to inject:** GoogleOptions via onPayload hook
@@ -146,8 +146,8 @@ const options = {
 - `generationConfig.mediaResolution` in Gemini API
 - Values: "LOW" (92 tokens/image), "MEDIUM" (256 tokens/image), "HIGH" (1120 tokens/image)
 
-**rlmx Implementation Path:**
-1. Add `gemini.media-resolution.images: low|medium|high` to rlmx.yaml
+**mikro Implementation Path:**
+1. Add `gemini.media-resolution.images: low|medium|high` to mikro.yaml
 2. In RLM loop, use onPayload hook to inject:
    ```typescript
    payload.generationConfig.mediaResolution = config.gemini["media-resolution"].images;
@@ -155,11 +155,11 @@ const options = {
 3. Verify token usage in AssistantMessage.usage stats
 4. Test: `--thinking medium --media-resolution high` should use ~1120 tokens per image
 
-**Fallback:** If onPayload can't reach generationConfig, rlmx must build full request manually via @google/genai
+**Fallback:** If onPayload can't reach generationConfig, mikro must build full request manually via @google/genai
 
 ---
 
-## ❌ RLMX-SIDE: Structured Outputs (Feature #5)
+## ❌ MIKRO-SIDE: Structured Outputs (Feature #5)
 
 **Status:** No pi/ai support found
 **Where to inject:** GoogleOptions via onPayload hook
@@ -168,8 +168,8 @@ const options = {
 - `generationConfig.responseSchema` in Gemini API
 - Takes JSON Schema, enforces structure
 
-**rlmx Implementation Path:**
-1. Add `output.schema` to rlmx.yaml (already referenced in wish design)
+**mikro Implementation Path:**
+1. Add `output.schema` to mikro.yaml (already referenced in wish design)
 2. In RLM loop, use onPayload hook to inject:
    ```typescript
    if (config.output.schema) {
@@ -183,7 +183,7 @@ const options = {
 
 ---
 
-## ❌ RLMX-SIDE: Built-in Tools (Feature #6)
+## ❌ MIKRO-SIDE: Built-in Tools (Feature #6)
 
 **Status:** No built-in Gemini tools (web_search, url_context, code_execution) in pi/ai
 **How to provide:** REPL batteries + onPayload hook
@@ -208,7 +208,7 @@ const options = {
 - **Optional:** Add onPayload support for Gemini-native tools as optimization
 - **Fallback:** If tools API unavailable, graceful error with helpful message
 
-**rlmx Implementation Path:**
+**mikro Implementation Path:**
 ```typescript
 // Group 7: REPL batteries (v0.3 already has this structure)
 REPL.define("web_search", async (query: string) => {
@@ -240,8 +240,8 @@ const options = {
 - ✅ Thinking levels: pi/ai native
 - ✅ Thought signatures: pi/ai native
 - ✅ onPayload hook: pi/ai native
-- ❌ Media resolution: needs rlmx + onPayload
-- ❌ Structured outputs: needs rlmx + onPayload
+- ❌ Media resolution: needs mikro + onPayload
+- ❌ Structured outputs: needs mikro + onPayload
 - ❌ Built-in tools: needs REPL batteries or Gemini native via onPayload
 
 ### Phase 2: Native Features (Groups 1-3)
@@ -264,7 +264,7 @@ const options = {
 |------|----------|-----------|
 | onPayload hook doesn't reach generationConfig | HIGH | Test early in Group 1 with sample payload inspection. Have @google/genai direct call as backup. |
 | Thought signatures corrupted in multi-turn | MEDIUM | Validate signatures persist through message history. Implement retainThoughtSignature logic locally if needed. |
-| Media resolution values don't match enum | MEDIUM | Reference Gemini API docs explicitly. Pin to specific enum values in rlmx.yaml. |
+| Media resolution values don't match enum | MEDIUM | Reference Gemini API docs explicitly. Pin to specific enum values in mikro.yaml. |
 | Structured output conflicts with FINAL() detection | MEDIUM | When schema enforced, skip FINAL() — schema IS the output contract. Document in config. |
 | Built-in tools only work on Gemini, break multi-provider | MEDIUM | Graceful degradation: tools throw "X requires provider: google". Non-Google users fall back to standard behavior. |
 
@@ -285,7 +285,7 @@ const options = {
 **pi/ai is foundation-ready for v0.4 Gemini 3 integration.**
 
 - 3/6 features already native (thinking, signatures, onPayload)
-- 3/6 features require rlmx-side impl (media, schema, tools) — all are onPayload hooks or REPL batteries
+- 3/6 features require mikro-side impl (media, schema, tools) — all are onPayload hooks or REPL batteries
 - No breaking changes needed in pi/ai
 - Graceful degradation on non-Google providers is straightforward (test onPayload conditions)
 

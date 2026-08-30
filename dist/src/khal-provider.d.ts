@@ -17,9 +17,9 @@
  *
  *   2. **The gateway's aliases carry a redundant `khal/` prefix.** The live
  *      registry advertises `khal/deepseek-v4-flash`, and the request body must
- *      use that exact string — a bare `deepseek-v4-flash` is a 400. But rlmx
+ *      use that exact string — a bare `deepseek-v4-flash` is a 400. But mikro
  *      already namespaces by provider, so the ref users write is
- *      `khal/deepseek-v4-flash`, which every rlmx resolution path reduces to
+ *      `khal/deepseek-v4-flash`, which every mikro resolution path reduces to
  *      the bare `deepseek-v4-flash` (`splitModel` in src/mcp/agents.ts, then
  *      `normalizeProviderModelId` in src/llm.ts). The catalog therefore holds
  *      the bare id and {@link khalStreams} restores the wire alias on the way
@@ -56,14 +56,14 @@ export declare const KHAL_REJECTED_KEY_ERROR = "khal gateway rejected";
  */
 export declare const KHAL_EMPTY_CATALOG_ERROR = "khal catalog unavailable";
 /** Env vars carrying the gateway key, in precedence order. Key is env-only. */
-export declare const KHAL_API_KEY_ENV: readonly ["KHAL_API_KEY", "RLMX_KHAL_API_KEY"];
+export declare const KHAL_API_KEY_ENV: readonly ["KHAL_API_KEY", "MIKRO_KHAL_API_KEY"];
 type KhalKeyEnv = (typeof KHAL_API_KEY_ENV)[number];
 /** Resolve the gateway key from the environment. Read lazily, never cached. */
 export declare function khalApiKey(): string | undefined;
 /**
  * Which env var actually supplied the key. Failure messages name *this* var
  * rather than the canonical one, so an operator running off the
- * `RLMX_KHAL_API_KEY` fallback is not sent to edit the wrong variable.
+ * `MIKRO_KHAL_API_KEY` fallback is not sent to edit the wrong variable.
  */
 export declare function khalApiKeySource(): KhalKeyEnv | undefined;
 type KhalModel = Model<"openai-completions">;

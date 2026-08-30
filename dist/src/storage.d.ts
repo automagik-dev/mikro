@@ -18,7 +18,7 @@ export declare class PgStorage {
     private stopping;
     private cleanupRegistered;
     /**
-     * Absolute path to the `.rlmx-server.json` sidecar this instance wrote. Set
+     * Absolute path to the `.mikro-server.json` sidecar this instance wrote. Set
      * only when we spawned pgserve (owner mode) so `stop()` can clean it up.
      * Null when we attached to an existing instance (no ownership = no cleanup).
      */
@@ -32,11 +32,11 @@ export declare class PgStorage {
     /**
      * Start pgserve and connect to it. For persistent-mode dataDirs where
      * another PgStorage instance already spawned pgserve (discovered via
-     * `.rlmx-server.json` sidecar), we attach as a second client instead of
+     * `.mikro-server.json` sidecar), we attach as a second client instead of
      * trying to spawn a conflicting postmaster — postgres single-writer
      * semantics mean a second spawn on the same dataDir always fails with
-     * "pre-existing shared memory block". Attaching lets `rlmx stats`,
-     * `rlmx` query runs, and long-running SDK pipelines coexist cleanly.
+     * "pre-existing shared memory block". Attaching lets `mikro stats`,
+     * `mikro` query runs, and long-running SDK pipelines coexist cleanly.
      *
      * Returns the connection string once ready.
      */
@@ -45,10 +45,10 @@ export declare class PgStorage {
      * Try to attach to an existing pgserve on this dataDir. Three levels of
      * discovery, in order:
      *
-     *   1. `.rlmx-server.json` sidecar (the happy path — spawner writes it
+     *   1. `.mikro-server.json` sidecar (the happy path — spawner writes it
      *      after `waitForReady`, cleans it on stop).
      *   2. `postmaster.pid` fallback (postgres's own lockfile — present even
-     *      if the rlmx sidecar was never written or got unlinked before the
+     *      if the mikro sidecar was never written or got unlinked before the
      *      pg process exited, e.g. orphaned pgserve after a crash).
      *
      * Returns the connection string on success, null to tell the caller to

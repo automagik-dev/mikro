@@ -1,5 +1,5 @@
 /**
- * JSONL structured log writer for rlmx observability.
+ * JSONL structured log writer for mikro observability.
  *
  * Writes structured events to a JSONL file when --log is specified.
  * Silently discards events when no log path is configured.

@@ -3,7 +3,7 @@
  *
  * `tests/backend-contract.test.ts` proves the HOST-VISIBLE surface is
  * identical across every backend, driving this one through its engine seam.
- * This file proves the layer underneath that seam: the rlmx → prime mapping,
+ * This file proves the layer underneath that seam: the mikro → prime mapping,
  * the event-driven budget enforcement, the answer channel, and the scratch
  * lifecycle — all against an injected fake SDK, so the suite never needs a
  * real prime-agent install or a network call.
@@ -48,14 +48,14 @@ function request(overrides = {}) {
         query: "Where are the two call sites of rlmLoop?",
         context: null,
         config: config(),
-        cwd: "/tmp/rlmx-prime-sdk-cwd",
+        cwd: "/tmp/mikro-prime-sdk-cwd",
         ...overrides,
     };
 }
 function agent(spec = {}) {
     return {
         name: "triage",
-        toolName: "rlmx_triage",
+        toolName: "mikro_triage",
         dir: "/tmp/triage",
         summary: "triage agent",
         spec: {
@@ -290,7 +290,7 @@ describe("prime-sdk backend — structured output", () => {
 // ── Custom tools ─────────────────────────────────────────────────────────
 describe("prime-sdk backend — spec tools become prime custom tools", () => {
     it("maps an agent.yaml tool plugin to a callable prime tool", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "rlmx-sdk-agent-"));
+        const dir = mkdtempSync(join(tmpdir(), "mikro-sdk-agent-"));
         try {
             mkdirSync(join(dir, "tools"), { recursive: true });
             writeFileSync(join(dir, "tools", "greet.mjs"), "export default async function greet(args) { return { hello: args.name }; }\n");
@@ -314,7 +314,7 @@ describe("prime-sdk backend — spec tools become prime custom tools", () => {
         }
     });
     it("runs the real plugin handler and returns its result to the model", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "rlmx-sdk-agent-"));
+        const dir = mkdtempSync(join(tmpdir(), "mikro-sdk-agent-"));
         try {
             mkdirSync(join(dir, "tools"), { recursive: true });
             writeFileSync(join(dir, "tools", "greet.mjs"), "export default async function greet(args) { return { hello: args.name }; }\n");
@@ -332,7 +332,7 @@ describe("prime-sdk backend — spec tools become prime custom tools", () => {
         }
     });
     it("fails loudly on a declared tool that resolves to no plugin and no built-in", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "rlmx-sdk-agent-"));
+        const dir = mkdtempSync(join(tmpdir(), "mikro-sdk-agent-"));
         try {
             await assert.rejects(run({ steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }] }, { agent: agent({ dir, tools: ["nope"] }) }), /declares tool\(s\) "nope" that resolve to no plugin/);
         }
@@ -342,7 +342,7 @@ describe("prime-sdk backend — spec tools become prime custom tools", () => {
     });
 });
 // ── Budgets ──────────────────────────────────────────────────────────────
-describe("prime-sdk backend — rlmx owns the budgets", () => {
+describe("prime-sdk backend — mikro owns the budgets", () => {
     it("counts usage once: message_end and turn_end carry the same assistant message", async () => {
         // Probed live against prime 0.8.1. Counting both would double every
         // total and fire cost ceilings at half their configured value.
@@ -411,8 +411,8 @@ describe("prime-sdk backend — rlmx owns the budgets", () => {
         assert.equal(result.budgetHit, "max-tokens");
     });
     it("returns TIMEOUT_ANSWER and aborts the session when the wall clock expires", async () => {
-        const previous = process.env.RLMX_MCP_RUN_TIMEOUT_MS;
-        process.env.RLMX_MCP_RUN_TIMEOUT_MS = "25";
+        const previous = process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
+        process.env.MIKRO_MCP_RUN_TIMEOUT_MS = "25";
         try {
             const { result, record } = await run({
                 steps: [{ kind: "event", event: { type: "turn_start" } }],
@@ -424,9 +424,9 @@ describe("prime-sdk backend — rlmx owns the budgets", () => {
         }
         finally {
             if (previous === undefined)
-                delete process.env.RLMX_MCP_RUN_TIMEOUT_MS;
+                delete process.env.MIKRO_MCP_RUN_TIMEOUT_MS;
             else
-                process.env.RLMX_MCP_RUN_TIMEOUT_MS = previous;
+                process.env.MIKRO_MCP_RUN_TIMEOUT_MS = previous;
         }
     });
     it("passes budget.max_depth as rlmMaxDepth, not as a process-global env var", async () => {
@@ -467,17 +467,17 @@ describe("prime-sdk backend — provider mapping", () => {
         const station = buildModelsJson("station", "qwen", "a");
         assert.equal(station?.providers.station?.apiKey, "STATION_API_KEY");
     });
-    it("passes google and openrouter through under their own rlmx names", () => {
+    it("passes google and openrouter through under their own mikro names", () => {
         // The subprocess backend remaps google → prime-inference/google-<id>.
         // In-process there is no gateway hop: prime's catalog has both providers.
         assert.equal(buildModelsJson("google", "gemini-2.5-flash", "a"), null);
         assert.equal(buildModelsJson("openrouter", "anthropic/claude-3.5", "a"), null);
     });
-    it("fails loudly on a provider neither prime nor rlmx can address", () => {
+    it("fails loudly on a provider neither prime nor mikro can address", () => {
         assert.throws(() => buildModelsJson("pulp", "fiction", "triage"), /is pinned to model "pulp\/fiction".*neither one of prime's built-in providers/s);
     });
-    it("rejects a cost ceiling on a custom provider whose pricing rlmx cannot declare", async () => {
-        // Prime computes cost from the models.json price table. rlmx has no
+    it("rejects a cost ceiling on a custom provider whose pricing mikro cannot declare", async () => {
+        // Prime computes cost from the models.json price table. mikro has no
         // pricing for these gateways, so the ceiling would read as enforced and
         // never fire — worse than having no ceiling.
         await assert.rejects(run({ steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }] }, {
@@ -554,9 +554,9 @@ describe("prime-sdk backend — prompt assembly", () => {
         const { record } = await run({
             steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }],
         });
-        assert.equal(record.sessionOptions?.cwd, "/tmp/rlmx-prime-sdk-cwd");
-        assert.notEqual(record.sessionOptions?.agentDir, "/tmp/rlmx-prime-sdk-cwd");
-        assert.equal(record.loaderOptions?.cwd, "/tmp/rlmx-prime-sdk-cwd");
+        assert.equal(record.sessionOptions?.cwd, "/tmp/mikro-prime-sdk-cwd");
+        assert.notEqual(record.sessionOptions?.agentDir, "/tmp/mikro-prime-sdk-cwd");
+        assert.equal(record.loaderOptions?.cwd, "/tmp/mikro-prime-sdk-cwd");
     });
     it("passes the agent's thinking level through", async () => {
         const { record } = await run({ steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }] }, { request: { config: config({ gemini: { thinkingLevel: "high" } }) } });
@@ -643,7 +643,7 @@ describe("prime-sdk backend — scratch lifecycle", () => {
 // ── The version pin ──────────────────────────────────────────────────────
 describe("prime-sdk backend — the version pin", () => {
     function fakeRoot(version) {
-        const dir = mkdtempSync(join(tmpdir(), "rlmx-prime-root-"));
+        const dir = mkdtempSync(join(tmpdir(), "mikro-prime-root-"));
         if (version !== null) {
             writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "prime-agent", version }));
         }
@@ -668,7 +668,7 @@ describe("prime-sdk backend — the version pin", () => {
                 // The subprocess pin is named too: the two are separate surfaces
                 // and an operator must be able to see the divergence.
                 assert.match(err.message, /subprocess backend pins/);
-                assert.match(err.message, /backend: rlmx/);
+                assert.match(err.message, /backend: mikro/);
                 return true;
             });
         }

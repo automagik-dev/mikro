@@ -15,14 +15,14 @@ import type { Microagent } from "../agents.js";
 import type { BackendRequest, MicroagentResult, RuntimeBackend } from "../backend.js";
 
 /** Test seam: alternate engine loop (the contract test injects a stub). */
-export interface LegacyRlmxBackendOptions {
+export interface LegacyMikroBackendOptions {
   readonly loop?: typeof rlmLoop;
 }
 
-export class LegacyRlmxBackend implements RuntimeBackend {
+export class LegacyMikroBackend implements RuntimeBackend {
   private readonly loop: typeof rlmLoop;
 
-  constructor(options: LegacyRlmxBackendOptions = {}) {
+  constructor(options: LegacyMikroBackendOptions = {}) {
     this.loop = options.loop ?? rlmLoop;
   }
 
@@ -88,6 +88,6 @@ export class LegacyRlmxBackend implements RuntimeBackend {
  * default wall-clock cap without touching rlm.ts.
  */
 function runTimeout(): { timeout?: number } {
-  const ms = Number(process.env.RLMX_MCP_RUN_TIMEOUT_MS);
+  const ms = Number(process.env.MIKRO_MCP_RUN_TIMEOUT_MS);
   return Number.isFinite(ms) && ms > 0 ? { timeout: ms } : {};
 }

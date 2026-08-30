@@ -5,16 +5,16 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadConfig } from "../src/config.js";
 import { isGoogleProvider } from "../src/gemini.js";
-/** Helper: create .rlmx/ dir with rlmx.yaml content */
+/** Helper: create .mikro/ dir with mikro.yaml content */
 async function makeConfig(dir, yamlContent) {
-    const rlmxDir = join(dir, ".rlmx");
-    await mkdir(rlmxDir, { recursive: true });
-    await writeFile(join(rlmxDir, "rlmx.yaml"), yamlContent);
+    const mikroDir = join(dir, ".mikro");
+    await mkdir(mikroDir, { recursive: true });
+    await writeFile(join(mikroDir, "mikro.yaml"), yamlContent);
 }
 describe("Structured output config", () => {
     let dir;
     it("detects structured output mode for Google provider", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-structured-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-structured-"));
         await makeConfig(dir, `model:
   provider: google
   model: gemini-3.1-flash-lite-preview
@@ -31,7 +31,7 @@ output:
         await rm(dir, { recursive: true });
     });
     it("structured output falls back on non-Google", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-structured-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-structured-"));
         await makeConfig(dir, `model:
   provider: anthropic
   model: claude-sonnet-4-5
@@ -48,7 +48,7 @@ output:
         await rm(dir, { recursive: true });
     });
     it("schema with complex nested structure", async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-structured-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-structured-"));
         await makeConfig(dir, `output:
   schema:
     type: object

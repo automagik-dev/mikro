@@ -300,7 +300,7 @@ describe(
 	{ skip: !LIVE_API_KEY },
 	() => {
 		it("completes a one-shot run against a real model (<= 10s, tiny budget)", async () => {
-			// Prefer Gemini if available (default for rlmx); else Anthropic.
+			// Prefer Gemini if available (default for mikro); else Anthropic.
 			const provider = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
 				? "google"
 				: "anthropic";

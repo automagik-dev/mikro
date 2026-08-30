@@ -3,7 +3,7 @@
  *
  * `tests/backend-contract.test.ts` proves the HOST-VISIBLE surface is
  * identical across every backend, driving this one through its engine seam.
- * This file proves the layer underneath that seam: the rlmx → prime mapping,
+ * This file proves the layer underneath that seam: the mikro → prime mapping,
  * the event-driven budget enforcement, the answer channel, and the scratch
  * lifecycle — all against an injected fake SDK, so the suite never needs a
  * real prime-agent install or a network call.

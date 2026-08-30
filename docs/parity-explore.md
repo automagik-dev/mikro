@@ -1,8 +1,8 @@
-# Parity gate — `rlmx_explore` against native Explore
+# Parity gate — `mikro_explore` against native Explore
 
-Wish A (`rlmx-explore-offload`), Group 4. This report records the gate that
-decides whether rlmx is a real offload target for Claude Code's explore-class
-work, and whether Wish B (`rlmx-microagent-plugin`) starts.
+Wish A (`mikro-explore-offload`), Group 4. This report records the gate that
+decides whether mikro is a real offload target for Claude Code's explore-class
+work, and whether Wish B (`mikro-microagent-plugin`) starts.
 
 The thesis under test: **a cheap khal model, driven by the `explore`
 microagent through the MCP tool surface, answers real explore-class questions
@@ -41,17 +41,17 @@ Six tasks → **≥5 of 6 must pass**.
 
 ## Method
 
-### The rlmx arm
+### The mikro arm
 
 Every run goes through the real MCP path, the pattern `scripts/smoke-explore.mjs`
 established: an MCP SDK client over `node dist/src/cli.js mcp --dir <task
-root>`, one `tools/call` of `rlmx_explore` carrying the task's verbatim
+root>`, one `tools/call` of `mikro_explore` carrying the task's verbatim
 question as `prompt`. Harness:
 [`parity/run-task.mjs`](../.genie/wishes/rlmx-explore-offload/parity/run-task.mjs).
 
-The recipe is installed into a **scratch `HOME`'s `~/.rlmx/agents/explore/`** —
+The recipe is installed into a **scratch `HOME`'s `~/.mikro/agents/explore/`** —
 discovery root #1 (`src/mcp/agents.ts:56-68`) — with only its `model:` line
-pinned per round. No `RLMX_AGENTS_DIR` override, so discovery stays the real
+pinned per round. No `MIKRO_AGENTS_DIR` override, so discovery stays the real
 precedence path; and nothing is written into the task repositories, which are
 the user's other checkouts.
 
@@ -65,7 +65,7 @@ is resolvable against the very tree the agent read.
   run day; the rounds span roughly 20:00–23:55. Citations from an early round
   were therefore resolved against a tree that may not be byte-identical to the
   one that round's model read. `parity/verify-native.mjs` covers drift in the
-  *ground truth*; it does not cover drift in *citation resolution* for the rlmx
+  *ground truth*; it does not cover drift in *citation resolution* for the mikro
   arm. Rounds r1–r15 recorded no root revision, so the exposure cannot be
   bounded retrospectively — only stated. `run-task.mjs` now records each task
   root's git HEAD, branch and dirty flag in every run JSON (`provenance.rootGit`),
@@ -87,7 +87,7 @@ Explore work that originally answered the question. Per decision 6 the rubric
 is applied identically to both arms, and the ground truth is derived from this
 arm, so native scores 100% on criterion 1 by construction. That is a
 **disclosed, deliberately conservative asymmetry** (P3): it makes the gate
-harder for rlmx and cannot manufacture a false pass.
+harder for mikro and cannot manufacture a false pass.
 
 The ground truth was re-verified against the trees as they stand rather than
 assumed —
@@ -106,7 +106,7 @@ NATIVE GROUND TRUTH VERIFIED
 ```
 
 Criteria 2 and 3 were then re-derived mechanically from the recorded traces, by
-the same scorer that scores the rlmx arm.
+the same scorer that scores the mikro arm.
 
 **The native trace is capped at 4,000 characters at mining time.** Every task
 file's trace ends in `[… truncated at 4000 chars]`, so the native arm is scored
@@ -123,9 +123,9 @@ used a non-greedy match that stopped at the first *nested* code fence inside the
 trace, so on tasks 2, 3 and 4 it scored only 1,027 / 693 / 776 characters — a
 further 3.0k, 3.3k and 3.3k characters per task never reached the scorer at all.
 That is why the first publication of this report recorded "native task 2/3/4:
-cites=2" while rlmx answers were being scored on 26–129 citations across their
+cites=2" while mikro answers were being scored on 26–129 citations across their
 full text, and why its claim that all six native answers pass "by the same
-scorer that scores the rlmx arm" overstated what had been checked. The extractor
+scorer that scores the mikro arm" overstated what had been checked. The extractor
 is now fence-aware. Re-scored on the whole (still 4,000-char-capped) trace:
 
 ```text
@@ -180,7 +180,7 @@ both arms:
   the tree, has it. Without this rule the *native* arm fails criterion 2 on
   tasks 1 and 6 — which is how the convention was found.
 - **Out-of-scope trees.** A native session that ranged over more than one tree
-  has the other trees listed in its task file. `rlmx mcp --dir` shows the rlmx
+  has the other trees listed in its task file. `mikro mcp --dir` shows the mikro
   arm exactly one, so citations into those trees are scored on **neither** arm.
 - **Partial-path shorthand — the one convention question left open.** A citation
   whose path is a *suffix* of a real path (`bench/api.ts` for the real
@@ -191,7 +191,7 @@ both arms:
   both arms — the native pair was regenerated at final review after the
   audit found the default-variant file had been clobbered by its suffix
   run).
-  Across all 97 recorded task-runs it changes **exactly one rlmx run**
+  Across all 97 recorded task-runs it changes **exactly one mikro run**
   (`r3-flash-tune2` task 1, c2/c3 FAIL → PASS, a run that names 0 of 14 anchor
   files and so is nowhere near its threshold either way) and **one native run**
   (task 3, FAIL → PASS). It changes no task verdict on either arm and it does
@@ -234,11 +234,11 @@ both arms:
   and all 8 judgements are published in
   [evidence-group-4.md §4](../.genie/wishes/rlmx-explore-offload/evidence-group-4.md).
   Every one of them fails, under both readings.
-- **The answer is what the tool returned.** When a run ends on rlmx's
+- **The answer is what the tool returned.** When a run ends on mikro's
   forced-final path (`src/rlm.ts:857`), the returned text can contain REPL
   scaffolding, and citations inside it are scored like any other, because that
   text is what the host receives. This is a further conservative asymmetry
-  against rlmx — the native traces carry no scaffolding — and it is disclosed
+  against mikro — the native traces carry no scaffolding — and it is disclosed
   rather than corrected for. It changed no verdict: no run that failed only on
   scaffolding citations would have passed criterion 1.
 
@@ -254,7 +254,7 @@ change, and both are recorded here because they changed results:
    model's answer and would have been scored as task failures. It affected
    `r2-flash-tune1` t6 and `r3-flash-tune2` t4/t6, marked in the round log. Two
    to three at a time never reproduced it.
-2. **`RLMX_MCP_RUN_TIMEOUT_MS=900000`.** `rlmLoop`'s wall-clock default is 300s
+2. **`MIKRO_MCP_RUN_TIMEOUT_MS=900000`.** `rlmLoop`'s wall-clock default is 300s
    (`src/rlm.ts:84`); the MCP server only overrides it from that env var
    (`src/mcp/server.ts:551-554`). Left at the default it cut runs mid-search and
    handed them to the forced-final path — a property of the harness, not of the
@@ -329,12 +329,12 @@ Flash's three tuning rounds are spent. Escalate.
 
 **r5 · escalation**, prompt as of flash tuning 3. **0 of 6.** A new failure
 dominated: four of six runs ended *on the verification block*. The step
-introduced in r3 consumed the budget, and rlmx's forced-final path returned the
+introduced in r3 consumed the budget, and mikro's forced-final path returned the
 last message — which was a `CITES = [...]` listing, not an answer. My own tuning
 had created this.
 
 **r6 · discarded attempt (`r6-partial-300s-cap`).** The r6 prompt change was
-first swept across all six tasks while `RLMX_MCP_RUN_TIMEOUT_MS` was still at
+first swept across all six tasks while `MIKRO_MCP_RUN_TIMEOUT_MS` was still at
 the 300s default. Four of the six runs hit the cap at exactly 300s and returned
 a 1-character answer; the round was discarded and re-run at 900s. It is kept and
 logged because it happened and because $0.43 of khal spend is attributable to
@@ -455,32 +455,32 @@ at 2 strict / 3 generous against a threshold of 5. The judgements are in
 
 ## Final scores
 
-Both arms, scored by the same rubric. The rlmx row is each task's **best result
+Both arms, scored by the same rubric. The mikro row is each task's **best result
 across all 16 rounds and all four tiers** — not one round's — because a gate
 that any configuration could have passed should be recorded as passed. "Best"
 means: passes criteria 2 and 3 first, then the highest criterion-1 score. The
 discarded `r6-partial-300s-cap` round is included in that search, and it wins
 task 4; excluding it, as the first publication silently did, understated the
-rlmx arm's best task-4 result.
+mikro arm's best task-4 result.
 
 | Task | Arm | Criterion 1 (facts) | Criterion 2 | Criterion 3 | Verdict |
 |------|-----|---------------------|-------------|-------------|---------|
 | 1 | native | 14/14 ✓ | PASS (52 citations) | PASS | **PASS** |
-| 1 | rlmx — best clean run `r7-mimo-tune2` | ≤7 of 14, needs 13 | PASS | PASS | **FAIL** |
+| 1 | mikro — best clean run `r7-mimo-tune2` | ≤7 of 14, needs 13 | PASS | PASS | **FAIL** |
 | 2 | native | 10/10 ✓ | PASS (12) | PASS | **PASS** |
-| 2 | rlmx — best clean run `r15-flash-control` | **6 of 10 judged** (8 generous), needs 9 | PASS | PASS | **FAIL** |
+| 2 | mikro — best clean run `r15-flash-control` | **6 of 10 judged** (8 generous), needs 9 | PASS | PASS | **FAIL** |
 | 3 | native | 11/11 ✓ | **FAIL** (`bench/api.ts:900`) | **FAIL** | **FAIL**\* |
-| 3 | rlmx — best clean run `r1-flash-baseline` | ≤8 of 11 strict / ≤9 basename, needs 10 | PASS | PASS | **FAIL** |
+| 3 | mikro — best clean run `r1-flash-baseline` | ≤8 of 11 strict / ≤9 basename, needs 10 | PASS | PASS | **FAIL** |
 | 4 | native | 12/12 ✓ | PASS (27) | PASS | **PASS** |
-| 4 | rlmx — best clean run `r6-partial-300s-cap` | ≤6 of 12, needs 11 | PASS | PASS | **FAIL** |
+| 4 | mikro — best clean run `r6-partial-300s-cap` | ≤6 of 12, needs 11 | PASS | PASS | **FAIL** |
 | 5 | native | 5/5 ✓ | PASS (17) | PASS | **PASS** |
-| 5 | rlmx — best clean run `r15-flash-control` | **2 of 5 judged** (3 generous), needs 5 | PASS | PASS | **FAIL** |
+| 5 | mikro — best clean run `r15-flash-control` | **2 of 5 judged** (3 generous), needs 5 | PASS | PASS | **FAIL** |
 | 6 | native | 8/8 ✓ | PASS (14) | PASS | **PASS** |
-| 6 | rlmx — best clean run `r8-mimo-tune3` | ≤6 of 8, needs 8 | PASS | PASS | **FAIL** |
+| 6 | mikro — best clean run `r8-mimo-tune3` | ≤6 of 8, needs 8 | PASS | PASS | **FAIL** |
 
 \* Native task 3 fails the mechanical criteria only because the scorer does not
 resolve partial-path shorthand; the file and both lines it cites are real. See
-*The native arm*. Under the suffix reading it passes. Either way the rlmx arm's
+*The native arm*. Under the suffix reading it passes. Either way the mikro arm's
 task-3 verdict is unchanged.
 
 The `≤` rows are screened out by the anchor-file count. Corrected
@@ -513,7 +513,7 @@ in [evidence-group-4.md §4](../.genie/wishes/rlmx-explore-offload/evidence-grou
 > bar; it is a new data point, not a reproduction, because r8's prompt was not
 > snapshotted and no longer exists.
 
-**native 5 of 6 (6 of 6 on the suffix reading). rlmx 0 of 6, in every round, on
+**native 5 of 6 (6 of 6 on the suffix reading). mikro 0 of 6, in every round, on
 every tier.**
 
 The gap is not fabrication and it is not citation hygiene — by the last rounds
@@ -524,7 +524,7 @@ Explore session produced over 30–46 tool calls and ~2.2–3.3M premium tokens.
 the two smallest checklists — tasks 5 and 6, which require *every* fact — no arm
 but native came close.
 
-The closest any rlmx run came to a passing task was **task 2 at 8 of 10 facts
+The closest any mikro run came to a passing task was **task 2 at 8 of 10 facts
 under the generous reading, 6 strict** (needs 9), by `khal/deepseek-v4-flash` in
 `r15-flash-control`. One fact short under the most permissive reading available,
 three short under the strict one, on one task, is the high-water mark of 97
@@ -542,7 +542,7 @@ Decision 7: this is reported data, never the gate. Method:
 - **native** = the Explore segment's assistant turns as recorded in each task
   file — `input + cacheRead + cacheCreate + output`. These are the tokens the
   premium model was actually billed for.
-- **rlmx** = the **host-session delta for the tool call**: the characters the
+- **mikro** = the **host-session delta for the tool call**: the characters the
   host sent (the request arguments) plus the characters it got back (the whole
   result text, answer plus footer), divided by 4. Nothing the delegated agent
   burned on khal appears in this column — that is the entire point of the
@@ -551,7 +551,7 @@ Decision 7: this is reported data, never the gate. Method:
 Figures below are the `r15-flash-control` round (the final flash control);
 per-round figures for every other round are in the evidence file.
 
-| Task | Native premium tokens | rlmx host chars (req + res) | rlmx premium tokens | Ratio | khal tokens (in/out) | khal cost | Wall |
+| Task | Native premium tokens | mikro host chars (req + res) | mikro premium tokens | Ratio | khal tokens (in/out) | khal cost | Wall |
 |------|----------------------|------------------------------|---------------------|-------|----------------------|-----------|------|
 | 1 | 2,943,691 | 1,595 + 14,545 | 4,035 | **730×** | 59,901 / 8,788 | $0.02 | 117s |
 | 2 | 3,098,197 | 1,818 + 12,575 | 3,598 | **861×** | 68,454 / 11,585 | $0.02 | 161s |
@@ -597,7 +597,7 @@ Gate: FAIL
 **Consequences, per the wish's failure branch (WISH.md:70-74, and the risk-table
 row that anticipated it at WISH.md:475):**
 
-- A4b stays unchecked. **Wish B (`rlmx-microagent-plugin`) does not start.**
+- A4b stays unchecked. **Wish B (`mikro-microagent-plugin`) does not start.**
 - Nothing else in Wish A is invalidated. The khal provider (A3), the live MCP
   refresh, the Agent-tool isomorphism, `--dir`, and the `explore` recipe are all
   independently evidenced and green; what failed is the claim that a cheap model
@@ -616,7 +616,7 @@ row that anticipated it at WISH.md:475):**
   and are not ruled out: multi-turn delegation (the `session_id` resume path
   exists and this gate used a single call per task), a premium khal tier above
   haiku (`claude-sonnet` is in the catalog), and decomposing a six-part question
-  into six separate `rlmx_explore` calls at the host rather than inside the
+  into six separate `mikro_explore` calls at the host rather than inside the
   agent. Each is a different experiment, and none of them is what this gate
   tested.
 
@@ -647,8 +647,8 @@ and their checklists are exactly as Group 3 mined them.
 
 ```bash
 export KHAL_API_KEY=…                       # env only, never in a file
-export RLMX_MCP_RUN_TIMEOUT_MS=900000       # or runs get cut at 300s
-cd ~/prod/rlmx && npm run build
+export MIKRO_MCP_RUN_TIMEOUT_MS=900000       # or runs get cut at 300s
+cd ~/prod/mikro && npm run build
 node .genie/wishes/rlmx-explore-offload/parity/verify-native.mjs
 bash .genie/wishes/rlmx-explore-offload/parity/run-round.sh <model> <round-label>
 bash .genie/wishes/rlmx-explore-offload/parity/score-round.sh <round-label>
@@ -708,7 +708,7 @@ failures.
    ran under nor the task roots' revisions were recorded, so no pre-audit round
    can be reproduced. Every run from the audit forward records
    `provenance.promptSha256`, `provenance.agentYamlSha256`,
-   `provenance.rootGit` and `provenance.rlmxGit`, and snapshots the prompt under
+   `provenance.rootGit` and `provenance.mikroGit`, and snapshots the prompt under
    `parity/prompts/<sha>.md`. A shootout that wants to compare configurations
    needs that provenance; this gate did not have it.
 
@@ -737,7 +737,7 @@ Fixed in writing before the first run, reproduced here verbatim:
 > (SYSTEM.md 02184f35, agent.yaml 20f8e018) installed verbatim — no edits of any
 > kind; model = khal/deepseek-v4-flash for parent and children
 > (`--pin-child-model` semantics as the harness supports post-6ec4822);
-> concurrency 1; RLMX_REPL_TIMEOUT_MS=600000; ONE run per frozen task, in task
+> concurrency 1; MIKRO_REPL_TIMEOUT_MS=600000; ONE run per frozen task, in task
 > order 1..6. ONE retry allowed per task ONLY for documented infrastructure
 > death (REPL-timeout wall / connection failure with the error string recorded)
 > — never for content quality; a second infrastructure death counts as the run.
@@ -766,12 +766,12 @@ longer existed (§11).
 | Recipe | `parity/round2/optimizer/gens/gen-1/recipe`, installed verbatim |
 | `sha256 SYSTEM.md` | `02184f35…` (27,840 chars) — snapshot at `parity/prompts/02184f35….md` |
 | `sha256 agent.yaml` (installed) | `20f8e018…` — identical to the recipe's, because the recipe already declares `khal/deepseek-v4-flash` and the runner's model rewrite was a no-op |
-| Agent / tool | installed as `explore-r`, called as `rlmx_explore-r` |
+| Agent / tool | installed as `explore-r`, called as `mikro_explore-r` |
 | Model | `khal/deepseek-v4-flash`, parent **and** children (`--pin-child-model` wrote `model.provider`/`model.model`/`model.sub-call-model` into each scratch `HOME`) |
 | Suite recorded per run | `frozen-eval`, `tasksDir` = `<wish>/tasks` |
 | Concurrency | 1 — each task ran to completion before the next started, in order 1..6 |
-| Env | `RLMX_REPL_TIMEOUT_MS=600000`, `RLMX_MCP_RUN_TIMEOUT_MS=900000`, `PARITY_CALL_TIMEOUT_MS=600000`, `PARITY_MAX_TOTAL_TIMEOUT_MS=2400000` — all four recorded in every run record |
-| rlmx HEAD | `6ec4822` |
+| Env | `MIKRO_REPL_TIMEOUT_MS=600000`, `MIKRO_MCP_RUN_TIMEOUT_MS=900000`, `PARITY_CALL_TIMEOUT_MS=600000`, `PARITY_MAX_TOTAL_TIMEOUT_MS=2400000` — all four recorded in every run record |
+| mikro HEAD | `6ec4822` |
 | Task-root HEADs | `/home/namastex/prod/brain` `040bb83`; `/home/namastex/workspace/repos/genie` `71dd019` |
 | Window | 2026-07-27 13:35:02Z → 14:16:22Z, 41 min, **$0.22** of khal spend |
 | Runner | [`parity/runs/r2-shot-gen1-flash/shot.sh`](../.genie/wishes/rlmx-explore-offload/parity/runs/r2-shot-gen1-flash/shot.sh) — a serial specialization of `run-round.sh`; the frozen gate's own runner was not edited |
@@ -953,11 +953,11 @@ on a different task, from the other direction.
 ### Premium-token accounting (reported, never gated)
 
 Same method as round 1: native = the Explore segment's billed assistant turns;
-rlmx = the host-session delta for the one tool call, `(requestChars +
+mikro = the host-session delta for the one tool call, `(requestChars +
 resultChars) / 4`. Nothing the delegated agent and its children burned on khal
-appears in the rlmx column — it is reported separately.
+appears in the mikro column — it is reported separately.
 
-| Task | Native premium tokens | rlmx premium tokens | Ratio | khal tokens (in/out) | khal cost | Wall |
+| Task | Native premium tokens | mikro premium tokens | Ratio | khal tokens (in/out) | khal cost | Wall |
 |---|---|---|---|---|---|---|
 | 1 | 2,943,691 | 3,314 | **888×** | 298,509 / 42,250 | $0.05 | 514.9s |
 | 2 | 3,098,197 | 2,512 | **1,233×** | 166,728 / 40,080 | $0.03 | 480.8s |
@@ -992,7 +992,7 @@ suffix citation readings.
 
 Round-2 gate: FAIL
 
-**Consequences.** A4b stays unchecked and **Wish B (`rlmx-microagent-plugin`)
+**Consequences.** A4b stays unchecked and **Wish B (`mikro-microagent-plugin`)
 does not start** — the same design failure branch round 1 landed in
 (WISH.md:70-74). The round-1 verdict line above is unchanged; this section
 states round 2's own line, and the two agree.

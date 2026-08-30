@@ -8,7 +8,7 @@
  * (dogfood.sh or manual run) captures `rtk gain` before and after to compute
  * the savings delta recorded in DOGFOOD.md.
  *
- * This is the same code path a real rlmx session uses — no mocks, no stubs.
+ * This is the same code path a real mikro session uses — no mocks, no stubs.
  */
 
 import { REPL } from "../dist/src/repl.js";

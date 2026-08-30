@@ -11,7 +11,7 @@ describe("context loading", () => {
   let dir: string;
 
   it("default options load only .md files", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "a.md"), "hello");
     await writeFile(join(dir, "b.txt"), "world");
     await writeFile(join(dir, "c.py"), "code");
@@ -23,7 +23,7 @@ describe("context loading", () => {
   });
 
   it("custom extensions load specified types", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "a.md"), "hello");
     await writeFile(join(dir, "b.txt"), "world");
     const ctx = await loadContextFromDir(dir, { extensions: [".md", ".txt"] });
@@ -33,7 +33,7 @@ describe("context loading", () => {
   });
 
   it("three extensions load all", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "a.md"), "hello");
     await writeFile(join(dir, "b.txt"), "world");
     await writeFile(join(dir, "c.py"), "code");
@@ -44,7 +44,7 @@ describe("context loading", () => {
   });
 
   it("exclude patterns skip directories", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await mkdir(join(dir, "docs"));
     await mkdir(join(dir, "skip_me"));
     await writeFile(join(dir, "docs", "a.md"), "hello");
@@ -57,7 +57,7 @@ describe("context loading", () => {
   });
 
   it("glob exclude patterns work", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "readme.md"), "content");
     await writeFile(join(dir, "debug.log"), "logs");
     const ctx = await loadContext(dir, {
@@ -71,7 +71,7 @@ describe("context loading", () => {
   });
 
   it("hidden directories always skipped", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await mkdir(join(dir, ".hidden"));
     await writeFile(join(dir, ".hidden", "secret.md"), "secret");
     await writeFile(join(dir, "visible.md"), "visible");
@@ -83,7 +83,7 @@ describe("context loading", () => {
   });
 
   it("loads a single file context", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "test.md"), "file content here");
     const ctx = await loadContextFromFile(join(dir, "test.md"));
     assert.equal(ctx.type, "string");
@@ -92,7 +92,7 @@ describe("context loading", () => {
   });
 
   it("loads JSON file as dict context", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "data.json"), '{"key": "value"}');
     const ctx = await loadContextFromFile(join(dir, "data.json"));
     assert.equal(ctx.type, "dict");
@@ -100,7 +100,7 @@ describe("context loading", () => {
   });
 
   it("empty directory returns empty list", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     const ctx = await loadContextFromDir(dir);
     const items = ctx.content as ContextItem[];
     assert.equal(items.length, 0);
@@ -108,7 +108,7 @@ describe("context loading", () => {
   });
 
   it("extensions filter loads only matching types (regression #28)", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "readme.md"), "markdown");
     await writeFile(join(dir, "app.ts"), "typescript");
     await writeFile(join(dir, "doc.mdx"), "mdx content");
@@ -125,7 +125,7 @@ describe("context loading", () => {
   });
 
   it("extensions without leading dots are normalized (regression #28)", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
     await writeFile(join(dir, "readme.md"), "markdown");
     await writeFile(join(dir, "app.ts"), "typescript");
     await writeFile(join(dir, "doc.mdx"), "mdx content");
@@ -142,12 +142,12 @@ describe("context loading", () => {
   });
 
   it("yaml context.extensions propagates to config correctly (regression #28)", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
-    // Create .rlmx/rlmx.yaml with custom extensions (without dots, as users often write)
-    const rlmxDir = join(dir, ".rlmx");
-    await mkdir(rlmxDir, { recursive: true });
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
+    // Create .mikro/mikro.yaml with custom extensions (without dots, as users often write)
+    const mikroDir = join(dir, ".mikro");
+    await mkdir(mikroDir, { recursive: true });
     await writeFile(
-      join(rlmxDir, "rlmx.yaml"),
+      join(mikroDir, "mikro.yaml"),
       "context:\n  extensions: [mdx, json]\n"
     );
 
@@ -160,11 +160,11 @@ describe("context loading", () => {
   });
 
   it("yaml context.extensions with dots propagates correctly (regression #28)", async () => {
-    dir = await mkdtemp(join(tmpdir(), "rlmx-ctx-"));
-    const rlmxDir = join(dir, ".rlmx");
-    await mkdir(rlmxDir, { recursive: true });
+    dir = await mkdtemp(join(tmpdir(), "mikro-ctx-"));
+    const mikroDir = join(dir, ".mikro");
+    await mkdir(mikroDir, { recursive: true });
     await writeFile(
-      join(rlmxDir, "rlmx.yaml"),
+      join(mikroDir, "mikro.yaml"),
       "context:\n  extensions: [.mdx, .json]\n"
     );
 

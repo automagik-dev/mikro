@@ -15,11 +15,11 @@ async function fileExists(path) {
 const AVAILABLE_TEMPLATES = ["default", "code"];
 /** Files that each template provides */
 const TEMPLATE_FILES = {
-    default: ["rlmx.yaml", "SYSTEM.md", "CRITERIA.md", "TOOLS.md"],
-    code: ["rlmx.yaml", "SYSTEM.md", "CRITERIA.md"],
+    default: ["mikro.yaml", "SYSTEM.md", "CRITERIA.md", "TOOLS.md"],
+    code: ["mikro.yaml", "SYSTEM.md", "CRITERIA.md"],
 };
 /**
- * Scaffold a .rlmx/ directory with template files.
+ * Scaffold a .mikro/ directory with template files.
  * Returns list of files that were created.
  */
 export async function scaffold(dir, template = "default") {
@@ -27,13 +27,13 @@ export async function scaffold(dir, template = "default") {
     if (!AVAILABLE_TEMPLATES.includes(template)) {
         throw new Error(`Error: template "${template}" not found. Available: ${AVAILABLE_TEMPLATES.join(", ")}`);
     }
-    const rlmxDir = join(dir, ".rlmx");
-    await mkdir(rlmxDir, { recursive: true });
+    const mikroDir = join(dir, ".mikro");
+    await mkdir(mikroDir, { recursive: true });
     const created = [];
     const templateDir = join(__dirname, "templates", template);
     const files = TEMPLATE_FILES[template];
     for (const file of files) {
-        const destPath = join(rlmxDir, file);
+        const destPath = join(mikroDir, file);
         if (await fileExists(destPath))
             continue;
         const srcPath = join(templateDir, file);
@@ -43,7 +43,7 @@ export async function scaffold(dir, template = "default") {
     }
     // Code template doesn't have its own TOOLS.md — copy from default
     if (template === "code") {
-        const toolsDest = join(rlmxDir, "TOOLS.md");
+        const toolsDest = join(mikroDir, "TOOLS.md");
         if (!(await fileExists(toolsDest))) {
             const defaultToolsSrc = join(__dirname, "templates", "default", "TOOLS.md");
             const content = await readFile(defaultToolsSrc, "utf-8");
@@ -54,9 +54,9 @@ export async function scaffold(dir, template = "default") {
     return created;
 }
 /**
- * Check if config needs scaffolding (no .rlmx/rlmx.yaml).
+ * Check if config needs scaffolding (no .mikro/mikro.yaml).
  */
 export async function needsScaffold(dir) {
-    return !(await fileExists(join(dir, ".rlmx", "rlmx.yaml")));
+    return !(await fileExists(join(dir, ".mikro", "mikro.yaml")));
 }
 //# sourceMappingURL=scaffold.js.map

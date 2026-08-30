@@ -31,7 +31,7 @@ async function collectUpTo(iter, n) {
 describe("SDK session — file-backed store (Wish B Group 2)", () => {
     let dir = "";
     before(async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-session-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-session-"));
     });
     after(async () => {
         if (dir)
@@ -91,7 +91,7 @@ describe("SDK session — file-backed store (Wish B Group 2)", () => {
 describe("resumeAgent + pauseAgent — public API (Wish B Group 2)", () => {
     let dir = "";
     before(async () => {
-        dir = await mkdtemp(join(tmpdir(), "rlmx-resume-"));
+        dir = await mkdtemp(join(tmpdir(), "mikro-resume-"));
     });
     after(async () => {
         if (dir)

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * eval-routing.mjs — the B3 routing eval for wish `rlmx-microagent-plugin`.
+ * eval-routing.mjs — the B3 routing eval for wish `mikro-microagent-plugin`.
  *
  * WHAT IS BEING MEASURED
  * ----------------------
- * Whether a real Claude Code session, given the `rlmx` plugin (its MCP
+ * Whether a real Claude Code session, given the `mikro` plugin (its MCP
  * registration plus the `offload-guidance` skill), *chooses* to route an
- * explore-class question to `rlmx_explore-r` instead of grinding through the
+ * explore-class question to `mikro_explore-r` instead of grinding through the
  * tree with its own tools — and whether it *escalates* back to its own tools
  * when the offloaded run comes back as the campaign's recorded failure.
  *
@@ -18,7 +18,7 @@
  *                  3, 4, 5, 6, 7, verbatim.
  *   · planted    = the recorded gen-4 rep-2 task-5 error answer, replayed as
  *                  the tool result for task 5's question.
- *   · pass bar   = >= 4 of 5 prompts route to `rlmx_explore-r`, AND the
+ *   · pass bar   = >= 4 of 5 prompts route to `mikro_explore-r`, AND the
  *                  planted case escalates to native tools.
  *
  * Both the prompts and the planted answer are pinned by SHA-256 below and
@@ -32,7 +32,7 @@
  * Real: the session (`claude -p`, a real model, real system prompt), the
  * plugin (staged from `plugins/claude-code/`, loaded via `--plugin-dir`), the
  * skill file byte-for-byte as it ships, the MCP handshake and the tool list —
- * `tools/list` is answered by a real `rlmx mcp` process over stdio, so the
+ * `tools/list` is answered by a real `mikro mcp` process over stdio, so the
  * tool's name, description and input schema are production values, generated
  * by `src/mcp/server.ts` from the real `examples/agents/explore-r/agent.yaml`.
  * The session's cwd is the task's real repository root, so "this project" in
@@ -40,7 +40,7 @@
  * is genuinely possible.
  *
  * Not real: `tools/call`. A thin stdio proxy (written into the staging dir by
- * this script) forwards every JSON-RPC message to the real `rlmx mcp` except
+ * this script) forwards every JSON-RPC message to the real `mikro mcp` except
  * `tools/call`, which it answers itself. That is the only intervention, and it
  * is the point: it is what makes the planted case *the recorded failure*
  * rather than a fresh one, and what keeps the eval free of model spend on the
@@ -51,7 +51,7 @@
  * Stated limits:
  *   · One session per item, single-turn. No multi-turn user pressure.
  *   · `--setting-sources ""` isolates the session from this host's user-scope
- *     settings (which already have the real rlmx plugin installed and would
+ *     settings (which already have the real mikro plugin installed and would
  *     otherwise expose an uncontrolled second copy of the tool). Plugins
  *     installed at other scopes on the host may still load; they are recorded
  *     in the transcript.
@@ -130,7 +130,7 @@ const PASS_BAR = { routedAtLeast: 4, ofItems: 5, plantedMustEscalate: true };
 const NEUTRAL_STUB =
   "[eval-routing harness] This tool call was intercepted by the B3 routing " +
   "eval harness and no exploration was run. The measurement under test — " +
-  "whether this session routes the question to rlmx_explore-r — is already " +
+  "whether this session routes the question to mikro_explore-r — is already " +
   "recorded by the fact that you called it. No answer content exists. Do not " +
   "invent one: reply with exactly the sentence 'Routing recorded by the " +
   "harness; no answer was produced.' and stop.";
@@ -138,7 +138,7 @@ const NEUTRAL_STUB =
 /** Tools that count as the session doing the exploration itself. */
 const NATIVE_TOOLS = new Set(["Read", "Grep", "Glob", "Bash", "Task", "Agent", "NotebookRead"]);
 
-const TOOL_RE = /rlmx_explore-r$/;
+const TOOL_RE = /mikro_explore-r$/;
 
 // ───────────────────────────────────────────────────────────────────────────
 // args
@@ -260,7 +260,7 @@ function verifyPins() {
 const PROXY_SRC = String.raw`#!/usr/bin/env node
 /**
  * Written by scripts/eval-routing.mjs. Forwards every JSON-RPC message to a
- * real "rlmx mcp" child over stdio, except tools/call, which it answers with
+ * real "mikro mcp" child over stdio, except tools/call, which it answers with
  * the scripted result. tools/list therefore carries production tool metadata.
  */
 import { spawn } from "node:child_process";
@@ -271,12 +271,12 @@ const RESULT = readFileSync(process.env.EVAL_RESULT_FILE, "utf8");
 const IS_ERROR = process.env.EVAL_IS_ERROR === "1";
 const CALL_LOG = process.env.EVAL_CALL_LOG;
 
-const child = spawn(process.execPath, [process.env.EVAL_RLMX_CLI, "mcp"], {
+const child = spawn(process.execPath, [process.env.EVAL_MIKRO_CLI, "mcp"], {
   stdio: ["pipe", "pipe", "inherit"],
   env: {
     ...process.env,
-    RLMX_AGENTS_DIR: process.env.EVAL_AGENTS_DIR,
-    RLMX_REPL_TIMEOUT_MS: "600000",
+    MIKRO_AGENTS_DIR: process.env.EVAL_AGENTS_DIR,
+    MIKRO_REPL_TIMEOUT_MS: "600000",
   },
 });
 
@@ -308,7 +308,7 @@ process.stdin.on("close", () => child.kill());
 `;
 
 function stage(opts) {
-  const dir = mkdtempSync(join(tmpdir(), "rlmx-eval-routing-"));
+  const dir = mkdtempSync(join(tmpdir(), "mikro-eval-routing-"));
   const cli = join(REPO, "dist/src/cli.js");
   if (!existsSync(cli)) die(`dist/src/cli.js missing — run \`npm run build\` first`);
 
@@ -339,11 +339,11 @@ function writeMcpConfig(st, { resultFile, isError, callLog }) {
     JSON.stringify(
       {
         mcpServers: {
-          rlmx: {
+          mikro: {
             command: process.execPath,
             args: [join(st.dir, "proxy.mjs")],
             env: {
-              EVAL_RLMX_CLI: st.cli,
+              EVAL_MIKRO_CLI: st.cli,
               EVAL_AGENTS_DIR: st.agents,
               EVAL_RESULT_FILE: resultFile,
               EVAL_CALL_LOG: callLog,
@@ -378,7 +378,7 @@ function runSession({ prompt, cwd, plugin, model, timeoutMs }) {
       // sees a result, and the planted case cannot be delivered at all.
       // Native tools are unaffected and remain available, so routing is still
       // measured against a session that could do the work itself.
-      "--allowed-tools", "mcp__plugin_rlmx_rlmx__rlmx_explore-r", "mcp__plugin_rlmx_rlmx__rlmx_query",
+      "--allowed-tools", "mcp__plugin_mikro_mikro__mikro_explore-r", "mcp__plugin_mikro_mikro__mikro_query",
       "--disallowed-tools", "Write", "Edit", "NotebookEdit",
     ];
     const child = spawn("claude", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
@@ -440,12 +440,12 @@ function timeline(events) {
 function toolOffering(acts) {
   const init = acts.find((a) => a.kind === "init");
   if (!init) return { ok: false, reason: "no init event — the session did not start" };
-  const server = (init.mcpServers ?? []).find((s) => /rlmx/.test(s.name));
+  const server = (init.mcpServers ?? []).find((s) => /mikro/.test(s.name));
   const tools = (init.tools ?? []).filter((t) => TOOL_RE.test(t));
   if (!server || server.status !== "connected" || tools.length === 0) {
     return {
       ok: false,
-      reason: `rlmx_explore-r was never offered: server=${JSON.stringify(server ?? null)} tools=${JSON.stringify(tools)}`,
+      reason: `mikro_explore-r was never offered: server=${JSON.stringify(server ?? null)} tools=${JSON.stringify(tools)}`,
     };
   }
   return { ok: true, tools };
@@ -453,20 +453,20 @@ function toolOffering(acts) {
 
 function score(acts, { planted }) {
   const toolUses = acts.map((a, i) => ({ ...a, i })).filter((a) => a.kind === "tool_use");
-  const rlmxCalls = toolUses.filter((a) => TOOL_RE.test(a.name));
+  const mikroCalls = toolUses.filter((a) => TOOL_RE.test(a.name));
   const skillCalls = toolUses.filter((a) => a.name === "Skill");
-  const routed = rlmxCalls.length > 0;
+  const routed = mikroCalls.length > 0;
 
   const out = {
     routed,
-    rlmxCallCount: rlmxCalls.length,
-    firstRlmxCallAt: routed ? rlmxCalls[0].i : null,
+    mikroCallCount: mikroCalls.length,
+    firstMikroCallAt: routed ? mikroCalls[0].i : null,
     firstToolUse: toolUses.length ? toolUses[0].name : null,
     nativeToolsBeforeRouting: routed
-      ? toolUses.filter((a) => a.i < rlmxCalls[0].i && NATIVE_TOOLS.has(a.name)).map((a) => a.name)
+      ? toolUses.filter((a) => a.i < mikroCalls[0].i && NATIVE_TOOLS.has(a.name)).map((a) => a.name)
       : toolUses.filter((a) => NATIVE_TOOLS.has(a.name)).map((a) => a.name),
     skillInvocations: skillCalls.map((a) => a.input?.command ?? a.input?.name ?? JSON.stringify(a.input)),
-    promptSentTorlmx: rlmxCalls.map((a) => a.input?.prompt ?? a.input?.query ?? null),
+    promptSentTomikro: mikroCalls.map((a) => a.input?.prompt ?? a.input?.query ?? null),
     final: acts.find((a) => a.kind === "result") ?? null,
   };
 
@@ -474,13 +474,13 @@ function score(acts, { planted }) {
     const deliveredAt = acts.findIndex((a) => a.kind === "tool_result" && a.text?.includes(PLANTED.answer));
     const after = deliveredAt >= 0 ? toolUses.filter((a) => a.i > deliveredAt) : [];
     const nativeAfter = after.filter((a) => NATIVE_TOOLS.has(a.name));
-    const retriedRlmx = after.filter((a) => TOOL_RE.test(a.name));
+    const retriedMikro = after.filter((a) => TOOL_RE.test(a.name));
     out.planted = {
       deliveredAt,
       delivered: deliveredAt >= 0,
       nativeToolsAfter: nativeAfter.map((a) => a.name),
       nativeToolCountAfter: nativeAfter.length,
-      rlmxRetriesAfter: retriedRlmx.length,
+      mikroRetriesAfter: retriedMikro.length,
       finalCitationCount: (out.final?.text?.match(/[\w./-]+\.\w+:\d+/g) ?? []).length,
     };
     out.escalated = out.planted.delivered && nativeAfter.length > 0;
@@ -500,8 +500,8 @@ function render(acts) {
       case "init":
         lines.push(`[init] model=${a.model} cwd=${a.cwd}`);
         lines.push(`[init] mcp_servers=${JSON.stringify(a.mcpServers)}`);
-        lines.push(`[init] rlmx tools=${JSON.stringify(a.tools.filter((t) => /rlmx/.test(t)))}`);
-        lines.push(`[init] rlmx skills=${JSON.stringify((a.slashCommands ?? []).filter((s) => /rlmx/.test(s)))}`);
+        lines.push(`[init] mikro tools=${JSON.stringify(a.tools.filter((t) => /mikro/.test(t)))}`);
+        lines.push(`[init] mikro skills=${JSON.stringify((a.slashCommands ?? []).filter((s) => /mikro/.test(s)))}`);
         break;
       case "thinking":
         lines.push(`[thinking]\n${clip(a.text, 4000)}`);
@@ -616,7 +616,7 @@ async function main() {
     const intercepted = readFileSync(callLog, "utf8").split("\n").filter(Boolean).length;
     if (s.routed && intercepted === 0) {
       die(
-        `${id}: HARNESS FAULT — the session called rlmx_explore-r ${s.rlmxCallCount}× but the ` +
+        `${id}: HARNESS FAULT — the session called mikro_explore-r ${s.mikroCallCount}× but the ` +
           `proxy logged 0 calls, so no scripted result was ever delivered. Check the ` +
           `permission grant and the MCP server status in ${transcript}.`,
       );
@@ -648,7 +648,7 @@ async function main() {
   const pass = routingPass && (!PASS_BAR.plantedMustEscalate || escalationPass);
 
   const summary = {
-    wish: "rlmx-microagent-plugin",
+    wish: "mikro-microagent-plugin",
     criterion: "B3",
     arm: opts.label,
     control: opts.control,

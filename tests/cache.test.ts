@@ -8,7 +8,7 @@ import {
   validateContextSize,
 } from "../src/cache.js";
 import type { LoadedContext, ContextItem } from "../src/context.js";
-import type { RlmxConfig } from "../src/config.js";
+import type { MikroConfig } from "../src/config.js";
 
 // ─── Test helpers ────────────────────────────────────────
 
@@ -28,7 +28,7 @@ function makeStringContext(text: string): LoadedContext {
   };
 }
 
-function makeConfig(overrides: Partial<RlmxConfig> = {}): RlmxConfig {
+function makeConfig(overrides: Partial<MikroConfig> = {}): MikroConfig {
   return {
     system: overrides.system ?? "You are a helper.",
     tools: overrides.tools ?? [],
@@ -42,8 +42,9 @@ function makeConfig(overrides: Partial<RlmxConfig> = {}): RlmxConfig {
     configSource: overrides.configSource ?? "yaml",
     gemini: overrides.gemini ?? { thinkingLevel: null, googleSearch: false, urlContext: false, codeExecution: false, computerUse: false, mapsGrounding: false, fileSearch: false, mediaResolution: null },
     output: overrides.output ?? { schema: null },
-    storage: overrides.storage ?? { enabled: "auto", mode: "persistent", dataDir: "~/.rlmx/data", port: 0, chunkSize: null, chunkUtilization: 0.6, charsPerToken: 4 },
+    storage: overrides.storage ?? { enabled: "auto", mode: "persistent", dataDir: "~/.mikro/data", port: 0, chunkSize: null, chunkUtilization: 0.6, charsPerToken: 4 },
     rtk: overrides.rtk ?? { enabled: "auto" },
+    providers: overrides.providers ?? [],
   };
 }
 

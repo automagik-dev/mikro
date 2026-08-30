@@ -58,7 +58,7 @@
  *     miner's "verbatim from the transcript".
  *   - There is no native arm. A mined task's ground truth is a real session's
  *     answer, which is what makes the D6/P3 asymmetry conservative — native
- *     scores 100% by construction and the gate is therefore harder for rlmx.
+ *     scores 100% by construction and the gate is therefore harder for mikro.
  *     An authored task has no such session, so it carries **no native baseline
  *     and no native token accounting**, and `score-task.mjs --native` will not
  *     run against it. It is a training input, not a gate input.
@@ -162,7 +162,7 @@ function excludedSuite(dir) {
   if (!names.length) throw new Error(`--exclude-tasks: no task files in ${dir}`);
   for (const name of names.sort((a, b) => parseInt(a, 10) - parseInt(b, 10))) {
     const text = readFileSync(join(dir, name), "utf-8");
-    const root = /^\| Task root \(the rlmx arm's `--dir`\) \| `([^`]+)` \|$/m.exec(text)?.[1];
+    const root = /^\| Task root \(the mikro arm's `--dir`\) \| `([^`]+)` \|$/m.exec(text)?.[1];
     const session = /^\| Session \| `([^`]+)` \|$/m.exec(text)?.[1];
     if (!root || !session) throw new Error(`--exclude-tasks: ${name} has no root/session row`);
     const anchorFiles = new Set();
@@ -294,7 +294,7 @@ function renderTask(task, n, meta) {
     "",
     "| Field | Value |",
     "|-------|-------|",
-    `| Task root (the rlmx arm's \`--dir\`) | \`${task.root}\` |`,
+    `| Task root (the mikro arm's \`--dir\`) | \`${task.root}\` |`,
     `| Provenance | **authored for the training suite** — not mined from a transcript |`,
     `| Session | \`authored-${task.slug}\` |`,
     `| Authored | ${meta.authoredAt} by ${meta.authoredBy} |`,
@@ -324,7 +324,7 @@ function renderTask(task, n, meta) {
     "- **The question was written for this suite**, not lifted from a transcript.",
     "- **There is no native arm.** A mined task's ground truth is a real session's",
     "  answer, so native passes criterion 1 by construction and the gate is harder",
-    "  for `rlmx` — the disclosed D6/P3 asymmetry. This task has no such session:",
+    "  for `mikro` — the disclosed D6/P3 asymmetry. This task has no such session:",
     "  it carries no native baseline and no native token accounting, and",
     "  `score-task.mjs --native` does not run against it. **It is a training",
     "  input, never a gate input.**",
@@ -397,10 +397,10 @@ function renderTask(task, n, meta) {
     "- Criterion 3: no `path:line` in the reference answer names a file the task",
     "  root does not have — same rejection rule.",
     "",
-    "## How to run the rlmx arm",
+    "## How to run the mikro arm",
     "",
     "```bash",
-    `rlmx mcp --dir ${task.root}   # then call rlmx_explore with the question above`,
+    `mikro mcp --dir ${task.root}   # then call mikro_explore with the question above`,
     "```",
     "",
     "Authored by `scripts/author-explore-tasks.mjs`; every fact machine-verified",

@@ -36,7 +36,7 @@ echo '{"query":"carol divorcio", "limit":2}' | python3 examples/agents/brain-tri
 
 ```ts
 import { join } from "node:path";
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const dir = join(import.meta.dir, "..", "examples", "agents", "brain-triage");
 const spec = await sdk.loadAgentSpec(dir);

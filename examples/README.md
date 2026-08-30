@@ -1,16 +1,16 @@
-# rlmx Examples
+# mikro Examples
 
 Two different kinds of thing live here, and they install in different places.
 
 **[`agents/`](agents/) — `agent.yaml` microagent recipes.** Every microagent
 this repo ships is in that one tree: `explore`, `explore-r`, `codebase-qa`,
 `changelog`, `log-triage`, `hello-world`, `research-agent`, `brain-triage`.
-Copy one into a discovery root (`<project>/.rlmx/agents/<name>/` or
-`~/.rlmx/agents/<name>/`) and `rlmx mcp` exposes it as an `rlmx_<name>` tool.
+Copy one into a discovery root (`<project>/.mikro/agents/<name>/` or
+`~/.mikro/agents/<name>/`) and `mikro mcp` exposes it as an `mikro_<name>` tool.
 Start at [`agents/README.md`](agents/README.md).
 
-**Everything below — `rlmx.yaml` configurations** for different use cases.
-These configure a whole `rlmx "query" --context …` run; they are not
+**Everything below — `mikro.yaml` configurations** for different use cases.
+These configure a whole `mikro "query" --context …` run; they are not
 microagents and do not belong in a discovery root.
 
 > `codebase-qa` exists in both senses, and they are different artifacts:
@@ -23,8 +23,8 @@ Research agent for Tauri v2 documentation. Loads `.md` and `.mdx` files, uses `s
 
 ```bash
 cd my-tauri-project
-cp ../examples/tauri-docs/rlmx.yaml .
-rlmx "How does IPC work in Tauri v2?" --context ./docs/
+cp ../examples/tauri-docs/mikro.yaml .
+mikro "How does IPC work in Tauri v2?" --context ./docs/
 ```
 
 ## Codebase Q&A
@@ -33,8 +33,8 @@ Code analysis agent that traces execution flows across a project. Loads `.ts`, `
 
 ```bash
 cd my-project
-cp ../examples/codebase-qa/rlmx.yaml .
-rlmx "How does authentication work?" --context ./src/
+cp ../examples/codebase-qa/mikro.yaml .
+mikro "How does authentication work?" --context ./src/
 ```
 
 ## Paper Review
@@ -42,8 +42,8 @@ rlmx "How does authentication work?" --context ./src/
 Academic peer reviewer that systematically evaluates research papers. Uses `core` tools (paper-faithful) with custom claim extraction and methodology analysis.
 
 ```bash
-cp examples/paper-review/rlmx.yaml .
-rlmx "Review this paper" --context paper.md
+cp examples/paper-review/mikro.yaml .
+mikro "Review this paper" --context paper.md
 ```
 
 ## Customizing

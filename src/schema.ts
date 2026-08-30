@@ -22,17 +22,17 @@ export interface JsonSchema {
   additionalProperties?: boolean;
 }
 
-export interface RlmxCliSchema {
+export interface MikroCliSchema {
   schemaVersion: 1;
-  command: "rlmx";
+  command: "mikro";
   flags: CliFlagSchema[];
   output: JsonSchema;
   exitCodes: ExitCodeSchema[];
 }
 
-export const RLMX_CLI_SCHEMA: RlmxCliSchema = {
+export const MIKRO_CLI_SCHEMA: MikroCliSchema = {
   schemaVersion: 1,
-  command: "rlmx",
+  command: "mikro",
   flags: [
     {
       name: "--schema",
@@ -93,7 +93,7 @@ export const RLMX_CLI_SCHEMA: RlmxCliSchema = {
       aliases: ["-v"],
       type: "boolean",
       default: false,
-      description: "Show rlmx version and exit.",
+      description: "Show mikro version and exit.",
     },
     {
       name: "--stats",
@@ -143,7 +143,7 @@ export const RLMX_CLI_SCHEMA: RlmxCliSchema = {
       type: "string",
       default: null,
       description:
-        'Model for this run: "provider/model", or a bare model id on the configured provider. Outranks settings.json and rlmx.yaml, and re-pins the sub-call model. Recursive children receive it automatically.',
+        'Model for this run: "provider/model", or a bare model id on the configured provider. Outranks settings.json and mikro.yaml, and re-pins the sub-call model. Recursive children receive it automatically.',
       appliesTo: ["query"],
     },
     {
@@ -209,14 +209,14 @@ export const RLMX_CLI_SCHEMA: RlmxCliSchema = {
       aliases: ["-f"],
       type: "boolean",
       default: false,
-      description: "Allow rlmx update to reset a dirty managed checkout to origin/main.",
+      description: "Allow mikro update to reset a dirty managed checkout to origin/main.",
       appliesTo: ["update"],
     },
   ],
   output: {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
-    description: "Object emitted by `rlmx --output json`. When --stats is set, stats is included.",
+    description: "Object emitted by `mikro --output json`. When --stats is set, stats is included.",
     required: ["answer", "references", "usage", "iterations", "model"],
     additionalProperties: true,
     properties: {
@@ -252,6 +252,6 @@ export const RLMX_CLI_SCHEMA: RlmxCliSchema = {
   ],
 };
 
-export function printRlmxCliSchema(): void {
-  console.log(JSON.stringify(RLMX_CLI_SCHEMA, null, 2));
+export function printMikroCliSchema(): void {
+  console.log(JSON.stringify(MIKRO_CLI_SCHEMA, null, 2));
 }

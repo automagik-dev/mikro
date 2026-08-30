@@ -13,18 +13,18 @@ examples/agents/changelog/
 ## Install
 
 ```bash
-cp -r examples/agents/changelog ~/.rlmx/agents/changelog          # global
-cp -r examples/agents/changelog <project>/.rlmx/agents/changelog  # project
+cp -r examples/agents/changelog ~/.mikro/agents/changelog          # global
+cp -r examples/agents/changelog <project>/.mikro/agents/changelog  # project
 ```
 
-A host running `rlmx mcp` then sees an `rlmx_changelog` tool. Project agents
+A host running `mikro mcp` then sees an `mikro_changelog` tool. Project agents
 shadow global ones of the same name.
 
 ## Use
 
-An `agent.yaml` recipe has no CLI entry point — `rlmx "query"` runs the
-ambient config, not an agent (`rlmx --help`). A microagent is reached **as an
-MCP tool**: run `rlmx mcp` from your host and call `rlmx_changelog`, pasting
+An `agent.yaml` recipe has no CLI entry point — `mikro "query"` runs the
+ambient config, not an agent (`mikro --help`). A microagent is reached **as an
+MCP tool**: run `mikro mcp` from your host and call `mikro_changelog`, pasting
 the `git log --oneline <range>` output as the prompt. In-process, the SDK path
 is `sdk.loadAgentSpec(dir)` + `runAgent(...)` — see
 [`../hello-world/README.md`](../hello-world/README.md) for a worked example.
@@ -44,8 +44,8 @@ cost, and slow-ish. Any `khal/<model>` or cloud model works: change the
 
 ## Provenance
 
-Copied verbatim from this host's `~/.rlmx/agents/changelog/` on 2026-07-27
-under wish `rlmx-microagent-plugin` (B5). Both files are byte-identical to the
+Copied verbatim from this host's `~/.mikro/agents/changelog/` on 2026-07-27
+under wish `mikro-microagent-plugin` (B5). Both files are byte-identical to the
 source:
 
 | file | sha256 |
@@ -57,16 +57,16 @@ The host copy dates from 2026-07-25 and has never been benchmarked — no parity
 run, no smoke gate, no scored suite covers it. It is preserved here because it
 was written and used, not because it was measured.
 
-## Removing the host copy — a user step, not something rlmx did
+## Removing the host copy — a user step, not something mikro did
 
 The archival that put this file here **did not delete anything under your
-home directory**, and nothing in rlmx will. If you want the global copy gone
+home directory**, and nothing in mikro will. If you want the global copy gone
 now that the recipe is in the repo, that is your command to run:
 
 ```bash
-rm -rf ~/.rlmx/agents/changelog
+rm -rf ~/.mikro/agents/changelog
 ```
 
-Check first that nothing you rely on calls `rlmx_changelog`, and note that the
+Check first that nothing you rely on calls `mikro_changelog`, and note that the
 repo copy is a recipe, not an installed agent: removing the host copy removes
 the tool from every host session until you install it again from here.

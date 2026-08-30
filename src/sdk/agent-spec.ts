@@ -39,7 +39,7 @@ export interface AgentSpec {
 	readonly systemPath?: string;
 	/**
 	 * Reasoning effort for this agent's own model calls — the `agent.yaml`
-	 * equivalent of `rlmx --thinking`. `undefined` means "not declared".
+	 * equivalent of `mikro --thinking`. `undefined` means "not declared".
 	 *
 	 * Consumers apply it by writing `config.gemini.thinkingLevel`, the single
 	 * field `llmComplete` turns into pi-ai's `reasoning` option (see
@@ -63,12 +63,12 @@ export interface AgentSpec {
 	readonly budget?: AgentBudget;
 	/**
 	 * Internal, undocumented: which runtime backend executes this agent's
-	 * turns (wish rlmx-v2-prime-backend). Absent means `rlmx` — the legacy
+	 * turns (wish mikro-v2-prime-backend). Absent means `mikro` — the legacy
 	 * engine, which stays the default. Deliberately NOT part of the
 	 * documented `agent.yaml` schema: it is a gate/experiment selector that
 	 * may change without notice.
 	 *
-	 * - `rlmx` — the legacy in-process engine (`rlmLoop`). The default.
+	 * - `mikro` — the legacy in-process engine (`rlmLoop`). The default.
 	 * - `prime` — one `prime-agent` subprocess per turn
 	 *   (`src/mcp/backends/prime.ts`).
 	 * - `prime-sdk` — the same agent driven in-process through prime's
@@ -76,14 +76,14 @@ export interface AgentSpec {
 	 *   start, plus custom tools, structured output, custom providers, and
 	 *   sub-call depth, which the subprocess flag surface cannot express.
 	 */
-	readonly backend?: "rlmx" | "prime" | "prime-sdk";
+	readonly backend?: "mikro" | "prime" | "prime-sdk";
 	/** Preserved unrecognised keys — consumers layer their own schema. */
 	readonly extras: Readonly<Record<string, unknown>>;
 }
 
 /** Backends a spec may name. Pinned here so the error text can list them. */
 const VALID_BACKENDS: readonly NonNullable<AgentSpec["backend"]>[] = [
-	"rlmx",
+	"mikro",
 	"prime",
 	"prime-sdk",
 ] as const;
@@ -179,7 +179,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 	// arbitrary supported level instead of being rejected, so `thinking: hgih`
 	// would run at whatever effort the model happens to floor at and look like
 	// it worked. Fail loudly at parse time — which is discovery time for
-	// `rlmx mcp` — the way `shape` does.
+	// `mikro mcp` — the way `shape` does.
 	const thinkingRaw = asString(r.thinking);
 	if (thinkingRaw !== undefined && !isValidThinkingLevel(thinkingRaw)) {
 		throw new Error(
@@ -194,7 +194,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 	const backendRaw = asString(r.backend);
 	if (
 		backendRaw !== undefined &&
-		backendRaw !== "rlmx" &&
+		backendRaw !== "mikro" &&
 		backendRaw !== "prime" &&
 		backendRaw !== "prime-sdk"
 	) {

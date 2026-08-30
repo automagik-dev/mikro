@@ -2,6 +2,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import type { ThinkingLevel } from "./gemini.js";
+import {
+  mergeCustomProviders,
+  parseCustomProviders,
+  type CustomProviderConfig,
+} from "./custom-providers.js";
+import { loadSettings } from "./settings.js";
 
 // ─── Interfaces ──────────────────────────────────────────
 
@@ -16,6 +22,14 @@ export interface ModelConfig {
   provider: string;
   model: string;
   subCallModel?: string;
+  /**
+   * Config-declared providers (see src/custom-providers.ts). Carried on the
+   * model config — not just on `MikroConfig` — so every resolution site that
+   * receives a `ModelConfig` (llmComplete, the SDK driver, recursive children)
+   * can register them before lookup without threading a second argument
+   * through the call graph. `applyModelRef` spreads it forward untouched.
+   */
+  providers?: CustomProviderConfig[];
 }
 
 /** Budget limits (all optional — null means unlimited) */
@@ -89,8 +103,8 @@ export interface RtkConfig {
 /** Tool level — controls which functions are available in the REPL */
 export type ToolsLevel = "core" | "standard" | "full";
 
-/** Full rlmx config */
-export interface RlmxConfig {
+/** Full mikro config */
+export interface MikroConfig {
   system: string | null;
   tools: ToolDef[];
   criteria: string | null;
@@ -113,6 +127,11 @@ export interface RlmxConfig {
   storage: StorageConfig;
   /** RTK (Rust Token Killer) integration */
   rtk: RtkConfig;
+  /**
+   * Providers declared in config (settings.json merged with mikro.yaml; the
+   * yaml wins per id). Also mirrored on `model.providers`.
+   */
+  providers: CustomProviderConfig[];
   /** Config source: "yaml" | "defaults" */
   configSource: "yaml" | "defaults";
 }
@@ -159,7 +178,7 @@ const DEFAULT_OUTPUT_CONFIG: OutputConfig = {
 export const DEFAULT_STORAGE_CONFIG: StorageConfig = {
   enabled: "auto",
   mode: "persistent",
-  dataDir: "~/.rlmx/data",
+  dataDir: "~/.mikro/data",
   port: 0,
   chunkSize: null,
   chunkUtilization: 0.6,
@@ -172,7 +191,7 @@ export const DEFAULT_RTK_CONFIG: RtkConfig = {
 
 // ─── YAML Schema ─────────────────────────────────────────
 
-/** Shape of rlmx.yaml on disk (config-only — no system/criteria) */
+/** Shape of mikro.yaml on disk (config-only — no system/criteria) */
 interface RawYamlConfig {
   model?: {
     provider?: string;
@@ -227,6 +246,7 @@ interface RawYamlConfig {
   rtk?: {
     enabled?: string;
   };
+  providers?: unknown;
 }
 
 // ─── File Helpers ────────────────────────────────────────
@@ -337,28 +357,38 @@ export function parseToolsMd(content: string): ToolDef[] {
 // ─── YAML Parsing ────────────────────────────────────────
 
 /**
- * Parse and validate an rlmx.yaml file.
+ * Parse and validate an mikro.yaml file.
  */
-function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system" | "criteria" | "tools"> {
+function parseYamlConfig(
+  content: string,
+  dir: string,
+  globalProviders: readonly CustomProviderConfig[] = []
+): Omit<MikroConfig, "system" | "criteria" | "tools"> {
   let raw: unknown;
   try {
     raw = yaml.load(content);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `Invalid YAML in rlmx.yaml: ${msg}\n` +
+      `Invalid YAML in mikro.yaml: ${msg}\n` +
         `Hint: check for indentation errors or unquoted special characters.`
     );
   }
 
   if (raw === null || raw === undefined || typeof raw !== "object") {
     throw new Error(
-      `rlmx.yaml is empty or not a YAML mapping.\n` +
+      `mikro.yaml is empty or not a YAML mapping.\n` +
         `Expected a YAML object with keys like model, context, budget, etc.`
     );
   }
 
   const cfg = raw as RawYamlConfig;
+
+  // Parse config-declared providers first: the model block may name one.
+  const providers = mergeCustomProviders(
+    globalProviders,
+    parseCustomProviders(cfg.providers, "mikro.yaml")
+  );
 
   // Parse model
   const model: ModelConfig = {
@@ -368,6 +398,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   if (cfg.model?.["sub-call-model"]) {
     model.subCallModel = cfg.model["sub-call-model"];
   }
+  if (providers.length) model.providers = providers;
 
   // Parse context config
   const contextConfig: ContextConfig = {
@@ -405,7 +436,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   const rawLevel = cfg["tools-level"] ?? "core";
   if (!["core", "standard", "full"].includes(rawLevel)) {
     throw new Error(
-      `Invalid tools-level "${rawLevel}" in rlmx.yaml. Must be one of: core, standard, full.`
+      `Invalid tools-level "${rawLevel}" in mikro.yaml. Must be one of: core, standard, full.`
     );
   }
   const toolsLevel = rawLevel as ToolsLevel;
@@ -414,13 +445,13 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   const rawRetention = cfg.cache?.retention ?? "long";
   if (rawRetention && !["short", "long"].includes(rawRetention)) {
     throw new Error(
-      `Invalid cache.retention "${rawRetention}" in rlmx.yaml. Must be one of: short, long.`
+      `Invalid cache.retention "${rawRetention}" in mikro.yaml. Must be one of: short, long.`
     );
   }
   const rawStrategy = cfg.cache?.strategy ?? "full";
   if (rawStrategy && rawStrategy !== "full") {
     throw new Error(
-      `Invalid cache.strategy "${rawStrategy}" in rlmx.yaml. Only "full" is currently supported.`
+      `Invalid cache.strategy "${rawStrategy}" in mikro.yaml. Only "full" is currently supported.`
     );
   }
   const cache: CacheConfig = {
@@ -455,7 +486,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
     const validLevels = ["minimal", "low", "medium", "high"];
     if (!validLevels.includes(gemini.thinkingLevel)) {
       throw new Error(
-        `Invalid gemini.thinking-level "${gemini.thinkingLevel}" in rlmx.yaml. ` +
+        `Invalid gemini.thinking-level "${gemini.thinkingLevel}" in mikro.yaml. ` +
         `Must be one of: minimal, low, medium, high.`
       );
     }
@@ -467,7 +498,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
     for (const [key, value] of Object.entries(gemini.mediaResolution)) {
       if (value && !validResolutions.includes(value)) {
         throw new Error(
-          `Invalid gemini.media-resolution.${key} "${value}" in rlmx.yaml. ` +
+          `Invalid gemini.media-resolution.${key} "${value}" in mikro.yaml. ` +
           `Must be one of: low, medium, high, auto.`
         );
       }
@@ -482,7 +513,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   // Validate output schema if provided
   if (output.schema !== null && typeof output.schema !== "object") {
     throw new Error(
-      `Invalid output.schema in rlmx.yaml: must be a JSON Schema object or null.`
+      `Invalid output.schema in mikro.yaml: must be a JSON Schema object or null.`
     );
   }
 
@@ -490,37 +521,37 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   const rawEnabled = cfg.storage?.enabled ?? DEFAULT_STORAGE_CONFIG.enabled;
   if (!["auto", "always", "never"].includes(rawEnabled)) {
     throw new Error(
-      `Invalid storage.enabled "${rawEnabled}" in rlmx.yaml. Must be one of: auto, always, never.`
+      `Invalid storage.enabled "${rawEnabled}" in mikro.yaml. Must be one of: auto, always, never.`
     );
   }
   const rawMode = cfg.storage?.mode ?? DEFAULT_STORAGE_CONFIG.mode;
   if (!["persistent", "memory"].includes(rawMode)) {
     throw new Error(
-      `Invalid storage.mode "${rawMode}" in rlmx.yaml. Must be one of: persistent, memory.`
+      `Invalid storage.mode "${rawMode}" in mikro.yaml. Must be one of: persistent, memory.`
     );
   }
   const storagePort = cfg.storage?.port ?? DEFAULT_STORAGE_CONFIG.port;
   if (typeof storagePort !== "number" || storagePort < 0 || !Number.isInteger(storagePort)) {
     throw new Error(
-      `Invalid storage.port in rlmx.yaml: must be a non-negative integer, got ${storagePort}.`
+      `Invalid storage.port in mikro.yaml: must be a non-negative integer, got ${storagePort}.`
     );
   }
   const chunkSize = cfg.storage?.["chunk-size"] ?? DEFAULT_STORAGE_CONFIG.chunkSize;
   if (chunkSize !== null && (typeof chunkSize !== "number" || chunkSize <= 0)) {
     throw new Error(
-      `Invalid storage.chunk-size in rlmx.yaml: must be a positive number or null, got ${chunkSize}.`
+      `Invalid storage.chunk-size in mikro.yaml: must be a positive number or null, got ${chunkSize}.`
     );
   }
   const chunkUtilization = cfg.storage?.["chunk-utilization"] ?? DEFAULT_STORAGE_CONFIG.chunkUtilization;
   if (typeof chunkUtilization !== "number" || chunkUtilization <= 0 || chunkUtilization > 1) {
     throw new Error(
-      `Invalid storage.chunk-utilization in rlmx.yaml: must be a number between 0 (exclusive) and 1 (inclusive), got ${chunkUtilization}.`
+      `Invalid storage.chunk-utilization in mikro.yaml: must be a number between 0 (exclusive) and 1 (inclusive), got ${chunkUtilization}.`
     );
   }
   const charsPerToken = cfg.storage?.["chars-per-token"] ?? DEFAULT_STORAGE_CONFIG.charsPerToken;
   if (typeof charsPerToken !== "number" || charsPerToken <= 0) {
     throw new Error(
-      `Invalid storage.chars-per-token in rlmx.yaml: must be a positive number, got ${charsPerToken}.`
+      `Invalid storage.chars-per-token in mikro.yaml: must be a positive number, got ${charsPerToken}.`
     );
   }
   const storage: StorageConfig = {
@@ -537,7 +568,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
   const rawRtkEnabled = cfg.rtk?.enabled ?? DEFAULT_RTK_CONFIG.enabled;
   if (!["auto", "always", "never"].includes(rawRtkEnabled)) {
     throw new Error(
-      `Invalid rtk.enabled "${rawRtkEnabled}" in rlmx.yaml. Must be one of: auto, always, never.`
+      `Invalid rtk.enabled "${rawRtkEnabled}" in mikro.yaml. Must be one of: auto, always, never.`
     );
   }
   const rtk: RtkConfig = {
@@ -555,6 +586,7 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
     output,
     storage,
     rtk,
+    providers,
     configSource: "yaml",
   };
 }
@@ -562,12 +594,14 @@ function parseYamlConfig(content: string, dir: string): Omit<RlmxConfig, "system
 /**
  * Build a config from defaults only (no files).
  */
-function defaultConfig(dir: string): RlmxConfig {
+function defaultConfig(dir: string, providers: CustomProviderConfig[] = []): MikroConfig {
+  const model: ModelConfig = { ...DEFAULT_MODEL };
+  if (providers.length) model.providers = providers;
   return {
     system: null,
     tools: [],
     criteria: null,
-    model: { ...DEFAULT_MODEL },
+    model,
     configDir: dir,
     budget: { ...DEFAULT_BUDGET },
     contextConfig: { ...DEFAULT_CONTEXT_CONFIG },
@@ -577,33 +611,62 @@ function defaultConfig(dir: string): RlmxConfig {
     output: { ...DEFAULT_OUTPUT_CONFIG },
     storage: { ...DEFAULT_STORAGE_CONFIG },
     rtk: { ...DEFAULT_RTK_CONFIG },
+    providers,
     configSource: "defaults",
   };
+}
+
+/**
+ * Providers declared globally in ~/.mikro/settings.json under `"providers"`.
+ * Read on every load (the file is small) so a `mikro config` edit takes effect
+ * on the next run. A malformed block is an error, not a silent skip — the
+ * operator wrote it expecting it to work.
+ */
+export async function loadGlobalProviders(): Promise<CustomProviderConfig[]> {
+  const settings = await loadSettings();
+  return parseCustomProviders(settings.providers, "settings.json");
 }
 
 // ─── Main loader ─────────────────────────────────────────
 
 /**
- * Load rlmx config from .rlmx/ directory:
- *   1. .rlmx/rlmx.yaml (required for yaml source)
- *   2. .rlmx/SYSTEM.md (auto-loaded when present)
- *   3. .rlmx/CRITERIA.md (auto-loaded when present)
- *   4. .rlmx/TOOLS.md (auto-loaded and parsed when present)
- *   5. Defaults if no .rlmx/rlmx.yaml
+ * Load mikro config from .mikro/ directory:
+ *   1. .mikro/mikro.yaml (required for yaml source)
+ *   2. .mikro/SYSTEM.md (auto-loaded when present)
+ *   3. .mikro/CRITERIA.md (auto-loaded when present)
+ *   4. .mikro/TOOLS.md (auto-loaded and parsed when present)
+ *   5. Defaults if no .mikro/mikro.yaml
+ *
+ * Config-declared providers come from ~/.mikro/settings.json (`"providers"`)
+ * overlaid by mikro.yaml (`providers:`), in both the yaml and the defaults
+ * branch — a project with no mikro.yaml can still run on a globally declared
+ * provider.
  */
-export async function loadConfig(dir: string): Promise<RlmxConfig> {
-  const rlmxDir = join(dir, ".rlmx");
+export async function loadConfig(dir: string): Promise<MikroConfig> {
+  let mikroDir = join(dir, ".mikro");
+  const globalProviders = await loadGlobalProviders();
 
-  // Try .rlmx/rlmx.yaml
-  const yamlContent = await readOptionalFile(join(rlmxDir, "rlmx.yaml"));
+  // Try .mikro/mikro.yaml, then the pre-rename .rlmx/rlmx.yaml. The fallback
+  // keeps an unmigrated checkout running; the warning (once per process, per
+  // dir) points at `mikro migrate` so it does not stay unmigrated for long.
+  let yamlContent = await readOptionalFile(join(mikroDir, "mikro.yaml"));
+  if (yamlContent === null) {
+    const legacyDir = join(dir, ".rlmx");
+    const legacy = await readOptionalFile(join(legacyDir, "rlmx.yaml"));
+    if (legacy !== null) {
+      yamlContent = legacy;
+      mikroDir = legacyDir;
+      warnLegacyConfig(legacyDir);
+    }
+  }
   if (yamlContent !== null) {
-    const partial = parseYamlConfig(yamlContent, dir);
+    const partial = parseYamlConfig(yamlContent, dir, globalProviders);
 
-    // Auto-load .md files from .rlmx/
+    // Auto-load .md files from .mikro/
     const [systemRaw, criteriaRaw, toolsRaw] = await Promise.all([
-      readOptionalFile(join(rlmxDir, "SYSTEM.md")),
-      readOptionalFile(join(rlmxDir, "CRITERIA.md")),
-      readOptionalFile(join(rlmxDir, "TOOLS.md")),
+      readOptionalFile(join(mikroDir, "SYSTEM.md")),
+      readOptionalFile(join(mikroDir, "CRITERIA.md")),
+      readOptionalFile(join(mikroDir, "TOOLS.md")),
     ]);
 
     const system = systemRaw?.trim() || null;
@@ -618,14 +681,28 @@ export async function loadConfig(dir: string): Promise<RlmxConfig> {
     };
   }
 
-  // No .rlmx/rlmx.yaml — return defaults
-  return defaultConfig(dir);
+  // No .mikro/mikro.yaml — return defaults
+  return defaultConfig(dir, globalProviders);
 }
 
 /**
  * Check if any config exists in a directory.
- * Only checks .rlmx/rlmx.yaml.
+ * Checks .mikro/mikro.yaml, then the legacy .rlmx/rlmx.yaml.
  */
 export async function hasConfig(dir: string): Promise<boolean> {
-  return (await readOptionalFile(join(dir, ".rlmx", "rlmx.yaml"))) !== null;
+  return (
+    (await readOptionalFile(join(dir, ".mikro", "mikro.yaml"))) !== null ||
+    (await readOptionalFile(join(dir, ".rlmx", "rlmx.yaml"))) !== null
+  );
+}
+
+const warnedLegacyDirs = new Set<string>();
+
+/** Emit the legacy-config warning once per directory per process. */
+function warnLegacyConfig(legacyDir: string): void {
+  if (warnedLegacyDirs.has(legacyDir)) return;
+  warnedLegacyDirs.add(legacyDir);
+  process.stderr.write(
+    `mikro: reading legacy config from ${legacyDir} — run \`mikro migrate --apply\` to rename it to .mikro/mikro.yaml\n`
+  );
 }

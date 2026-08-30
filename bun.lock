@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "@automagik/rlmx",
+      "name": "mikro",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.26.0",
         "@earendil-works/pi-ai": "0.80.10",

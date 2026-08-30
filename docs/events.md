@@ -1,4 +1,4 @@
-# rlmx SDK — Events, runAgent, primitives, tool loader
+# mikro SDK — Events, runAgent, primitives, tool loader
 
 > **Status:** Wish B Groups 1 + 2 + 2b + 2c + 3a.
 > G1 shipped event types + emitter.
@@ -15,7 +15,7 @@ Consumers drive the stream with `for await`; the SDK core pushes
 events at every state transition.
 
 ```ts
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 // Future (Group 2): const stream = sdk.runAgent({ ... });
 // Today: construct an emitter manually for tests / preview.
 const em = sdk.createEmitter();
@@ -76,7 +76,7 @@ recognises the deserialised shape.
 ### Session persistence
 
 ```ts
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const store = sdk.createFileSessionStore("/path/to/sessions");
 const state = await sdk.resumeAgent("sess-1", store); // null if fresh
@@ -127,7 +127,7 @@ permission chain before tool calls, validates `emit_done` payloads
 (with retry-once), and checkpoints to the session store.
 
 ```ts
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const driver: sdk.IterationDriver = async function* (req) {
 	// Tests use canned drivers; production plugs rlm.ts here.
@@ -214,7 +214,7 @@ become load-bearing for a real consumer.
 ## Tool plugin loader (Group 3a)
 
 ```ts
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 // 1. Load the agent's declared shape
 const spec = await sdk.loadAgentSpec("/path/to/my-agent");
@@ -320,7 +320,7 @@ RTK / metrics (G3a). They do **not**:
 - instrument `rlm.ts` directly — the iteration logic is behind the
   `IterationDriver` seam, so `rlm.ts` remains untouched until a
   cutover slice wraps it as a driver;
-- switch the CLI to use `runAgent()` — `rlmx "query"` still drives
+- switch the CLI to use `runAgent()` — `mikro "query"` still drives
   `rlmLoop` as before;
 - load `.ts`-source plugins — only pre-compiled `.mjs` / `.js`
   (TypeScript source still needs a runtime TS loader);

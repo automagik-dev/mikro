@@ -1,5 +1,5 @@
 /**
- * ACP event-translation layer — wish rlmx-acp-adapter, Group 2.
+ * ACP event-translation layer — wish mikro-acp-adapter, Group 2.
  *
  * `translateEvent(ev, ctx)` turns each `AgentEvent` yielded by the
  * instrumented `rlmLoop` (see `src/sdk/events.ts`) into zero or more ACP
@@ -73,7 +73,7 @@
  *               back to the spawning run.
  * The child-completion `tool_call_update` then carries per-node cost / tokens
  * / latency both as a human-readable content line AND, machine-readably, in
- * `_meta["rlmx/node"]` (correlationId, depth, parentRunId, latencyMs, costUsd,
+ * `_meta["mikro/node"]` (correlationId, depth, parentRunId, latencyMs, costUsd,
  * tokens) so a richer client can reconstruct the exact tree.
  *
  * ── stdout discipline ────────────────────────────────────────────────────
@@ -83,7 +83,7 @@
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import type { AgentEvent } from "../sdk/events.js";
 /** Machine-readable per-node metrics attached under this `_meta` key. */
-export declare const NODE_META_KEY = "rlmx/node";
+export declare const NODE_META_KEY = "mikro/node";
 /**
  * Mutable per-prompt translation state. One is created per `session/prompt`
  * turn (`createTranslationContext`) and threaded through every

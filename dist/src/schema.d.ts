@@ -19,13 +19,13 @@ export interface JsonSchema {
     properties: Record<string, unknown>;
     additionalProperties?: boolean;
 }
-export interface RlmxCliSchema {
+export interface MikroCliSchema {
     schemaVersion: 1;
-    command: "rlmx";
+    command: "mikro";
     flags: CliFlagSchema[];
     output: JsonSchema;
     exitCodes: ExitCodeSchema[];
 }
-export declare const RLMX_CLI_SCHEMA: RlmxCliSchema;
-export declare function printRlmxCliSchema(): void;
+export declare const MIKRO_CLI_SCHEMA: MikroCliSchema;
+export declare function printMikroCliSchema(): void;
 //# sourceMappingURL=schema.d.ts.map

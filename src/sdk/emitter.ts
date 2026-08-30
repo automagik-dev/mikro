@@ -41,7 +41,7 @@ export type EmitterAndStream = EventEmitter & EventStream;
 
 /**
  * Cap on the pre-subscribe backlog. The intended consumers (the headless
- * subscriber + the rlmx-acp adapter) attach BEFORE the run starts, so the
+ * subscriber + the mikro-acp adapter) attach BEFORE the run starts, so the
  * preBuffer stays empty on the seam path. The default internal-emitter path
  * has NO subscriber, so without a cap every event — including untruncated
  * REPL code/stdout on ToolCall* events — would accumulate for the whole run

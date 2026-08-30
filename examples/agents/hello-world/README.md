@@ -1,6 +1,6 @@
 # Example — hello-world
 
-The absolute minimum rlmx agent: one TS tool, one iteration, one
+The absolute minimum mikro agent: one TS tool, one iteration, one
 greeting. Proof-of-life for the SDK plumbing.
 
 ```
@@ -16,7 +16,7 @@ examples/agents/hello-world/
 
 ```ts
 import { join } from "node:path";
-import { sdk } from "@automagik/rlmx";
+import { sdk } from "mikro";
 
 const here = join(import.meta.dir, "..", "examples", "agents", "hello-world");
 

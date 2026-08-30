@@ -1,8 +1,8 @@
 /**
- * Stats query functions for rlmx observability data.
+ * Stats query functions for mikro observability data.
  *
- * Connects to the persistent pgserve data at ~/.rlmx/data to query
- * rlmx_sessions and rlmx_events tables. Starts pgserve temporarily,
+ * Connects to the persistent pgserve data at ~/.mikro/data to query
+ * mikro_sessions and mikro_events tables. Starts pgserve temporarily,
  * queries, then stops.
  */
 import { existsSync } from "node:fs";
@@ -50,7 +50,7 @@ export async function listRuns(storage, limit = 20) {
             input_tokens::int, output_tokens::int, total_cost::float,
             started_at::text, ended_at::text,
             EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))::int * 1000 AS duration_ms
-     FROM rlmx_sessions
+     FROM mikro_sessions
      ORDER BY started_at DESC
      LIMIT $1`, [limit]);
     return rows;
@@ -62,7 +62,7 @@ export async function getRun(storage, runId) {
     const rows = await storage.query(`SELECT id, iteration, kind, input_tokens, output_tokens, cost::float,
             model, code, stdout, stderr, request_type, prompt_preview,
             duration_ms, is_error, error_message, created_at::text
-     FROM rlmx_events
+     FROM mikro_events
      WHERE session_id = $1
      ORDER BY id`, [runId]);
     return rows;
@@ -79,7 +79,7 @@ export async function costBreakdown(storage, since) {
               SUM(e.output_tokens)::int AS total_output,
               SUM(e.cost)::float AS total_cost,
               AVG(e.duration_ms)::int AS avg_duration_ms
-       FROM rlmx_events e
+       FROM mikro_events e
        WHERE e.created_at >= $1 AND e.kind = 'llm_call'
        GROUP BY e.session_id, e.model
        ORDER BY total_cost DESC`, [cutoff.toISOString()]);
@@ -91,7 +91,7 @@ export async function costBreakdown(storage, since) {
             SUM(e.output_tokens)::int AS total_output,
             SUM(e.cost)::float AS total_cost,
             AVG(e.duration_ms)::int AS avg_duration_ms
-     FROM rlmx_events e
+     FROM mikro_events e
      WHERE e.kind = 'llm_call'
      GROUP BY e.session_id, e.model
      ORDER BY total_cost DESC`);
@@ -107,7 +107,7 @@ export async function toolUsage(storage, since) {
               COUNT(*)::int AS calls,
               SUM(CASE WHEN e.is_error THEN 1 ELSE 0 END)::int AS errors,
               AVG(e.duration_ms)::int AS avg_duration_ms
-       FROM rlmx_events e
+       FROM mikro_events e
        WHERE e.created_at >= $1 AND e.kind IN ('sub_call', 'pg_query', 'repl_exec')
        GROUP BY e.session_id, e.request_type
        ORDER BY calls DESC`, [cutoff.toISOString()]);
@@ -117,7 +117,7 @@ export async function toolUsage(storage, since) {
             COUNT(*)::int AS calls,
             SUM(CASE WHEN e.is_error THEN 1 ELSE 0 END)::int AS errors,
             AVG(e.duration_ms)::int AS avg_duration_ms
-     FROM rlmx_events e
+     FROM mikro_events e
      WHERE e.kind IN ('sub_call', 'pg_query', 'repl_exec')
      GROUP BY e.session_id, e.request_type
      ORDER BY calls DESC`);

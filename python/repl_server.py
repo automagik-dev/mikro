@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Python REPL server for rlmx.
+Python REPL server for mikro.
 
 Reads JSON commands from stdin, executes code in a persistent namespace
 with safe builtins, and writes JSON results to stdout.

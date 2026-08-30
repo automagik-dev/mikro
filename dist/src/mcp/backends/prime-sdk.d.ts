@@ -39,11 +39,11 @@
  * | `output.schema` | **honored** — the schema becomes `emit_done`'s parameter schema, so the model's structured payload is validated by prime's own tool-call layer before it reaches us, and the run's answer is that payload as JSON. |
  * | `budget.maxDepth` | **honored** — passed as `createAgentSession`'s first-class `rlmMaxDepth` option (see "Deviations" below). |
  * | `dict` context | **honored** — every context type is snapshotted to 0600 files under the run's scratch dir and named in the prompt, so there is no context shape left that cannot be mapped. |
- * | `station` provider, and every provider beyond google/deepseek | **honored** — `khal` / `wafer` / `station` are emitted into a generated `models.json` under the scratch `agentDir`; `google`, `openrouter`, and `deepseek` resolve against prime's built-in catalog under their own rlmx names (no `prime-inference` remap). |
- * | gemini grounding flags | **still rejected** — `googleSearch`, `urlContext`, `codeExecution`, `computerUse`, `mapsGrounding`, `fileSearch`, `mediaResolution` are rlmx-side request decoration prime cannot replicate. |
+ * | `station` provider, and every provider beyond google/deepseek | **honored** — `khal` / `wafer` / `station` are emitted into a generated `models.json` under the scratch `agentDir`; `google`, `openrouter`, and `deepseek` resolve against prime's built-in catalog under their own mikro names (no `prime-inference` remap). |
+ * | gemini grounding flags | **still rejected** — `googleSearch`, `urlContext`, `codeExecution`, `computerUse`, `mapsGrounding`, `fileSearch`, `mediaResolution` are mikro-side request decoration prime cannot replicate. |
  * | `config.tools` (TOOLS.md) | **still rejected** — see below. |
  *
- * `config.tools` are TOOLS.md *Python source strings* injected into rlmx's
+ * `config.tools` are TOOLS.md *Python source strings* injected into mikro's
  * own REPL (`ToolDef = {name, code}`). Prime's analogous surface is its
  * IPython kernel, and `createAgentSession` exposes no way to preload code
  * into it. Honoring them would mean inventing an unverified mechanism;
@@ -52,7 +52,7 @@
  * distinct from `agent.spec.tools` — those ARE honored, as custom tools.
  *
  * ## Spec tools → prime custom tools
- * `agent.spec.tools[]` names resolve through rlmx's existing plugin loaders
+ * `agent.spec.tools[]` names resolve through mikro's existing plugin loaders
  * (`src/sdk/tool-loader.ts` for `.mjs`/`.js`, `src/sdk/python-plugin.ts`
  * for `.py`) into a `ToolRegistry`, exactly as `runAgent` resolves them.
  * Each resolved handler is wrapped in a prime `ToolDefinition` whose
@@ -82,10 +82,10 @@
  *    it is not: there is no structured payload, so the run fails loudly
  *    rather than hand the host prose where a schema was promised.
  *
- * ## Budgets — rlmx owns them
+ * ## Budgets — mikro owns them
  * Mirrors `prime.ts` exactly. Turns are counted at `turn_start` against the
  * spec's iteration cap; usage accumulates against `maxCost` / `maxTokens`;
- * an rlmx-owned wall clock (`RLMX_MCP_RUN_TIMEOUT_MS`, default 300s)
+ * an mikro-owned wall clock (`MIKRO_MCP_RUN_TIMEOUT_MS`, default 300s)
  * bounds the run. A breach calls `session.abort()`.
  *
  * Usage is accumulated at `message_end` ONLY. Verified live: `message_end`
@@ -94,7 +94,7 @@
  * cost, and fire cost ceilings at half their configured value.
  *
  * **Cost ceilings on custom providers.** Prime derives cost from the price
- * table declared in `models.json`, and rlmx does not know per-model pricing
+ * table declared in `models.json`, and mikro does not know per-model pricing
  * for `khal` / `wafer` / `station` here. A declared-zero price would make a
  * `budget.max_cost` ceiling silently un-fireable, so that combination is a
  * loud reject instead.
@@ -119,7 +119,7 @@
  *   (`Type.Object(...)`). Verified: the installed `typebox@1.3.21`'s
  *   `Type.Object` returns a plain JSON Schema object carrying no symbols,
  *   and prime's `defineTool` is the identity function. So schemas are
- *   written as plain JSON Schema and rlmx takes no typebox dependency.
+ *   written as plain JSON Schema and mikro takes no typebox dependency.
  *
  * ## Inherent boundary
  * Prime's recursive `rlm()` children run on prime's own model defaults;
@@ -127,7 +127,7 @@
  * the parent's event stream, so — as with `prime.ts` — footer totals cover
  * the parent's turns.
  */
-import type { RlmxConfig } from "../../config.js";
+import type { MikroConfig } from "../../config.js";
 import type { LoadedContext } from "../../context.js";
 import type { Microagent } from "../agents.js";
 import type { BackendRequest, MicroagentResult, RuntimeBackend } from "../backend.js";
@@ -286,13 +286,13 @@ export interface PrimeSdkBackendOptions {
     readonly engine?: PrimeSdkEngine;
     /** Pinned version to assert (default: {@link EXPECTED_PRIME_SDK_VERSION}). */
     readonly expectedVersion?: string;
-    /** Explicit prime package root; overrides `RLMX_PRIME_AGENT_ROOT` and PATH discovery. */
+    /** Explicit prime package root; overrides `MIKRO_PRIME_AGENT_ROOT` and PATH discovery. */
     readonly primeRoot?: string;
 }
 /**
  * Locate the INSTALLED prime-agent package root.
  *
- * `RLMX_PRIME_AGENT_ROOT` wins; otherwise the `prime-agent` binary is found
+ * `MIKRO_PRIME_AGENT_ROOT` wins; otherwise the `prime-agent` binary is found
  * on PATH and followed to its real path — `<root>/dist/bundle/cli.js` — whose
  * grandparent directory is the package root.
  */
@@ -310,10 +310,10 @@ export declare function assertPinnedSdkVersion(root: string, expected: string): 
  */
 export declare function createPrimeSdkLoader(options?: PrimeSdkBackendOptions): PrimeSdkLoader;
 /**
- * Reject every rlmx feature the in-process prime leg cannot honor. Far
+ * Reject every mikro feature the in-process prime leg cannot honor. Far
  * shorter than `prime.ts`'s list — see the delta table in the module header.
  */
-export declare function assertSupportedConfig(config: RlmxConfig, agentName: string | undefined): void;
+export declare function assertSupportedConfig(config: MikroConfig, agentName: string | undefined): void;
 /** Build the `models.json` document for a custom provider, or null for a built-in. */
 export declare function buildModelsJson(provider: string, modelId: string, agentName: string | undefined): PrimeModelsJson | null;
 /**
@@ -321,7 +321,7 @@ export declare function buildModelsJson(provider: string, modelId: string, agent
  *
  * Unlike `prime.ts`, which hands prime `@<abs path>` arguments pointing at
  * the caller's originals, the SDK has no `@file` argument parser — so the
- * content rlmx already loaded is written out and named in the prompt. That
+ * content mikro already loaded is written out and named in the prompt. That
  * is also why `dict` contexts work here and not there: a snapshot has a
  * shape, an `@file` argument needs a pre-existing path.
  */
@@ -329,7 +329,7 @@ export declare function planContextSnapshots(context: LoadedContext | null, scra
     path: string;
     content: string;
 }>;
-/** Build the run plan. Touches the SDK not at all — only maps rlmx onto it. */
+/** Build the run plan. Touches the SDK not at all — only maps mikro onto it. */
 export declare function buildPlan(scratchDir: string, agent: Microagent | undefined, request: BackendRequest): Promise<PrimeSdkPlan>;
 /** Create the per-run scratch directory, owner-only. */
 export declare function createScratchDir(): string;
@@ -341,7 +341,7 @@ export declare function createScratchDir(): string;
  */
 export declare function materializePlan(plan: PrimeSdkPlan): void;
 /**
- * Run one plan through a real prime agent session, enforcing the rlmx-owned
+ * Run one plan through a real prime agent session, enforcing the mikro-owned
  * budgets from the event stream and aborting the session on breach.
  */
 export declare function runSdkSession(load: PrimeSdkLoader, plan: PrimeSdkPlan, emit: (message: string) => void, limits: PrimeSdkRunLimits): Promise<PrimeSdkRunResult>;

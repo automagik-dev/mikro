@@ -1,5 +1,5 @@
 /**
- * Durable ACP session store + disconnect-hardening gate — wish rlmx-acp-adapter,
+ * Durable ACP session store + disconnect-hardening gate — wish mikro-acp-adapter,
  * Group 3.
  *
  * Deterministic, no-LLM proofs for the three Group 3 invariants that a live

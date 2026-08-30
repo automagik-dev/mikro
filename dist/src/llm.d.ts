@@ -5,7 +5,8 @@
  * from the Python REPL, and rlm_query child process spawning.
  */
 import type { AssistantMessage as PiAssistantMessage } from "@earendil-works/pi-ai";
-import type { RlmxConfig, ModelConfig, GeminiConfig } from "./config.js";
+import { type CustomProviderConfig } from "./custom-providers.js";
+import type { MikroConfig, ModelConfig, GeminiConfig } from "./config.js";
 import type { LLMRequest } from "./ipc.js";
 import type { Logger } from "./logger.js";
 import type { PgStorage } from "./storage.js";
@@ -81,6 +82,25 @@ export declare function normalizeOpenRouterDeveloperRole(payload: unknown): unkn
 export declare function normalizeProviderModelId(provider: string, modelId: string): string;
 export declare function formatModelRef(provider: string, modelId: string): string;
 /**
+ * Resolve a pi-ai model for `<provider>/<modelId>`.
+ *
+ * `providers` are the config-declared providers riding on the model config;
+ * they are registered on the shared runtime before lookup so a declared
+ * `<id>/<model>` resolves exactly like a built-in. Exported so the MCP server
+ * and `mikro doctor` can validate a pin without making a call.
+ */
+export declare function resolveModel(provider: string, modelId: string, providers?: readonly CustomProviderConfig[]): import("@earendil-works/pi-ai").Model<import("@earendil-works/pi-ai").Api>;
+/**
+ * Check that a model config resolves, without calling anything. Returns the
+ * failure message, or null when the pin is good.
+ *
+ * Station and khal carry dynamic catalogs that need a network round-trip to
+ * fill; they are reported as resolvable here and checked at call time, as
+ * before. Everything else — built-ins and config-declared providers — is
+ * static and answers immediately.
+ */
+export declare function checkModelConfig(modelConfig: ModelConfig): string | null;
+/**
  * Call pi/ai completeSimple with messages.
  * Tracks cost and time_ms per call. Optionally emits to a Logger.
  */
@@ -130,12 +150,12 @@ export interface RlmChildInvocationOptions {
 export declare function buildRlmChildArgs(prompt: string, options?: RlmChildInvocationOptions): string[];
 /** Build env inheritance for child process with explicit recursive ancestry. */
 export declare function buildChildEnv(env: NodeJS.ProcessEnv, parentRunId: string, correlationId: string): NodeJS.ProcessEnv;
-/** Parse stdout from a child rlmx --output json --stats run. */
+/** Parse stdout from a child mikro --output json --stats run. */
 export declare function parseRlmChildOutput(stdout: string): RlmChildResult;
 /** Last `maxChars` of a child's stderr, whitespace-collapsed, for error text. */
 export declare function stderrTail(stderr: string, maxChars?: number): string;
 /**
- * Classify a finished child rlmx process into the answer the REPL caller sees.
+ * Classify a finished child mikro process into the answer the REPL caller sees.
  *
  * A child that cannot reach a model — wrong provider, missing key, empty
  * completion — still exits 0 and still prints `{"answer":""}`. Handing that
@@ -154,7 +174,7 @@ export declare function classifyRlmChildResult(code: number | null, stdout: stri
     errorMessage?: string;
 };
 /**
- * Spawn a child rlmx process for rlm_query() recursive sub-calls.
+ * Spawn a child mikro process for rlm_query() recursive sub-calls.
  * The child inherits the parent's cwd (and thus .md configs).
  */
 export declare function rlmQuery(prompt: string, cwd: string, signal?: AbortSignal, options?: RlmChildInvocationOptions & {
@@ -205,16 +225,16 @@ export declare function rlmQueryBatched(prompts: string[], cwd: string, signal?:
  * config, only the model id is swappable.
  *
  * With no kwarg the child is pinned to the parent's *primary* model rather
- * than its sub-call model: a child is a full rlmx run, not a single
+ * than its sub-call model: a child is a full mikro run, not a single
  * completion, and the sub-call model is chosen to be a cheap one-shot.
  */
-export declare function resolveChildModelRef(config: RlmxConfig, requestedModel?: string): string;
+export declare function resolveChildModelRef(config: MikroConfig, requestedModel?: string): string;
 /**
  * Handle an LLM IPC request from the Python REPL.
  * Routes to the appropriate handler based on request_type.
  * When geminiCounts is provided, increments Gemini-specific call counters.
  */
-export declare function handleLLMRequest(request: LLMRequest, config: RlmxConfig, usage: UsageStats, signal?: AbortSignal, geminiCounts?: GeminiCallCounts, storage?: PgStorage, childUsage?: UsageStats, recursiveOptions?: RlmChildInvocationOptions & {
+export declare function handleLLMRequest(request: LLMRequest, config: MikroConfig, usage: UsageStats, signal?: AbortSignal, geminiCounts?: GeminiCallCounts, storage?: PgStorage, childUsage?: UsageStats, recursiveOptions?: RlmChildInvocationOptions & {
     logger?: Logger;
     parentRunId?: string;
     onChildStart?: (data: {

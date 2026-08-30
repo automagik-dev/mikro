@@ -1,8 +1,8 @@
 /**
  * ObservabilityRecorder — fire-and-forget event recording to pgserve.
  *
- * Records every LLM call, REPL execution, and sub-call into rlmx_sessions
- * and rlmx_events tables. All methods are fire-and-forget: errors are logged
+ * Records every LLM call, REPL execution, and sub-call into mikro_sessions
+ * and mikro_events tables. All methods are fire-and-forget: errors are logged
  * to stderr but never thrown or block the main RLM loop.
  */
 import type { PgStorage } from "./storage.js";

@@ -1,11 +1,11 @@
 /**
- * Benchmark runner for rlmx — compares RLM vs direct LLM on cost/tokens/latency.
+ * Benchmark runner for mikro — compares RLM vs direct LLM on cost/tokens/latency.
  *
  * Two modes:
  * - cost: built-in curated dataset, measures cost savings
  * - oolong: Oolong Synth from HuggingFace, measures accuracy
  */
-import type { RlmxConfig } from "./config.js";
+import type { MikroConfig } from "./config.js";
 export interface BenchmarkQuestion {
     id: string;
     name: string;
@@ -62,10 +62,10 @@ export interface BenchmarkResults {
 }
 export declare function calculateSavings(directTokens: number, rlmTokens: number): number;
 export declare function calculateCostSavings(directCost: number, rlmCost: number): number;
-export declare function runCostBenchmark(config: RlmxConfig, options?: {
+export declare function runCostBenchmark(config: MikroConfig, options?: {
     outputFormat?: "table" | "json";
 }): Promise<BenchmarkResults>;
-export declare function runOolongBenchmark(config: RlmxConfig, options?: {
+export declare function runOolongBenchmark(config: MikroConfig, options?: {
     samples?: number;
     idx?: number;
 }): Promise<BenchmarkResults>;

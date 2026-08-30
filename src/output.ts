@@ -246,5 +246,5 @@ export function emitStreamEvent(event: StreamEvent): void {
  * Log verbose iteration progress to stderr.
  */
 export function logVerbose(iteration: number, message: string): void {
-  process.stderr.write(`rlmx [iter ${iteration}]: ${message}\n`);
+  process.stderr.write(`mikro [iter ${iteration}]: ${message}\n`);
 }

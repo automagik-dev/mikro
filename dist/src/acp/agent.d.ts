@@ -1,7 +1,7 @@
 /**
- * ACP (Agent Client Protocol) stdio agent — wish rlmx-acp-adapter, Group 1.
+ * ACP (Agent Client Protocol) stdio agent — wish mikro-acp-adapter, Group 1.
  *
- * Exposes `rlmx acp`: a stdio JSON-RPC agent (per the Agent Client Protocol,
+ * Exposes `mikro acp`: a stdio JSON-RPC agent (per the Agent Client Protocol,
  * https://agentclientprotocol.com) that completes the handshake and drives the
  * REAL instrumented `rlmLoop` in-process for a prompt round-trip.
  *
@@ -20,7 +20,7 @@
  *     EMPTY, so a `session/load` + follow-up `session/prompt` survive an
  *     agent-process restart instead of throwing "Invalid params". Prompt turns
  *     thread prior-turn context so a session is genuinely multi-turn. Host MCP
- *     config is materialized + advertised (store-only; rlmx has no MCP client —
+ *     config is materialized + advertised (store-only; mikro has no MCP client —
  *     execution is a documented follow-on). Mid-run disconnect (stdin EOF /
  *     SIGTERM) reuses the cooperative cancel path to abort the active turn and
  *     close the emitter before exit (no orphaned children, emitter closed).
@@ -54,14 +54,14 @@ interface ActivePrompt {
  */
 export declare function abortActivePrompt(active: ActivePrompt | null): boolean;
 /**
- * The rlmx ACP agent. One instance per stdio connection.
+ * The mikro ACP agent. One instance per stdio connection.
  *
  * Single active session, serialized: `promptInFlight` guards the one-at-a-time
  * invariant. A second `session/prompt` that arrives while a run is in flight is
  * rejected with `RequestError.invalidRequest` (JSON-RPC -32600) — a clear,
  * documented rejection rather than a silent queue.
  */
-export declare class RlmxAcpAgent implements Agent {
+export declare class MikroAcpAgent implements Agent {
     private readonly conn;
     private readonly sessions;
     private readonly store;

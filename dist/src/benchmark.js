@@ -1,5 +1,5 @@
 /**
- * Benchmark runner for rlmx — compares RLM vs direct LLM on cost/tokens/latency.
+ * Benchmark runner for mikro — compares RLM vs direct LLM on cost/tokens/latency.
  *
  * Two modes:
  * - cost: built-in curated dataset, measures cost savings
@@ -102,7 +102,7 @@ export async function runCostBenchmark(config, options) {
 }
 // ─── Oolong Benchmark ────────────────────────────────────
 async function ensureBenchVenv() {
-    const venvDir = join(homedir(), ".rlmx", ".bench-venv");
+    const venvDir = join(homedir(), ".mikro", ".bench-venv");
     const pythonBin = join(venvDir, "bin", "python");
     try {
         await stat(pythonBin);
@@ -110,8 +110,8 @@ async function ensureBenchVenv() {
     }
     catch {
         // Create venv and install datasets
-        process.stderr.write("rlmx benchmark: setting up Python venv for HuggingFace datasets...\n");
-        await mkdir(join(homedir(), ".rlmx"), { recursive: true });
+        process.stderr.write("mikro benchmark: setting up Python venv for HuggingFace datasets...\n");
+        await mkdir(join(homedir(), ".mikro"), { recursive: true });
         // Try uv first (preferred), fall back to python3 -m venv + pip
         try {
             await execFileAsync("uv", ["venv", venvDir]);
@@ -121,7 +121,7 @@ async function ensureBenchVenv() {
             await execFileAsync("python3", ["-m", "venv", venvDir]);
             await execFileAsync(join(venvDir, "bin", "pip"), ["install", "datasets"]);
         }
-        process.stderr.write("rlmx benchmark: Python venv ready.\n");
+        process.stderr.write("mikro benchmark: Python venv ready.\n");
         return pythonBin;
     }
 }
@@ -141,10 +141,10 @@ export async function runOolongBenchmark(config, options) {
     if (idx !== undefined) {
         args.push(String(idx));
     }
-    process.stderr.write(`rlmx benchmark: loading Oolong Synth dataset (${idx !== undefined ? `idx=${idx}` : `${samples} samples`})...\n`);
+    process.stderr.write(`mikro benchmark: loading Oolong Synth dataset (${idx !== undefined ? `idx=${idx}` : `${samples} samples`})...\n`);
     const { stdout } = await execFileAsync(pythonBin, args, { maxBuffer: 50 * 1024 * 1024 });
     const dataset = JSON.parse(stdout);
-    process.stderr.write(`rlmx benchmark: loaded ${dataset.length} samples.\n`);
+    process.stderr.write(`mikro benchmark: loaded ${dataset.length} samples.\n`);
     const runs = [];
     for (const q of dataset) {
         const ctx = {
@@ -263,7 +263,7 @@ export function formatBenchmarkTable(results) {
     const colW = { name: 22, mode: 10, tokens: 12, cost: 10, latency: 10, iters: 8 };
     const lines = [];
     const modeLabel = results.mode === "cost" ? "cost comparison" : "oolong accuracy";
-    lines.push(`rlmx benchmark — ${modeLabel} (RLM vs Direct LLM)`);
+    lines.push(`mikro benchmark — ${modeLabel} (RLM vs Direct LLM)`);
     lines.push("");
     // Header
     const hr = "─";
@@ -288,7 +288,7 @@ export function formatBenchmarkTable(results) {
 }
 // ─── Results Persistence ─────────────────────────────────
 export async function saveBenchmarkResults(results) {
-    const benchDir = join(homedir(), ".rlmx", "benchmarks");
+    const benchDir = join(homedir(), ".mikro", "benchmarks");
     await mkdir(benchDir, { recursive: true });
     const ts = results.timestamp.replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");
     const filename = `benchmark-${results.mode}-${ts}.json`;

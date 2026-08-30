@@ -2,16 +2,16 @@
 
 Every `agent.yaml` microagent this repository ships lives here, and nowhere
 else. A directory in this tree is a **recipe**: copy it into a discovery root
-and `rlmx mcp` exposes it as a tool.
+and `mikro mcp` exposes it as a tool.
 
 ```bash
-cp -r examples/agents/<name> ~/.rlmx/agents/<name>          # global
-cp -r examples/agents/<name> <project>/.rlmx/agents/<name>  # project (the convention)
+cp -r examples/agents/<name> ~/.mikro/agents/<name>          # global
+cp -r examples/agents/<name> <project>/.mikro/agents/<name>  # project (the convention)
 ```
 
-Discovery roots, in precedence order, are `<project>/.rlmx/agents/`,
-`<project>/.agents/`, then `~/.rlmx/agents/` — project shadows global, and
-`RLMX_AGENTS_DIR` (colon-separated) replaces every root. Schema:
+Discovery roots, in precedence order, are `<project>/.mikro/agents/`,
+`<project>/.agents/`, then `~/.mikro/agents/` — project shadows global, and
+`MIKRO_AGENTS_DIR` (colon-separated) replaces every root. Schema:
 [`docs/agent-yaml-schema.md`](../../docs/agent-yaml-schema.md).
 
 ## The recipes
@@ -46,21 +46,21 @@ those numbers about this file.
 
 `explore/` and `explore-r/` were authored in-repo. `codebase-qa/`,
 `changelog/` and `log-triage/` were **archived** on 2026-07-27 from this
-host's `~/.rlmx/agents/`, copied byte-for-byte (sha256 in each README) under
-wish `rlmx-microagent-plugin` (B5). `hello-world/`, `research-agent/` and
+host's `~/.mikro/agents/`, copied byte-for-byte (sha256 in each README) under
+wish `mikro-microagent-plugin` (B5). `hello-world/`, `research-agent/` and
 `brain-triage/` moved here from flat `examples/<name>/` directories in the
 same change, so that one tree holds every recipe; their tests moved with them.
 
-The archival **copies**. It does not delete: nothing in rlmx removes a file
+The archival **copies**. It does not delete: nothing in mikro removes a file
 from your home directory, and this change did not. Each archived recipe's
-README documents the `rm -rf ~/.rlmx/agents/<name>` you may choose to run
+README documents the `rm -rf ~/.mikro/agents/<name>` you may choose to run
 yourself, and what you lose by running it.
 
 ## Config examples are elsewhere
 
-[`examples/`](../) also holds `rlmx.yaml` **config** examples —
+[`examples/`](../) also holds `mikro.yaml` **config** examples —
 `tauri-docs/`, `codebase-qa/`, `paper-review/`, `cag-*`, `gemini-*`. Those
-configure a whole `rlmx "query" --context …` run; they are not microagents and
+configure a whole `mikro "query" --context …` run; they are not microagents and
 do not go in a discovery root. Note the name collision: `examples/codebase-qa/`
 (config) and `examples/agents/codebase-qa/` (microagent) are different
 artifacts.
