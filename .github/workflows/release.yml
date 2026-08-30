@@ -59,8 +59,26 @@ jobs:
           # changelog range is resolved from them.
           fetch-depth: 0
 
+      # Two merges seconds apart queue two runs in the concurrency group. The
+      # second one starts on a commit main has already moved past (the first
+      # run pushed a version bump), so its own bump push is rejected and the
+      # run goes red even though every commit was released. Detect that up
+      # front and finish green: the run that owns main's tip does the release.
+      - name: Skip when main has moved past this commit
+        id: stale
+        run: |
+          git fetch --quiet origin "${GITHUB_REF_NAME}"
+          TIP=$(git rev-parse "origin/${GITHUB_REF_NAME}")
+          if [ "$TIP" != "$GITHUB_SHA" ]; then
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            echo "${GITHUB_REF_NAME} is at ${TIP:0:7}, this run is for ${GITHUB_SHA:0:7} — superseded; the newer run releases."
+          else
+            echo "superseded=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Resolve package release version
         id: ver
+        if: steps.stale.outputs.superseded != 'true'
         run: |
           VERSION=$(jq -r '.version' package.json)
 
@@ -75,6 +93,7 @@ jobs:
 
       - name: Check whether that release already exists
         id: existing
+        if: steps.stale.outputs.superseded != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ver.outputs.tag }}
@@ -89,7 +108,7 @@ jobs:
 
       - name: Auto-bump calendar version
         id: bump
-        if: steps.existing.outputs.exists == 'true'
+        if: steps.stale.outputs.superseded != 'true' && (steps.existing.outputs.exists == 'true')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -125,6 +144,7 @@ jobs:
           echo "Bumped ${GITHUB_REF_NAME} to ${TAG} ($(git rev-parse --short HEAD))"
 
       - name: Resolve release target
+        if: steps.stale.outputs.superseded != 'true'
         id: target
         env:
           TAG: ${{ steps.bump.outputs.tag || steps.ver.outputs.tag }}
@@ -155,6 +175,7 @@ jobs:
           echo "Releasing ${TAG} at ${SHA}"
 
       - name: Find previous release tag
+        if: steps.stale.outputs.superseded != 'true'
         id: prev
         env:
           TAG: ${{ steps.target.outputs.tag }}
@@ -171,7 +192,7 @@ jobs:
       - name: Generate changelog
         uses: orhun/git-cliff-action@v4
         id: cliff
-        if: steps.prev.outputs.tag != ''
+        if: steps.stale.outputs.superseded != 'true' && (steps.prev.outputs.tag != '')
         with:
           config: cliff.toml
           args: ${{ format('{0}..{1}', steps.prev.outputs.tag, steps.target.outputs.sha) }}
@@ -179,6 +200,7 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
 
       - name: Create release
+        if: steps.stale.outputs.superseded != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: ${{ steps.cliff.outputs.content }}
