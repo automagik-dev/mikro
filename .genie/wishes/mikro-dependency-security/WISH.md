@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | APPROVED |
+| **Status** | IN_PROGRESS |
 | **Slug** | `mikro-dependency-security` |
 | **Date** | 2026-08-30 |
 | **Author** | Felipe |
