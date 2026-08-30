@@ -1,6 +1,9 @@
 name: SDK Package
 
-# Single source of SDK-only npm publishing for @automagik/mikro.
+# Legacy SDK-only npm publishing for @automagik/rlmx.
+# The public Mikro CLI is git-distributed and package.json is private; do not
+# rename this registry package unless a new npm package and OIDC publisher have
+# actually been provisioned.
 #
 # npm is NOT the canonical CLI/application release channel. End-user CLI
 # installs and updates are git-managed through scripts/install.sh and
@@ -20,7 +23,7 @@ name: SDK Package
 #
 # The `next` dist-tag is legacy: it was fed by a `dev` branch that no longer
 # exists, so it trails `latest`. Repoint or retire it manually:
-#   npm dist-tag add @automagik/mikro@<version> next
+#   npm dist-tag add @automagik/rlmx@<version> next
 #
 # Auth: npm OIDC Trusted Publishing. The package's only Trusted
 # Publisher entry on npmjs.com is THIS file (version.yml). All other
@@ -173,5 +176,5 @@ jobs:
           TAG="${{ steps.context.outputs.npm_tag }}"
           if ! npm publish --access public --tag "$TAG" 2>&1; then
             echo "Publish failed (likely already published) — adding dist-tag $TAG..."
-            npm dist-tag add "@automagik/mikro@${VERSION}" "$TAG"
+            npm dist-tag add "@automagik/rlmx@${VERSION}" "$TAG"
           fi
