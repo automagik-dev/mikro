@@ -33,6 +33,13 @@ resets to `origin/main`, reinstalls, rebuilds, and prints the before commit,
 the target commit and the resulting version. Because `mikro` is a symlink into
 that clone's `dist/`, this is what makes a new `main` commit take effect.
 
+`mikro update` is safe to interrupt: the previous `node_modules` is parked
+while `npm ci` runs and swapped back if the install fails, and `~/.local/bin/mikro`
+is a dependency-free launcher (`bin/mikro.mjs`) that repairs a missing or
+half-written `node_modules` before loading the CLI — so a killed update never
+leaves you without a working `mikro`. Set `MIKRO_NO_SELF_HEAL=1` to disable
+the repair (CI, or to see the raw error).
+
 ### Not on npm
 
 mikro is not published to npm — `install.sh` is the only distribution channel,
@@ -832,9 +839,10 @@ mikro migrate --root ~/work --exclude backups --depth 4   # widen / narrow the s
 It scans the current directory and `$HOME` (bounded depth, skipping
 `node_modules`, `.git`, dot-directories) for: project `.rlmx/` dirs,
 `.mcp.json` servers with `command: rlmx`, `~/.rlmx`, the `~/.local/bin/rlmx`
-symlink, and the plugin registration under `~/.claude/`. Shell rc lines and
-`RLMX_*` env vars are reported for you to edit — they encode intent the tool
-should not guess. `mikro upgrade` is an alias.
+symlink, and the plugin registration under `~/.claude/`. Shell rc lines
+mentioning `~/.rlmx` or `RLMX_*` are reported; add `--rc` to rewrite them too
+(backup beside the file). `RLMX_*` variables already exported in the running
+shell are reported only. `mikro upgrade` is an alias.
 
 ### Custom providers (`providers:`)
 

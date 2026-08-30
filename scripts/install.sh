@@ -59,13 +59,15 @@ fi
 cd "$MIKRO_INSTALL_DIR"
 
 echo "==> Installing dependencies"
-npm ci --include=dev
+npm ci --include=dev --no-audit --no-fund --fetch-timeout=120000 --fetch-retries=3
 
 echo "==> Building"
 npm run build
 
-ln -sfn "$MIKRO_INSTALL_DIR/dist/src/cli.js" "$MIKRO_BIN_DIR/mikro"
-chmod +x "$MIKRO_INSTALL_DIR/dist/src/cli.js"
+# The launcher is dependency-free and repairs a half-installed node_modules
+# before loading the CLI, so a failed `mikro update` never strands the binary.
+ln -sfn "$MIKRO_INSTALL_DIR/bin/mikro.mjs" "$MIKRO_BIN_DIR/mikro"
+chmod +x "$MIKRO_INSTALL_DIR/bin/mikro.mjs" "$MIKRO_INSTALL_DIR/dist/src/cli.js"
 
 echo "==> Installed"
 "$MIKRO_BIN_DIR/mikro" --version

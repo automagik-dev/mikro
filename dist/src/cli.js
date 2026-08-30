@@ -64,7 +64,8 @@ Usage:
   mikro migrate [--apply]         Find legacy rlmx artifacts (config dirs, .mcp.json,
                                   Claude plugin registration) and rewrite them for mikro.
                                   Dry-run unless --apply; --root <dir> adds scan roots,
-                                  --exclude <substr> skips paths (backups), --depth <n>
+                                  --exclude <substr> skips paths (backups), --depth <n>,
+                                  --rc also rewrites ~/.rlmx / RLMX_* in shell rc files
   mikro acp                       Run as a stdio ACP agent (EXPERIMENTAL)
   mikro mcp [--dir <path>]        Run as a stdio MCP server (agents as tools)
 
@@ -846,8 +847,8 @@ async function runDoctor() {
 function runGit(root, args) {
     return execFileSync("git", ["-C", root, ...args], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
-function runCommand(root, command, args) {
-    execFileSync(command, args, { cwd: root, stdio: "inherit" });
+function runCommand(root, command, args, env) {
+    execFileSync(command, args, { cwd: root, stdio: "inherit", env: env ? { ...process.env, ...env } : process.env });
 }
 /**
  * `mikro migrate [--apply] [--root <dir>]... [--depth <n>] [--json]`
@@ -859,6 +860,7 @@ async function runMigrate(args) {
     const { scanLegacy, applyPlan, formatPlan } = await import("./migrate.js");
     const apply = args.includes("--apply");
     const json = args.includes("--json");
+    const rc = args.includes("--rc");
     const roots = [];
     const exclude = [];
     let maxDepth;
@@ -874,6 +876,7 @@ async function runMigrate(args) {
         roots: roots.length ? [...roots, process.cwd(), homedir()] : undefined,
         maxDepth: Number.isFinite(maxDepth) ? maxDepth : undefined,
         exclude,
+        rewriteRc: rc,
     });
     if (json) {
         console.log(JSON.stringify({ roots: plan.roots, actions: plan.actions.map(({ kind, path, detail, reportOnly }) => ({ kind, path, detail, reportOnly: Boolean(reportOnly) })) }, null, 2));
@@ -891,6 +894,76 @@ async function runMigrate(args) {
     console.log(`\napplied ${done.length} change${done.length === 1 ? "" : "s"}.`);
     if (done.some((a) => a.kind === "rewrite-claude-plugin")) {
         console.log("Claude Code plugin registration rewritten — restart Claude Code (or /reload-plugins) to pick it up.");
+    }
+}
+/** npm flags shared with bin/mikro.mjs: bounded network waits, no chatter. */
+const NPM_CI_ARGS = ["ci", "--include=dev", "--no-audit", "--no-fund", "--fetch-timeout=120000", "--fetch-retries=3"];
+/**
+ * `npm ci` that cannot leave the checkout without dependencies.
+ *
+ * `npm ci` deletes node_modules before it installs, so a failure — or a
+ * registry stall that makes the operator kill it — used to leave a `mikro`
+ * that could not even print its version. The previous tree is parked under
+ * `node_modules.prev` for the duration; on failure it is swapped back, on
+ * success it is deleted. A hard kill mid-install still loses the fresh tree,
+ * but bin/mikro.mjs repairs that on the next launch, and the parked copy is
+ * restored here the next time update runs.
+ */
+async function reinstallDependencies(root) {
+    const { existsSync } = await import("node:fs");
+    const { rename, rm } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const current = join(root, "node_modules");
+    const parked = join(root, "node_modules.prev");
+    if (existsSync(parked)) {
+        // A previous update died between park and success. Whichever tree is
+        // complete wins; an incomplete current tree is discarded.
+        if (!existsSync(join(current, ".package-lock.json"))) {
+            await rm(current, { recursive: true, force: true });
+            await rename(parked, current);
+        }
+        else {
+            await rm(parked, { recursive: true, force: true });
+        }
+    }
+    if (existsSync(current))
+        await rename(current, parked);
+    try {
+        // prepare.mjs would build inside npm ci; update builds explicitly after.
+        runCommand(root, "npm", NPM_CI_ARGS, { MIKRO_SKIP_PREPARE: "1" });
+    }
+    catch (err) {
+        await rm(current, { recursive: true, force: true });
+        if (existsSync(parked))
+            await rename(parked, current);
+        throw new Error(`mikro update: npm ci failed — the previous dependencies were restored, nothing else changed. ` +
+            `(${err instanceof Error ? err.message.split("\n")[0] : String(err)})`);
+    }
+    await rm(parked, { recursive: true, force: true });
+}
+/**
+ * Installs made before bin/mikro.mjs existed symlink `~/.local/bin/mikro`
+ * straight at `dist/src/cli.js`, which cannot start without node_modules. If
+ * the symlink points into *this* checkout's dist, move it to the launcher so
+ * the self-heal applies without re-running scripts/install.sh.
+ */
+async function repointLauncher(root) {
+    const { lstat, readlink, symlink, unlink } = await import("node:fs/promises");
+    const { join, resolve: resolvePath } = await import("node:path");
+    const link = process.env.MIKRO_BIN_DIR ? join(process.env.MIKRO_BIN_DIR, "mikro") : join(homedir(), ".local", "bin", "mikro");
+    const launcher = join(root, "bin", "mikro.mjs");
+    try {
+        if (!(await lstat(link)).isSymbolicLink())
+            return;
+        const target = resolvePath(join(link, ".."), await readlink(link));
+        if (target !== resolvePath(join(root, "dist", "src", "cli.js")))
+            return;
+        await unlink(link);
+        await symlink(launcher, link);
+        console.log(`launcher: ${link} → ${launcher}`);
+    }
+    catch {
+        // No symlink, or not ours — leave it alone.
     }
 }
 async function runUpdate(args) {
@@ -939,9 +1012,12 @@ async function runUpdate(args) {
         return;
     }
     runGit(root, ["reset", "--hard", "FETCH_HEAD"]);
+    // `clean -fd` never touches node_modules (ignored), so the previous install
+    // survives the reset and can be restored if the fresh one fails.
     runGit(root, ["clean", "-fd"]);
-    runCommand(root, "npm", ["ci", "--include=dev"]);
+    await reinstallDependencies(root);
     runCommand(root, "npm", ["run", "build"]);
+    await repointLauncher(root);
     const after = runGit(root, ["rev-parse", "HEAD"]);
     const { createRequire } = await import("node:module");
     const require = createRequire(import.meta.url);
