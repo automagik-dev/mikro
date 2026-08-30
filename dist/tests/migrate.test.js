@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile, readdir, lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyPlan, formatPlan, scanLegacy } from "../src/migrate.js";
+import { applyPlan, formatPlan, rewriteRcLine, scanLegacy } from "../src/migrate.js";
 import { hasConfig, loadConfig } from "../src/config.js";
 import { agentRoots } from "../src/mcp/agents.js";
 async function writeJson(path, value) {
@@ -134,6 +134,32 @@ describe("mikro migrate — scan and apply", () => {
         // second pass: only advice remains (rc lines, shadowed dir in B)
         const again = await scanLegacy({ roots: [work], home, env: {} });
         assert.ok(again.actions.every((a) => a.reportOnly), `left: ${kinds(again).join(",")}`);
+    });
+});
+describe("mikro migrate --rc", () => {
+    it("rewrites only the legacy tokens on a line", () => {
+        assert.equal(rewriteRcLine('export PYTHONPATH="$HOME/.rlmx/venv/lib:$PYTHONPATH"'), 'export PYTHONPATH="$HOME/.mikro/venv/lib:$PYTHONPATH"');
+        assert.equal(rewriteRcLine("export RLMX_AGENTS_DIR=~/.rlmx/agents"), "export MIKRO_AGENTS_DIR=~/.mikro/agents");
+        assert.equal(rewriteRcLine("alias r=/home/u/.rlmx/rlmx/dist/src/cli.js"), "alias r=/home/u/.mikro/rlmx/dist/src/cli.js");
+        assert.equal(rewriteRcLine("echo rlmx-unrelated .rlmxish"), "echo rlmx-unrelated .rlmxish", "no false positives");
+    });
+    it("rewrites rc files in place with a backup when --rc is given, comments untouched", async () => {
+        const home = await mkdtemp(join(tmpdir(), "mikro-rc-home-"));
+        try {
+            await writeFile(join(home, ".zshrc"), "# see ~/.rlmx\nexport RLMX_X=1\nexport P=$HOME/.rlmx/venv\nexport KEEP=1\n");
+            const plan = await scanLegacy({ roots: [], home, env: {}, rewriteRc: true });
+            const rcActions = plan.actions.filter((a) => a.kind === "rewrite-rc");
+            assert.equal(rcActions.length, 1);
+            assert.match(rcActions[0].detail, /2 lines/);
+            await applyPlan(plan);
+            assert.equal(await readFile(join(home, ".zshrc"), "utf-8"), "# see ~/.rlmx\nexport MIKRO_X=1\nexport P=$HOME/.mikro/venv\nexport KEEP=1\n");
+            assert.equal((await readdir(home)).filter((f) => f.startsWith(".zshrc.rlmx-backup-")).length, 1);
+            const again = await scanLegacy({ roots: [], home, env: {}, rewriteRc: true });
+            assert.equal(again.actions.filter((a) => a.kind === "rewrite-rc").length, 0, "idempotent");
+        }
+        finally {
+            await rm(home, { recursive: true, force: true });
+        }
     });
 });
 describe("legacy read-fallbacks", () => {

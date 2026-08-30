@@ -19,8 +19,8 @@
  *   - Claude Code plugin registration (`~/.claude/settings.json`,
  *     `~/.claude/plugins/known_marketplaces.json`,
  *     `~/.claude/plugins/installed_plugins.json`) → `rlmx@rlmx` → `mikro@mikro`
- *   - shell rc files / env vars mentioning `~/.rlmx` or `RLMX_*` → reported
- *     only; those lines encode intent this tool cannot infer.
+ *   - shell rc files mentioning `~/.rlmx` or `RLMX_*` → reported; rewritten
+ *     with `--rc` (backup beside the file). Env vars are always report-only.
  *
  * Dry-run by default: the plan is printed and nothing is written. `--apply`
  * performs it, backing up each rewritten JSON file next to itself. The scan
@@ -345,7 +345,14 @@ async function planClaudePlugin(home, out) {
     }
 }
 // ─── Report-only: shell rc and env ───────────────────────
-async function planShellAndEnv(home, env, out) {
+const RC_LEGACY = /RLMX_|(~|\$HOME|\$\{HOME\}|\/home\/[^/\s"']+)\/\.rlmx\b/;
+/** The textual rewrite `--rc` applies to one rc line. */
+export function rewriteRcLine(line) {
+    return line
+        .replace(/RLMX_/g, "MIKRO_")
+        .replace(/((?:~|\$HOME|\$\{HOME\}|\/home\/[^/\s"']+)\/)\.rlmx\b/g, "$1.mikro");
+}
+async function planShellAndEnv(home, env, out, rewriteRc) {
     for (const rc of RC_FILES) {
         const file = join(home, rc);
         let content;
@@ -355,16 +362,32 @@ async function planShellAndEnv(home, env, out) {
         catch {
             continue;
         }
-        const hits = content
-            .split("\n")
+        const lines = content.split("\n");
+        const hits = lines
             .map((line, i) => ({ line, n: i + 1 }))
-            .filter(({ line }) => !line.trim().startsWith("#") && (/RLMX_/.test(line) || /(~|\$HOME|\/home\/[^/]+)\/\.rlmx\b/.test(line)));
+            .filter(({ line }) => !line.trim().startsWith("#") && RC_LEGACY.test(line));
+        if (hits.length === 0)
+            continue;
+        if (rewriteRc) {
+            out.push({
+                kind: "rewrite-rc",
+                path: file,
+                detail: `${tilde(file, home)}: rewrite ${hits.length} line${hits.length === 1 ? "" : "s"} (~/.rlmx → ~/.mikro, RLMX_* → MIKRO_*): ${hits.map((h) => h.n).join(", ")}`,
+                apply: async () => {
+                    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+                    await copyFile(file, `${file}.rlmx-backup-${stamp}`);
+                    const next = lines.map((line) => (!line.trim().startsWith("#") && RC_LEGACY.test(line) ? rewriteRcLine(line) : line));
+                    await writeFile(file, next.join("\n"), "utf-8");
+                },
+            });
+            continue;
+        }
         for (const { line, n } of hits) {
             out.push({
                 kind: "report",
                 path: file,
                 reportOnly: true,
-                detail: `${tilde(file, home)}:${n} references the legacy name — update by hand: ${line.trim().slice(0, 100)}`,
+                detail: `${tilde(file, home)}:${n} references the legacy name — re-run with --rc to rewrite, or edit by hand: ${line.trim().slice(0, 100)}`,
             });
         }
     }
@@ -404,7 +427,7 @@ export async function scanLegacy(options = {}) {
     await planHome(home, actions);
     await planSymlink(home, actions);
     await planClaudePlugin(home, actions);
-    await planShellAndEnv(home, env, actions);
+    await planShellAndEnv(home, env, actions, Boolean(options.rewriteRc));
     // Stable order: writes first (grouped by kind), then advice.
     const order = [
         "migrate-home",
@@ -413,6 +436,7 @@ export async function scanLegacy(options = {}) {
         "rewrite-mcp-json",
         "remove-legacy-symlink",
         "rewrite-claude-plugin",
+        "rewrite-rc",
         "report",
     ];
     actions.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.path.localeCompare(b.path));

@@ -59,6 +59,12 @@ function runOptional(cmd, args) {
 //    (consumer installs don't have husky as devDep).
 runOptional("husky", []);
 
+// `mikro update` and bin/mikro.mjs run `npm ci` and then build explicitly;
+// building here as well would just double the work.
+if (process.env.MIKRO_SKIP_PREPARE === "1") {
+	process.exit(0);
+}
+
 // 2. Best-effort build. Failure is a warning, not a hard error — the
 //    committed dist/ is the fallback. Consumers are NEVER blocked
 //    from installing because our build couldn't resolve @types/js-yaml

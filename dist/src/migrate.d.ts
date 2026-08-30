@@ -19,8 +19,8 @@
  *   - Claude Code plugin registration (`~/.claude/settings.json`,
  *     `~/.claude/plugins/known_marketplaces.json`,
  *     `~/.claude/plugins/installed_plugins.json`) → `rlmx@rlmx` → `mikro@mikro`
- *   - shell rc files / env vars mentioning `~/.rlmx` or `RLMX_*` → reported
- *     only; those lines encode intent this tool cannot infer.
+ *   - shell rc files mentioning `~/.rlmx` or `RLMX_*` → reported; rewritten
+ *     with `--rc` (backup beside the file). Env vars are always report-only.
  *
  * Dry-run by default: the plan is printed and nothing is written. `--apply`
  * performs it, backing up each rewritten JSON file next to itself. The scan
@@ -28,7 +28,7 @@
  * `node_modules`, `.git`, and other dot-directories, so it stays fast on a
  * home directory full of checkouts.
  */
-export type MigrationKind = "rename-config-dir" | "rename-config-file" | "rewrite-mcp-json" | "migrate-home" | "remove-legacy-symlink" | "rewrite-claude-plugin" | "report";
+export type MigrationKind = "rename-config-dir" | "rename-config-file" | "rewrite-mcp-json" | "migrate-home" | "remove-legacy-symlink" | "rewrite-claude-plugin" | "rewrite-rc" | "report";
 export interface MigrationAction {
     readonly kind: MigrationKind;
     /** Absolute path the action is about. */
@@ -55,7 +55,15 @@ export interface ScanOptions {
     env?: NodeJS.ProcessEnv;
     /** Path substrings to leave alone (backups, snapshots). */
     exclude?: readonly string[];
+    /**
+     * Rewrite `~/.rlmx` → `~/.mikro` and `RLMX_*` → `MIKRO_*` in shell rc files
+     * instead of only reporting them. Off by default: an rc line can encode
+     * intent (a venv that lives elsewhere) that a rename would break.
+     */
+    rewriteRc?: boolean;
 }
+/** The textual rewrite `--rc` applies to one rc line. */
+export declare function rewriteRcLine(line: string): string;
 /** Build the migration plan. Pure inspection — nothing is written. */
 export declare function scanLegacy(options?: ScanOptions): Promise<MigrationPlan>;
 /** Apply every writable action in order; returns what was applied. */
