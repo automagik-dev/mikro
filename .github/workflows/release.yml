@@ -24,8 +24,8 @@ name: Release Metadata
 # bump commit gets no CI run of its own either way; its parent merge commit did,
 # and the bump changes only version literals. See docs/release-contract.md.)
 #
-# npm publishing stays manual and is not wired to this workflow — see
-# .github/workflows/version.yml.
+# No workflow publishes to npm. The CLI and SDK are distributed from git; see
+# docs/release-contract.md.
 
 on:
   push:
@@ -222,7 +222,7 @@ jobs:
           SHA: ${{ steps.target.outputs.sha }}
         run: |
           if [ -z "$RELEASE_NOTES" ]; then
-            RELEASE_NOTES="RLMX release metadata for the main branch application boundary and SDK package version."
+            RELEASE_NOTES="Mikro release metadata for the main branch application boundary and SDK package version."
           fi
           printf '%s' "$RELEASE_NOTES" > /tmp/release-notes.md
           gh release create "${TAG}" \
