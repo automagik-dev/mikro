@@ -67,11 +67,26 @@ export interface AgentSpec {
 	 * engine, which stays the default. Deliberately NOT part of the
 	 * documented `agent.yaml` schema: it is a gate/experiment selector that
 	 * may change without notice.
+	 *
+	 * - `mikro` — the legacy in-process engine (`rlmLoop`). The default.
+	 * - `prime` — one `prime-agent` subprocess per turn
+	 *   (`src/mcp/backends/prime.ts`).
+	 * - `prime-sdk` — the same agent driven in-process through prime's
+	 *   programmatic SDK (`src/mcp/backends/prime-sdk.ts`): no per-turn cold
+	 *   start, plus custom tools, structured output, custom providers, and
+	 *   sub-call depth, which the subprocess flag surface cannot express.
 	 */
-	readonly backend?: "mikro" | "prime";
+	readonly backend?: "mikro" | "prime" | "prime-sdk";
 	/** Preserved unrecognised keys — consumers layer their own schema. */
 	readonly extras: Readonly<Record<string, unknown>>;
 }
+
+/** Backends a spec may name. Pinned here so the error text can list them. */
+const VALID_BACKENDS: readonly NonNullable<AgentSpec["backend"]>[] = [
+	"mikro",
+	"prime",
+	"prime-sdk",
+] as const;
 
 const VALID_SHAPES: readonly AgentSpec["shape"][] = [
 	"single-step",
@@ -177,8 +192,15 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 	// silently fall back to the legacy engine and look like it worked, which
 	// is exactly the silent degradation a selection field must not allow.
 	const backendRaw = asString(r.backend);
-	if (backendRaw !== undefined && backendRaw !== "mikro" && backendRaw !== "prime") {
-		throw new Error(`agent.yaml: backend must be one of mikro | prime, got "${backendRaw}"`);
+	if (
+		backendRaw !== undefined &&
+		backendRaw !== "mikro" &&
+		backendRaw !== "prime" &&
+		backendRaw !== "prime-sdk"
+	) {
+		throw new Error(
+			`agent.yaml: backend must be one of ${VALID_BACKENDS.join(" | ")}, got "${backendRaw}"`,
+		);
 	}
 
 	// Build the "extras" bag by stripping the known keys from r.

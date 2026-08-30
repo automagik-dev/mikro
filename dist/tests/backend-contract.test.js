@@ -46,6 +46,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LegacyMikroBackend } from "../src/mcp/backends/legacy.js";
 import { PrimeBackend, } from "../src/mcp/backends/prime.js";
+import { EMIT_DONE_TOOL, PrimeSdkBackend, } from "../src/mcp/backends/prime-sdk.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../src/rlm.js";
 import { parseAgentSpec } from "../src/sdk/agent-spec.js";
 import { isFailedRun, runTurn, selectBackend, sessionResult, } from "../src/mcp/server.js";
@@ -115,6 +116,25 @@ function stubPrimeEngine(run, bareProgressMessages) {
     };
     return { engine, calls };
 }
+function stubPrimeSdkEngine(run, bareProgressMessages) {
+    const calls = [];
+    const engine = async (plan, emit, limits) => {
+        calls.push({ plan, limits });
+        for (const message of bareProgressMessages)
+            emit(message);
+        return {
+            answer: run.answer,
+            turns: run.iterations,
+            budgetHit: run.budgetHit,
+            usage: {
+                inputTokens: run.usage.inputTokens,
+                outputTokens: run.usage.outputTokens,
+                totalCost: run.usage.totalCost,
+            },
+        };
+    };
+    return { engine, calls };
+}
 /** Backends emit bare messages; runTurn adds "label · ". Strip the prefix back off. */
 function bareProgress(scenario) {
     return scenario.expectedProgress.map((m) => m.slice(m.indexOf(" · ") + 3));
@@ -128,11 +148,12 @@ function bareProgress(scenario) {
  * harness — envelope, footer fields, isError, progress — is therefore a live
  * cross-backend gate.
  */
-function backendsFor(loop, primeEngine) {
+function backendsFor(loop, primeEngine, primeSdkEngine) {
     return [
         { name: "legacy#1", backend: new LegacyMikroBackend({ loop }) },
         { name: "legacy#2", backend: new LegacyMikroBackend({ loop }) },
         { name: "prime", backend: new PrimeBackend({ engine: primeEngine }) },
+        { name: "prime-sdk", backend: new PrimeSdkBackend({ engine: primeSdkEngine }) },
     ];
 }
 async function drive(backend, scenario) {
@@ -281,6 +302,36 @@ function assertPrimeForwarding(calls, scenario, tag) {
         assert.ok(Number.isFinite(call.limits.deadlineMs) && call.limits.deadlineMs > 0, `${tag}: an mikro-owned wall-clock deadline is always set`);
     }
 }
+/**
+ * Prime SDK forwarding — the plan the in-process backend assembled and the
+ * limits it derived. The mirror of `assertPrimeForwarding`: same scenario,
+ * same derived limits, but the mapping target is a session plan rather than
+ * an argv line.
+ */
+function assertPrimeSdkForwarding(calls, scenario, tag) {
+    assert.ok(calls.length > 0, `${tag}: the prime-sdk engine was never called`);
+    for (const call of calls) {
+        const { plan } = call;
+        assert.equal(plan.cwd, "/tmp/mikro-backend-contract", `${tag}: the server's cwd must reach the plan`);
+        assert.equal(plan.query, scenario.query, `${tag}: query forwarded as the prompt`);
+        assert.equal(plan.provider, "deepseek", `${tag}: mikro provider passes through unremapped`);
+        assert.equal(plan.modelId, "deepseek-v4-flash", `${tag}: mikro model id passes through bare`);
+        assert.equal(plan.modelsJson, null, `${tag}: deepseek is a prime built-in — no generated models.json`);
+        assert.ok(plan.appendSystemPrompt.length > 0, `${tag}: the microagent role must be appended to prime's base prompt`);
+        assert.equal(plan.tools[0]?.name, EMIT_DONE_TOOL, `${tag}: every run must offer the emit_done answer channel first`);
+        if (scenario.contextPath === undefined) {
+            assert.equal(plan.contextSnapshots.length, 0, `${tag}: no context path → no snapshots`);
+        }
+        else {
+            assert.ok(plan.contextSnapshots.length > 0, `${tag}: a loaded context must reach the plan as snapshots`);
+            assert.ok(plan.contextSnapshots.every((s) => s.path.startsWith(plan.scratchDir)), `${tag}: every snapshot must live inside the run's scratch dir`);
+        }
+        assert.equal(call.limits.maxCost, null, `${tag}: null budget maxCost → null cost ceiling`);
+        assert.equal(call.limits.maxTokens, null, `${tag}: null budget maxTokens → null token ceiling`);
+        assert.equal(call.limits.maxTurns, scenario.maxIterations ?? null, `${tag}: the spec's iteration cap must reach the engine as the turn ceiling`);
+        assert.ok(Number.isFinite(call.limits.deadlineMs) && call.limits.deadlineMs > 0, `${tag}: an mikro-owned wall-clock deadline is always set`);
+    }
+}
 const SECONDS_RE = / · \d+(?:\.\d+)?s ·/;
 /** Cross-backend equality: every compared dimension must match. */
 function assertRecordsEqual(a, b, tag) {
@@ -400,7 +451,8 @@ function fakeAgent(backend) {
 async function runScenario(scenario) {
     const legacy = stubLoop(scenario.stub);
     const prime = stubPrimeEngine(scenario.stub, bareProgress(scenario));
-    const backends = backendsFor(legacy.loop, prime.engine);
+    const primeSdk = stubPrimeSdkEngine(scenario.stub, bareProgress(scenario));
+    const backends = backendsFor(legacy.loop, prime.engine, primeSdk.engine);
     assert.ok(backends.length > 1, "the comparison needs at least two backends to mean anything");
     const observed = [];
     for (const { name, backend } of backends) {
@@ -409,6 +461,9 @@ async function runScenario(scenario) {
         assertHostContract(record, scenario, `${scenario.name} [${name}]`);
         if (name === "prime") {
             assertPrimeForwarding(prime.calls, scenario, `${scenario.name} [${name}]`);
+        }
+        else if (name === "prime-sdk") {
+            assertPrimeSdkForwarding(primeSdk.calls, scenario, `${scenario.name} [${name}]`);
         }
         else {
             assertLegacyForwarding(legacy.calls, scenario, `${scenario.name} [${name}]`);
@@ -494,6 +549,21 @@ describe("backend selection", () => {
             await rm(dir, { recursive: true, force: true });
         }
     });
+    it("selects the in-process prime-sdk backend for a spec naming backend: prime-sdk", () => {
+        // Unlike PrimeBackend, this constructor touches nothing: package
+        // resolution, the version pin, and the dynamic import all live behind
+        // the memoized loader, so selection works on a machine with no
+        // prime-agent installed. That is the property under test.
+        const previous = process.env.MIKRO_PRIME_AGENT_ROOT;
+        try {
+            delete process.env.MIKRO_PRIME_AGENT_ROOT;
+            assert.ok(selectBackend(fakeAgent("prime-sdk")) instanceof PrimeSdkBackend);
+        }
+        finally {
+            if (previous !== undefined)
+                process.env.MIKRO_PRIME_AGENT_ROOT = previous;
+        }
+    });
     it("rejects a forged backend name that would hit the prototype chain", () => {
         // A plain-object BACKENDS record resolves "constructor" to a truthy
         // non-backend; the Map record must resolve it to "not wired".
@@ -510,14 +580,18 @@ describe("backend selection", () => {
 });
 describe("agent.yaml backend field (internal, undocumented)", () => {
     const DIR = "/tmp/fake-agent";
-    it("parses mikro | prime and stays undefined when absent", () => {
+    it("parses mikro | prime | prime-sdk and stays undefined when absent", () => {
         assert.equal(parseAgentSpec("backend: mikro\n", DIR).backend, "mikro");
         assert.equal(parseAgentSpec("backend: prime\n", DIR).backend, "prime");
+        assert.equal(parseAgentSpec("backend: prime-sdk\n", DIR).backend, "prime-sdk");
         assert.equal(parseAgentSpec("shape: loop\n", DIR).backend, undefined);
     });
     it("rejects a typo loudly instead of silently running the legacy engine", () => {
-        assert.throws(() => parseAgentSpec("backend: prim\n", DIR), /agent\.yaml: backend must be one of mikro \| prime, got "prim"/);
+        assert.throws(() => parseAgentSpec("backend: prim\n", DIR), /agent\.yaml: backend must be one of mikro \| prime \| prime-sdk, got "prim"/);
         assert.throws(() => parseAgentSpec("backend: xhigh\n", DIR), /backend must be one of/);
+        // The near-miss that matters most: `prime-sdk` is one hyphen away from a
+        // name that would otherwise fall through to a different engine.
+        assert.throws(() => parseAgentSpec("backend: primesdk\n", DIR), /backend must be one of mikro \| prime \| prime-sdk, got "primesdk"/);
     });
     it("does not leak into the extras bag", () => {
         const spec = parseAgentSpec("backend: prime\n", DIR);
