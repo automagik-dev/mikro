@@ -1,6 +1,6 @@
 {
   "name": "mikro",
-  "version": "1.260830.3",
+  "version": "1.260830.4",
   "private": true,
   "description": "mikro — microagent runtime for coding agents: prompt externalization, Python REPL with symbolic recursion, code-driven navigation",
   "type": "module",
