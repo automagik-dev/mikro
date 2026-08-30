@@ -47,8 +47,8 @@ jobs:
   release:
     name: Create Release
     # head_commit is null on workflow_dispatch, so contains() is false and the
-    # job runs. The marker is a suffix on the bump message (matching the
-    # convention in version.yml), hence contains() rather than startsWith().
+    # job runs. The marker is a suffix on the scripts/version.mjs bump message,
+    # hence contains() rather than startsWith().
     if: "!contains(github.event.head_commit.message, '[auto-version]')"
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -182,7 +182,10 @@ jobs:
           if ! git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"; then
             git fetch --quiet origin "${GITHUB_REF_NAME}"
             TIP=$(git rev-parse "origin/${GITHUB_REF_NAME}")
-            if [ "$TIP" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$TIP"; then
+            LOCAL_HEAD=$(git rev-parse HEAD)
+            if [ "$TIP" = "$LOCAL_HEAD" ]; then
+              echo "Push client returned nonzero, but remote confirms bump ${LOCAL_HEAD:0:7}; continuing release creation."
+            elif [ "$TIP" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$TIP"; then
               echo "superseded=true" >> "$GITHUB_OUTPUT"
               echo "${GITHUB_REF_NAME} advanced to ${TIP:0:7} while this run was bumping ${GITHUB_SHA:0:7} — superseded; the queued run releases."
               exit 0
