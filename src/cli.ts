@@ -979,12 +979,23 @@ async function runUpdate(args: string[]): Promise<void> {
   if (root.includes("/.rlmx/")) {
     console.log("note: this checkout lives under the legacy ~/.rlmx path; re-run scripts/install.sh to migrate it to ~/.mikro.");
   }
-  if (root.includes("/.mikro/")) {
-    console.log("note: this checkout lives under the legacy ~/.mikro path; re-run scripts/install.sh to migrate it to ~/.mikro.");
-  }
   console.log(`before: ${before}`);
-  runGit(root, ["fetch", "origin", "main", "--tags"]);
-  const target = runGit(root, ["rev-parse", "origin/main"]);
+  // Resolve the update target through FETCH_HEAD rather than origin/main so a
+  // checkout with a narrow or missing fetch refspec (single-branch or tag
+  // clones) still updates. FETCH_HEAD's first entry is the branch named here.
+  try {
+    runGit(root, ["fetch", "origin", "main", "--tags"]);
+  } catch (error) {
+    let url = "origin";
+    try {
+      url = runGit(root, ["remote", "get-url", "origin"]);
+    } catch {
+      // keep the placeholder
+    }
+    const detail = error instanceof Error ? error.message.split("\n").pop() ?? "" : "";
+    throw new Error(`mikro update: could not fetch main from ${url}${detail ? ` (${detail})` : ""}. Re-run scripts/install.sh to repair the remote.`);
+  }
+  const target = runGit(root, ["rev-parse", "FETCH_HEAD"]);
   console.log(`target: ${target}`);
 
   if (before === target && !dirty) {
@@ -992,7 +1003,7 @@ async function runUpdate(args: string[]): Promise<void> {
     return;
   }
 
-  runGit(root, ["reset", "--hard", "origin/main"]);
+  runGit(root, ["reset", "--hard", "FETCH_HEAD"]);
   runGit(root, ["clean", "-fd"]);
   runCommand(root, "npm", ["ci", "--include=dev"]);
   runCommand(root, "npm", ["run", "build"]);
