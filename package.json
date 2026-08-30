@@ -27,7 +27,7 @@
     "@agentclientprotocol/sdk": "^0.26.0",
     "@earendil-works/pi-ai": "0.80.10",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.3.2",
     "pg": "^8.20.0",
     "pgserve": "^1.1.10"
   },
