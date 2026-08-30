@@ -14,7 +14,11 @@
  *   2. <cwd>/.agents/<name>/agent.yaml      (project, the documented convention)
  *   3. <cwd>/.mikro/agents/<name>/agent.yaml (project)
  *
- * `MIKRO_AGENTS_DIR` (colon-separated) replaces the defaults entirely.
+ * `MIKRO_AGENTS_DIR` (colon-separated) replaces the defaults entirely
+ * (`RLMX_AGENTS_DIR` is honoured as a legacy alias).
+ *
+ * Pre-rename `.rlmx/agents` roots are still scanned, at lower precedence than
+ * their `.mikro` counterparts, so an unmigrated checkout keeps its agents.
  *
  * One name is reserved: a directory whose name ends `.proposed` is a draft
  * awaiting human approval and is skipped everywhere — see `PROPOSED_SUFFIX`.
@@ -88,7 +92,7 @@ export function toToolName(agentName: string): string {
 
 /** Discovery roots in precedence order (later wins). */
 export function agentRoots(cwd: string): string[] {
-  const override = process.env.MIKRO_AGENTS_DIR?.trim();
+  const override = (process.env.MIKRO_AGENTS_DIR ?? process.env.RLMX_AGENTS_DIR)?.trim();
   if (override) {
     return override
       .split(":")
@@ -96,8 +100,10 @@ export function agentRoots(cwd: string): string[] {
       .filter(Boolean);
   }
   return [
+    join(homedir(), ".rlmx", "agents"),
     join(homedir(), ".mikro", "agents"),
     join(cwd, ".agents"),
+    join(cwd, ".rlmx", "agents"),
     join(cwd, ".mikro", "agents"),
   ];
 }

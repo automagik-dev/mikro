@@ -643,11 +643,22 @@ export async function loadGlobalProviders(): Promise<CustomProviderConfig[]> {
  * provider.
  */
 export async function loadConfig(dir: string): Promise<MikroConfig> {
-  const mikroDir = join(dir, ".mikro");
+  let mikroDir = join(dir, ".mikro");
   const globalProviders = await loadGlobalProviders();
 
-  // Try .mikro/mikro.yaml
-  const yamlContent = await readOptionalFile(join(mikroDir, "mikro.yaml"));
+  // Try .mikro/mikro.yaml, then the pre-rename .rlmx/rlmx.yaml. The fallback
+  // keeps an unmigrated checkout running; the warning (once per process, per
+  // dir) points at `mikro migrate` so it does not stay unmigrated for long.
+  let yamlContent = await readOptionalFile(join(mikroDir, "mikro.yaml"));
+  if (yamlContent === null) {
+    const legacyDir = join(dir, ".rlmx");
+    const legacy = await readOptionalFile(join(legacyDir, "rlmx.yaml"));
+    if (legacy !== null) {
+      yamlContent = legacy;
+      mikroDir = legacyDir;
+      warnLegacyConfig(legacyDir);
+    }
+  }
   if (yamlContent !== null) {
     const partial = parseYamlConfig(yamlContent, dir, globalProviders);
 
@@ -676,8 +687,22 @@ export async function loadConfig(dir: string): Promise<MikroConfig> {
 
 /**
  * Check if any config exists in a directory.
- * Only checks .mikro/mikro.yaml.
+ * Checks .mikro/mikro.yaml, then the legacy .rlmx/rlmx.yaml.
  */
 export async function hasConfig(dir: string): Promise<boolean> {
-  return (await readOptionalFile(join(dir, ".mikro", "mikro.yaml"))) !== null;
+  return (
+    (await readOptionalFile(join(dir, ".mikro", "mikro.yaml"))) !== null ||
+    (await readOptionalFile(join(dir, ".rlmx", "rlmx.yaml"))) !== null
+  );
+}
+
+const warnedLegacyDirs = new Set<string>();
+
+/** Emit the legacy-config warning once per directory per process. */
+function warnLegacyConfig(legacyDir: string): void {
+  if (warnedLegacyDirs.has(legacyDir)) return;
+  warnedLegacyDirs.add(legacyDir);
+  process.stderr.write(
+    `mikro: reading legacy config from ${legacyDir} — run \`mikro migrate --apply\` to rename it to .mikro/mikro.yaml\n`
+  );
 }
