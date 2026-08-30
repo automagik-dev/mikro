@@ -59,21 +59,60 @@ jobs:
           # changelog range is resolved from them.
           fetch-depth: 0
 
-      # Two merges seconds apart queue two runs in the concurrency group. The
-      # second one starts on a commit main has already moved past (the first
-      # run pushed a version bump), so its own bump push is rejected and the
-      # run goes red even though every commit was released. Detect that up
-      # front and finish green: the run that owns main's tip does the release.
-      - name: Skip when main has moved past this commit
+      # Select the newest release source without hiding a failed release. A
+      # normal newer merge owns its queued run, so this older run can stop. An
+      # auto-version tip is different: GITHUB_TOKEN pushes create no new run,
+      # so a rerun must resume that tip when its GitHub release is still absent.
+      - name: Select current release source
         id: stale
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch --quiet origin "${GITHUB_REF_NAME}"
+          git fetch --quiet origin "${GITHUB_REF_NAME}" --tags
           TIP=$(git rev-parse "origin/${GITHUB_REF_NAME}")
-          if [ "$TIP" != "$GITHUB_SHA" ]; then
-            echo "superseded=true" >> "$GITHUB_OUTPUT"
-            echo "${GITHUB_REF_NAME} is at ${TIP:0:7}, this run is for ${GITHUB_SHA:0:7} — superseded; the newer run releases."
-          else
+
+          if [ "$TIP" = "$GITHUB_SHA" ]; then
             echo "superseded=false" >> "$GITHUB_OUTPUT"
+            echo "source_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "$TIP"; then
+            echo "::error::${GITHUB_REF_NAME} moved to unrelated commit ${TIP:0:7}; refusing to classify this run as superseded"
+            exit 1
+          fi
+
+          SUBJECT=$(git show -s --format=%s "$TIP")
+          if [[ "$SUBJECT" != *"[auto-version]"* ]]; then
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            echo "${GITHUB_REF_NAME} is at newer merge ${TIP:0:7}; its queued run owns the release."
+            exit 0
+          fi
+
+          VERSION=$(git show "${TIP}:package.json" | jq -r '.version')
+          TAG="v${VERSION}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "::error::auto-version tip ${TIP:0:7} has no package version"
+            exit 1
+          fi
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            if ! git rev-parse -q --verify "refs/tags/${TAG}" > /dev/null; then
+              echo "::error::GitHub release ${TAG} exists but its git tag is missing"
+              exit 1
+            fi
+            TAG_SHA=$(git rev-parse "refs/tags/${TAG}^{commit}")
+            if [ "$TAG_SHA" != "$TIP" ]; then
+              echo "::error::GitHub release ${TAG} exists at ${TAG_SHA:0:7}, not current auto-version tip ${TIP:0:7}"
+              exit 1
+            fi
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            echo "${TAG} already releases current tip ${TIP:0:7}; nothing to resume."
+          else
+            git checkout --detach "$TIP"
+            echo "superseded=false" >> "$GITHUB_OUTPUT"
+            echo "source_sha=${TIP}" >> "$GITHUB_OUTPUT"
+            echo "Resuming missing release ${TAG} from auto-version tip ${TIP:0:7}."
           fi
 
       - name: Resolve package release version
@@ -89,6 +128,7 @@ jobs:
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "Release tag resolved from package.json: v${VERSION}"
 
       - name: Check whether that release already exists
@@ -142,7 +182,7 @@ jobs:
           if ! git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"; then
             git fetch --quiet origin "${GITHUB_REF_NAME}"
             TIP=$(git rev-parse "origin/${GITHUB_REF_NAME}")
-            if git merge-base --is-ancestor "$GITHUB_SHA" "$TIP"; then
+            if [ "$TIP" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$TIP"; then
               echo "superseded=true" >> "$GITHUB_OUTPUT"
               echo "${GITHUB_REF_NAME} advanced to ${TIP:0:7} while this run was bumping ${GITHUB_SHA:0:7} — superseded; the queued run releases."
               exit 0
@@ -162,7 +202,7 @@ jobs:
         id: target
         env:
           TAG: ${{ steps.bump.outputs.tag || steps.ver.outputs.tag }}
-          SHA: ${{ steps.bump.outputs.sha || github.sha }}
+          SHA: ${{ steps.bump.outputs.sha || steps.ver.outputs.sha }}
         run: |
           # Enforce the coherence invariant before anything is published: the
           # tagged commit's version files must equal the tag.
