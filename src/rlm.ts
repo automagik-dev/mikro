@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { MikroConfig, ToolDef } from "./config.js";
 import type { LoadedContext, ContextItem } from "./context.js";
 import { buildCachedSystemPrompt, computeContentHash, buildSessionId, estimateTokens } from "./cache.js";
+import { appendStopProtocol } from "./stop-protocol.js";
 import { REPL } from "./repl.js";
 import { PgStorage } from "./storage.js";
 import { ObservabilityRecorder } from "./observe.js";
@@ -119,7 +120,7 @@ function isStructuredOutputMode(config: MikroConfig): boolean {
 /**
  * Build the system prompt from config, tools, criteria, and context metadata.
  */
-function buildSystemPrompt(
+export function buildSystemPrompt(
   config: MikroConfig,
   _context: LoadedContext | null,
   storageRecordCount?: number
@@ -134,6 +135,11 @@ function buildSystemPrompt(
   } else if (customToolsSection) {
     system += "\n\n" + customToolsSection;
   }
+
+  // Teach the termination protocol unless the pack already does (or opted out).
+  // Must precede the criteria block: the criteria text says "when providing
+  // your FINAL answer", which only means something once FINAL is defined.
+  system = appendStopProtocol(system, config);
 
   // Append CRITERIA.md content if present
   if (config.criteria) {

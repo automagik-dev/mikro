@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import type { MikroConfig, CacheConfig } from "./config.js";
 import type { LoadedContext, ContextItem } from "./context.js";
+import { appendStopProtocol } from "./stop-protocol.js";
 
 // Provider context window limits (approximate token counts)
 export const PROVIDER_LIMITS: Record<string, number> = {
@@ -122,6 +123,11 @@ export function buildCachedSystemPrompt(
   context: LoadedContext | null
 ): string {
   let system = config.system ?? "";
+
+  // Same defect, same fix as `buildSystemPrompt` (`src/rlm.ts`): a pack's own
+  // SYSTEM.md replaces the template, so the FINAL contract has to come from
+  // the runtime. Placed before the criteria block for the same reason.
+  system = appendStopProtocol(system, config);
 
   // Append criteria if present
   if (config.criteria) {

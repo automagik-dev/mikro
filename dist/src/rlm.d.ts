@@ -39,6 +39,10 @@ export interface RLMOptions {
     emitter?: EmitterAndStream;
 }
 /**
+ * Build the system prompt from config, tools, criteria, and context metadata.
+ */
+export declare function buildSystemPrompt(config: MikroConfig, _context: LoadedContext | null, storageRecordCount?: number): string;
+/**
  * Main RLM loop entry point.
  */
 export declare function rlmLoop(query: string, context: LoadedContext | null, config: MikroConfig, options?: Partial<RLMOptions>): Promise<RLMResult>;

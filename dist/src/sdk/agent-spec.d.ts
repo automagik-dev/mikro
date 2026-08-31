@@ -20,6 +20,22 @@ export interface AgentScope {
     readonly reads?: readonly string[];
     readonly writes?: readonly string[];
 }
+/**
+ * Per-agent system-prompt assembly overrides — the `agent.yaml` equivalent of
+ * mikro.yaml's `prompt:` block. `undefined` means "not declared", so the
+ * ambient config decides.
+ */
+export interface AgentPrompt {
+    /**
+     * Opt out of the appended REPL/FINAL termination protocol
+     * (`src/stop-protocol.ts`). Consumers apply it by writing
+     * `config.prompt.appendStopProtocol` (see `applyAgent` in
+     * `src/mcp/server.ts`), which is the same field mikro.yaml's
+     * `prompt.append-stop-protocol` writes — an agent's declaration simply
+     * outranks the ambient one.
+     */
+    readonly appendStopProtocol?: boolean;
+}
 export interface AgentSpec {
     /** Agent directory on disk — parent of agent.yaml. All tool-file
      *  resolutions are relative to this path. */
@@ -54,6 +70,8 @@ export interface AgentSpec {
     readonly thinking?: ThinkingLevel;
     readonly scope?: AgentScope;
     readonly budget?: AgentBudget;
+    /** System-prompt assembly overrides. `undefined` means "not declared". */
+    readonly prompt?: AgentPrompt;
     /**
      * Internal, undocumented: which runtime backend executes this agent's
      * turns (wish mikro-v2-prime-backend). Absent means `mikro` — the legacy
