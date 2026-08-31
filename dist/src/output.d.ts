@@ -18,6 +18,22 @@ export interface RLMResult {
     geminiCounts?: GeminiCallCounts;
     /** Names of Gemini battery functions invoked during the run. */
     geminiBatteriesUsed?: string[];
+    /**
+     * True when the pack declared a `VALIDATE.md` schema and the answer below
+     * still does not match it after the in-band retry ceiling. Absent means
+     * either "no schema was declared" or "the answer matched it" — the two are
+     * deliberately indistinguishable, since neither is something to act on.
+     *
+     * Snake_case, unlike its neighbours, because this field is a *wire* name:
+     * `--output json` serializes `RLMResult` directly (see `outputResult`), and
+     * the flag's consumers are downstream gates reading that JSON.
+     *
+     * It describes the *model's answer*, not the run: the two designed aborts
+     * (empty responses, wall-clock timeout) return runtime-error text rather
+     * than a payload and are never flagged. Use `budgetHit` / `iterations` to
+     * tell a flagged-because-exhausted run from a flagged-because-wrong one.
+     */
+    validation_failed?: boolean;
 }
 /** Cache stats included in --stats output when cache is enabled. */
 export interface CacheStats {

@@ -55,6 +55,10 @@ export class LegacyMikroBackend {
             answer: result.answer,
             iterations: result.iterations,
             budgetHit: result.budgetHit ?? null,
+            // Only forwarded when the loop actually flagged it — an absent field
+            // and `false` mean the same thing to `formatFooter`, and omitting it
+            // keeps this result byte-identical to before for unvalidated packs.
+            ...(result.validation_failed ? { validationFailed: true } : {}),
             usage: {
                 inputTokens: result.usage.inputTokens,
                 outputTokens: result.usage.outputTokens,

@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import type { MikroConfig, CacheConfig } from "./config.js";
 import type { LoadedContext, ContextItem } from "./context.js";
 import { appendStopProtocol } from "./stop-protocol.js";
+import { buildOutputSchemaSection } from "./sdk/validate.js";
 
 // Provider context window limits (approximate token counts)
 export const PROVIDER_LIMITS: Record<string, number> = {
@@ -134,6 +135,14 @@ export function buildCachedSystemPrompt(
     system +=
       "\n\n## Output Criteria\n\nWhen providing your FINAL answer, follow these criteria:\n" +
       config.criteria;
+  }
+
+  // Same disclosure, same position as `buildSystemPrompt` (`src/rlm.ts`):
+  // after the stop-protocol and criteria appends, so its literal `FINAL(`
+  // examples are invisible to the stop protocol's `config.system` sentinel.
+  // The `## Context Files` block below still comes last.
+  if (config.validate) {
+    system += "\n\n" + buildOutputSchemaSection(config.validate.rawBlock);
   }
 
   if (!context) {

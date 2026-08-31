@@ -662,10 +662,10 @@ describe("applyAgent model inheritance", () => {
   });
 
   /**
-   * An agent's own VALIDATE.md outranks the root project's, the same way its
-   * model and thinking level do — an agent invoked from inside some other repo
-   * must be judged by its own contract, not by whatever that repo validates.
-   * Silence from the agent leaves the ambient contract in place.
+   * A microagent is contracted by its own VALIDATE.md or by nothing at all.
+   * An agent's file outranks the root project's the same way its model and
+   * thinking level do — and, unlike those, *silence also wins*: an agent that
+   * ships no VALIDATE.md is uncontracted even inside a repo that ships one.
    */
   describe("validate schema", () => {
     const agentValidate = {
@@ -684,11 +684,20 @@ describe("applyAgent model inheritance", () => {
       assert.deepEqual(next.validate?.schema.required, ["verdict"]);
     });
 
-    it("keeps the project schema when the agent ships none", () => {
+    /**
+     * The inverse of what this test asserted when the field was first landed
+     * (Group 1 pinned inheritance, before enforcement existed). Once `rlmLoop`
+     * *enforces* the schema, inheriting the ambient one means an uncontracted
+     * agent gets judged — and flagged `validation_failed` — against a contract
+     * its author never wrote, purely because of which repo the host happened
+     * to be started in. `if (agent.validate)` could raise a contract but never
+     * clear one, so the assignment is unconditional.
+     */
+    it("clears the project schema when the agent ships none", () => {
       const config = ambient();
       config.validate = projectValidate;
       const next = applyAgent(config, agentWith({}));
-      assert.equal(next.validate, projectValidate);
+      assert.equal(next.validate, null);
     });
 
     it("stays null when neither side has one", () => {

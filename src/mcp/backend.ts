@@ -48,16 +48,27 @@ export interface BackendRequest {
  * The result of one backend run — exactly the fields the MCP layer consumes.
  *
  * Enumerated deliberately: `formatFooter` and `isFailedRun`
- * (`src/mcp/server.ts`) read `answer`, `iterations`, `budgetHit`, and
- * `usage.inputTokens` / `usage.outputTokens` / `usage.totalCost`, and nothing
- * else. A field beyond these would be dead weight a backend must manufacture
- * for nobody to read.
+ * (`src/mcp/server.ts`) read `answer`, `iterations`, `budgetHit`,
+ * `validationFailed`, and `usage.inputTokens` / `usage.outputTokens` /
+ * `usage.totalCost`, and nothing else. A field beyond these would be dead
+ * weight a backend must manufacture for nobody to read — which is why
+ * `validationFailed` is listed here rather than merely tolerated: it has a
+ * named reader (`formatFooter`'s footer segment), and a backend that cannot
+ * produce it simply omits it.
  */
 export interface MicroagentResult {
   readonly answer: string;
   readonly iterations: number;
   /** Matches `RLMResult.budgetHit`: `null` (or absent) when no budget fired. */
   readonly budgetHit?: string | null;
+  /**
+   * Mirrors `RLMResult.validation_failed` (camelCase here because this is an
+   * internal seam, not a serialized wire shape): the answer above does not
+   * match the pack's declared `VALIDATE.md` schema. Only the legacy backend
+   * produces it today — the prime backends enforce their own schema through
+   * `emit_done`'s parameter schema and never reach this state.
+   */
+  readonly validationFailed?: boolean;
   readonly usage: {
     readonly inputTokens: number;
     readonly outputTokens: number;

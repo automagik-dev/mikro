@@ -24,6 +24,47 @@ release is the git commit on `main`. See `docs/release-contract.md`.
 
 ### Added
 
+- **`VALIDATE.md` is now enforced on the `FINAL` channel.** The pure validate
+  primitives (`src/sdk/validate.ts`) had been wired only into the SDK's
+  `runAgent()`; the core loop that serves the CLI *and* the default MCP backend
+  never validated anything, so a pack's `VALIDATE.md` was inert there and the
+  first `FINAL` won whether it matched the schema or not. `rlmLoop` now:
+  - **Discloses the schema.** When the pack ships a readable `VALIDATE.md`,
+    both prompt builders append an `## Output Schema` section — the schema
+    block verbatim plus the two idioms the channel can actually read back:
+    `FINAL(<compact single-line JSON>)` (the FINAL parser is line-based, so a
+    pretty-printed payload is lost) or `FINAL_VAR` of a `json.dumps(...)`
+    **string**. Never a bare Python dict, whose `str()` repr is single-quoted
+    and is not JSON. The section is appended last, after the stop-protocol and
+    criteria sections.
+  - **Retries once, on shape only.** A payload that misses the schema buys one
+    in-band retry: the shape errors and the schema are handed back as the next
+    iteration's user turn and the run continues. The hint never contains
+    content or fixture guidance. A retry is granted only when another iteration
+    is genuinely available — the iteration cap, the cost/token budget and the
+    wall-clock abort are all checked first — and is capped at
+    `MAX_VALIDATE_ATTEMPTS` (2).
+  - **Fails open with a flag.** A second failure returns the last payload with
+    `validation_failed: true` rather than erroring: the downstream consumer
+    wants the payload and decides for itself. The flag reaches `--output json`
+    and the `mikro mcp` cost footer (` · validation_failed: true`). MCP
+    `structuredContent` is unchanged — still exactly `{answer, session_id}`.
+  - **Flag semantics.** `validation_failed` means "the returned *model answer*
+    does not conform to the declared schema", whatever the cause. A run that
+    exhausts its budget or iterations still produces a forced final answer,
+    which is validated and flagged but never retried — the budget a retry would
+    spend is exactly what ran out. The two designed aborts (three consecutive
+    empty responses, wall-clock timeout) return runtime-error text rather than
+    a payload and are never flagged; use `budgetHit` / `iterations` to tell
+    exhaustion from a shape miss.
+  - **Unvalidated packs are untouched.** No `VALIDATE.md`, or one whose fenced
+    block does not parse, means no disclosure, no validation and no retry —
+    byte-for-byte the previous behaviour.
+  - This is a deliberate divergence from the SDK's `runAgent()`, which stays
+    fail-*closed* (a terminal `ValidationFailed` error) for its typed-event
+    consumers. Both surfaces share the same primitives; only the terminal
+    policy differs, and each is pinned by its own tests.
+
 - **Custom system prompts now carry the termination protocol.** A pack's own
   `SYSTEM.md` *replaces* the scaffolded template rather than extending it, and
   the ```` ```repl ```` fence contract plus the `FINAL()` / `FINAL_VAR()`
@@ -63,6 +104,22 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   - A failing tool call fails only that call, never the server process.
   - Gate: `scripts/smoke-mcp.mjs` drives the real server with the MCP SDK's own
     client — handshake, `tools/list`, per-agent tools, and error isolation.
+
+### Changed
+
+- **Microagents no longer inherit the ambient project schema.** `applyAgent`
+  now assigns `validate` unconditionally, so an agent that ships no
+  `VALIDATE.md` is uncontracted even when invoked inside a repo that ships one.
+  Previously the agent's file could only *raise* a contract, never clear one —
+  harmless while nothing enforced it, but with enforcement live it would judge
+  (and flag) an uncontracted agent against a schema its author never wrote,
+  purely because of which repo the MCP server was started in. CLI runs are
+  unaffected and still read `.mikro/VALIDATE.md`.
+- **`buildRetryHint` takes an optional surface argument** (SDK public API,
+  re-exported from `mikro/sdk`). The addition is backward compatible: with the
+  argument omitted the output is byte-identical to before. Passing
+  `RETRY_HINT_FINAL` swaps the two `emit_done`-specific lines — the opening
+  line and the closing re-emit instruction — for their `FINAL()` equivalents.
 
 ### Security
 
