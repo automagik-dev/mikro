@@ -204,6 +204,14 @@ export declare function isValidTemperature(value: unknown): value is number;
  *
  * Returns `null` for an absent flag — the same "unset" `MikroConfig.temperature`
  * uses — and throws on anything that is not a number in `[0, 2]`.
+ *
+ * The conversion is `Number`, not `Number.parseFloat`: `parseFloat` stops at the
+ * first character it cannot read, so `--temperature 1oops` and `--temperature
+ * 0.5.3` would parse as `1` and `0.5` and silently run at a temperature nobody
+ * asked for. `Number` demands the *whole* trimmed token be numeric. Its one trap
+ * is that `Number("")` and `Number("   ")` are `0` rather than `NaN`, so an
+ * empty or whitespace-only value is rejected explicitly before the conversion —
+ * `--temperature ""` is a malformed flag, not an absent one.
  */
 export declare function parseTemperatureFlag(raw: string | undefined | null): number | null;
 /**

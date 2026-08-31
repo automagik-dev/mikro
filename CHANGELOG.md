@@ -47,10 +47,13 @@ release is the git commit on `main`. See `docs/release-contract.md`.
     committee gate reaches for first, and it is falsy — so every guard on the
     path is written `!= null` and never truthiness, and each surface has a test
     pinning that an exact zero survives it.
-  - **Best-effort per provider.** pi/ai maps `temperature` on every api family,
-    but guards it per model: Anthropic omits it when thinking is enabled or when
-    the resolved model declares `supportsTemperature: false`. A pinned
-    temperature is a request, like a thinking level, not a guarantee.
+  - **Best-effort per transport.** pi/ai maps `temperature` on every api family
+    and drops it only on the `anthropic-messages` api — when a reasoning level
+    is set, or when the resolved model declares `compat.supportsTemperature:
+    false`. Claude reached via OpenRouter (`openai-completions`) or Bedrock
+    (`bedrock-converse-stream`) is *not* subject to that guard, so the model
+    family alone does not tell you whether the pin took. A pinned temperature is
+    a request, like a thinking level, not a guarantee.
   - Deliberately *not* threaded into `llm_query()` sub-calls, recursive
     children, or the web/fetch/image helpers. Recursive children re-read the
     config at their own cwd, so a `mikro.yaml` temperature propagates to them

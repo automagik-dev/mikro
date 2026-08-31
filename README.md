@@ -720,10 +720,6 @@ model:
   provider: google
   model: gemini-3.1-flash-lite-preview
 
-temperature: 0                # Sampling temperature, 0-2. TOP-LEVEL, not
-                              # under `gemini:` — pi/ai maps it on every
-                              # provider. Omit to send no temperature at all.
-
 gemini:
   thinking-level: medium      # Control thinking depth
   google-search: true          # Web search in REPL
@@ -744,7 +740,6 @@ mikro "Research latest AI developments" --context ./notes/ --tools standard --th
 | Feature | Config | CLI Flag | Description |
 |---------|--------|----------|-------------|
 | Thinking levels | `gemini.thinking-level` | `--thinking` | minimal/low/medium/high — controls reasoning depth |
-| Sampling temperature | `temperature` (top-level) | `--temperature` | 0-2 on the root loop's calls. `0` is greedy decoding, not "unset". Also settable per agent via `agent.yaml`'s `temperature:`. Omitting it sends no temperature at all. Not Gemini-only — pi/ai sends it on every api family and drops it only on the `anthropic-messages` api (reasoning level set, or `compat.supportsTemperature: false`). |
 | Thought signatures | automatic | — | Multi-turn quality via pi/ai signature circulation |
 | Structured output | `output.schema` | — | JSON Schema enforcement via API (not text parsing) |
 | Google Search | `gemini.google-search` | — | `web_search()` battery in REPL |
@@ -826,6 +821,26 @@ silently ignored.
 Model selection is the `model:` block in `.mikro/mikro.yaml`, `--model <ref>` for
 one run, or `mikro config set model.provider …` globally. There is no
 `MODEL.md` — nothing loads it.
+
+### Sampling temperature
+
+Provider-neutral, and deliberately **top-level** in `mikro.yaml` rather than
+under `gemini:` — pi/ai maps `temperature` on every api family, not just Google's.
+
+```yaml
+# .mikro/mikro.yaml
+temperature: 0   # 0-2. Omit the key (or set it to null) to send no temperature at all.
+```
+
+| Setting | Config | CLI Flag | Description |
+|---------|--------|----------|-------------|
+| Sampling temperature | `temperature` (top-level) | `--temperature` | 0-2 on the root loop's calls. `0` is greedy decoding, not "unset". Also settable per agent via `agent.yaml`'s `temperature:`, which outranks mikro.yaml and is itself outranked by the flag. Omitting it sends no temperature at all, leaving the provider's own default in place. |
+
+Best-effort, like a thinking level: pi/ai sends `temperature` on every api family
+and drops it only on the `anthropic-messages` api — when a reasoning level is
+set, or when the resolved model declares `compat.supportsTemperature: false`.
+Claude reached via OpenRouter or Bedrock is not subject to that guard, so the
+model family alone does not tell you whether the pin took.
 
 ### Migrating from `rlmx` (`mikro migrate`)
 

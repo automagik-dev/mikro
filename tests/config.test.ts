@@ -362,6 +362,26 @@ tools-level: standard
       await rm(dir, { recursive: true });
     });
 
+    /**
+     * The yaml surface never sees a numeric-prefix string as a number: YAML
+     * parses `1oops` as the string `"1oops"`, and the check is `typeof value
+     * === "number"`, so the `--temperature` trailing-junk trap cannot reach it.
+     * Locked here so a future "be lenient, coerce strings" change has to fail
+     * a test rather than quietly re-open it.
+     */
+    it("rejects a numeric-prefix string temperature", async () => {
+      for (const raw of ["1oops", "0.5.3"]) {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, `temperature: ${raw}\n`);
+        await assert.rejects(
+          () => loadConfig(dir),
+          /Invalid temperature in mikro\.yaml/,
+          `expected "${raw}" to be rejected`
+        );
+        await rm(dir, { recursive: true });
+      }
+    });
+
     it("rejects a non-number temperature", async () => {
       dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
       await makeConfig(dir, "temperature: hot\n");
@@ -389,7 +409,34 @@ describe("parseTemperatureFlag", () => {
   it("returns null for an absent flag", () => {
     assert.equal(parseTemperatureFlag(undefined), null);
     assert.equal(parseTemperatureFlag(null), null);
-    assert.equal(parseTemperatureFlag(""), null);
+  });
+
+  it("rejects an empty or whitespace-only value rather than reading it as unset", () => {
+    // `Number("")` and `Number("   ")` are both `0`, so without an explicit
+    // reject `--temperature ""` would silently pin greedy decoding.
+    for (const raw of ["", " ", "\t"]) {
+      assert.throws(
+        () => parseTemperatureFlag(raw),
+        /--temperature must be a number/,
+        `expected ${JSON.stringify(raw)} to be rejected`
+      );
+    }
+  });
+
+  it("rejects a numeric prefix followed by trailing junk", () => {
+    // `Number.parseFloat` stops at the first character it cannot read, so these
+    // would otherwise parse as 1 / 0.5 / 2 and run at a temperature nobody asked for.
+    for (const raw of ["1oops", "0.5.3", "2deg", "0 7", "1,5"]) {
+      assert.throws(
+        () => parseTemperatureFlag(raw),
+        /--temperature must be a number/,
+        `expected "${raw}" to be rejected`
+      );
+    }
+  });
+
+  it("still accepts a value padded with surrounding whitespace", () => {
+    assert.equal(parseTemperatureFlag(" 0.7 "), 0.7);
   });
 
   it("parses the string form of an exact zero", () => {
