@@ -3,6 +3,7 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 import { mergeCustomProviders, parseCustomProviders, } from "./custom-providers.js";
 import { loadSettings } from "./settings.js";
+import { parseValidateMd } from "./sdk/validate.js";
 // ─── Defaults ────────────────────────────────────────────
 const DEFAULT_MODEL = {
     provider: "google",
@@ -340,7 +341,30 @@ function defaultConfig(dir, providers = []) {
         rtk: { ...DEFAULT_RTK_CONFIG },
         providers,
         configSource: "defaults",
+        validate: null,
     };
+}
+/**
+ * Load a `VALIDATE.md` sitting at `path`, by convention.
+ *
+ * Three inputs, two answers. No file → null. A file whose fenced block is
+ * missing or is not valid JSON → also null, and never a throw: `parseValidateMd`
+ * reports both as `schema: null`, and a pack that ships a broken schema has to
+ * degrade to "unvalidated" rather than fail to load at all — the alternative is
+ * a typo in a markdown file taking the whole agent off the air. Only a block we
+ * parsed becomes a `ValidateConfig`.
+ *
+ * Shared by both load paths (project `.mikro/` and a microagent's own
+ * directory) so "what counts as a usable schema" has exactly one definition.
+ */
+export async function loadValidateMd(path) {
+    const raw = await readOptionalFile(path);
+    if (raw === null)
+        return null;
+    const { schema, rawBlock } = parseValidateMd(raw);
+    if (!schema || !rawBlock)
+        return null;
+    return { schema, rawBlock };
 }
 /**
  * Providers declared globally in ~/.mikro/settings.json under `"providers"`.
@@ -359,7 +383,12 @@ export async function loadGlobalProviders() {
  *   2. .mikro/SYSTEM.md (auto-loaded when present)
  *   3. .mikro/CRITERIA.md (auto-loaded when present)
  *   4. .mikro/TOOLS.md (auto-loaded and parsed when present)
- *   5. Defaults if no .mikro/mikro.yaml
+ *   5. .mikro/VALIDATE.md (auto-loaded and parsed when present)
+ *   6. Defaults if no .mikro/mikro.yaml
+ *
+ * The auto-loaded `.md` files belong to the yaml branch only. The defaults
+ * branch reads no files at all today, and VALIDATE.md does not change that:
+ * a directory with no mikro.yaml is not a pack.
  *
  * Config-declared providers come from ~/.mikro/settings.json (`"providers"`)
  * overlaid by mikro.yaml (`providers:`), in both the yaml and the defaults
@@ -385,10 +414,11 @@ export async function loadConfig(dir) {
     if (yamlContent !== null) {
         const partial = parseYamlConfig(yamlContent, dir, globalProviders);
         // Auto-load .md files from .mikro/
-        const [systemRaw, criteriaRaw, toolsRaw] = await Promise.all([
+        const [systemRaw, criteriaRaw, toolsRaw, validate] = await Promise.all([
             readOptionalFile(join(mikroDir, "SYSTEM.md")),
             readOptionalFile(join(mikroDir, "CRITERIA.md")),
             readOptionalFile(join(mikroDir, "TOOLS.md")),
+            loadValidateMd(join(mikroDir, "VALIDATE.md")),
         ]);
         const system = systemRaw?.trim() || null;
         const criteria = criteriaRaw?.trim() || null;
@@ -398,6 +428,7 @@ export async function loadConfig(dir) {
             system,
             criteria,
             tools,
+            validate,
         };
     }
     // No .mikro/mikro.yaml — return defaults

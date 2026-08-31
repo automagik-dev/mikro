@@ -33,6 +33,7 @@ function makeConfig(overrides = {}) {
         storage: overrides.storage ?? { enabled: "auto", mode: "persistent", dataDir: "~/.mikro/data", port: 0, chunkSize: null, chunkUtilization: 0.6, charsPerToken: 4 },
         rtk: overrides.rtk ?? { enabled: "auto" },
         providers: overrides.providers ?? [],
+        validate: overrides.validate ?? null,
     };
 }
 // ─── estimateTokens ──────────────────────────────────────
