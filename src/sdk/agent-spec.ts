@@ -76,6 +76,30 @@ export interface AgentSpec {
 	 *    *disables* reasoning on models that support it.
 	 */
 	readonly thinking?: ThinkingLevel;
+	/**
+	 * Sampling temperature for this agent's own model calls, `0`–`2` — the
+	 * `agent.yaml` twin of `mikro --temperature`. `undefined` means "not
+	 * declared", so the ambient config decides.
+	 *
+	 * Consumers apply it by writing `config.temperature`, the single field
+	 * `llmComplete` turns into pi-ai's `temperature` option (see `applyAgent` in
+	 * `src/mcp/server.ts`) — the same field mikro.yaml's top-level `temperature:`
+	 * writes, so an agent's declaration simply outranks the ambient one.
+	 *
+	 * Two caveats, both the same shape as `thinking:`'s:
+	 *
+	 * 1. `0` is a **meaningful** value (greedy decoding), not a synonym for
+	 *    unset. Every guard on this field is `!= null` / `!== undefined` and
+	 *    never truthiness.
+	 * 2. It is best-effort. pi-ai sends `temperature` on every api family and
+	 *    drops it on exactly one — `anthropic-messages` — either when a
+	 *    reasoning level is set or when the resolved model declares
+	 *    `compat.supportsTemperature: false`. The guard belongs to the api,
+	 *    not the model family: Claude reached via OpenRouter or Bedrock keeps
+	 *    its temperature regardless. A declared temperature is a request, not
+	 *    a guarantee.
+	 */
+	readonly temperature?: number;
 	readonly scope?: AgentScope;
 	readonly budget?: AgentBudget;
 	/** System-prompt assembly overrides. `undefined` means "not declared". */
@@ -106,6 +130,16 @@ const VALID_BACKENDS: readonly NonNullable<AgentSpec["backend"]>[] = [
 	"prime",
 	"prime-sdk",
 ] as const;
+
+/**
+ * Inclusive bounds for `temperature:`. Kept local rather than imported from
+ * `src/config.ts` so this parser stays free of the project config loader —
+ * the same reason `VALID_BACKENDS` is spelled out here. The canonical
+ * definition (and the reason the ceiling is 2) is `TEMPERATURE_MIN` /
+ * `TEMPERATURE_MAX` in `src/config.ts`; keep the two in step.
+ */
+const TEMPERATURE_MIN = 0;
+const TEMPERATURE_MAX = 2;
 
 const VALID_SHAPES: readonly AgentSpec["shape"][] = [
 	"single-step",
@@ -230,6 +264,34 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		);
 	}
 
+	// `temperature:` is validated rather than passed through for the same
+	// reason as `thinking:` — but with a sharper edge. A null value is "unset"
+	// (the convention `prompt:` and mikro.yaml already use), while *anything
+	// else* that is not a finite number in range throws: an out-of-range or
+	// misspelled temperature that fell back to unset would look exactly like a
+	// working pin, and pinning sampling is the entire point of declaring it.
+	//
+	// `asNumber` is the right gate here: it returns `0` (unlike a truthiness
+	// check) and rejects NaN/Infinity, which would otherwise pass the range
+	// comparison — `NaN >= 0` and `NaN <= 2` are both false, so a bare
+	// range test alone would let NaN through as "in range: no".
+	const temperatureRaw = r.temperature;
+	let temperature: number | undefined;
+	if (temperatureRaw !== undefined && temperatureRaw !== null) {
+		const parsed = asNumber(temperatureRaw);
+		if (
+			parsed === undefined ||
+			parsed < TEMPERATURE_MIN ||
+			parsed > TEMPERATURE_MAX
+		) {
+			throw new Error(
+				`agent.yaml: temperature must be a number between ${TEMPERATURE_MIN} and ${TEMPERATURE_MAX}, ` +
+					`got ${JSON.stringify(temperatureRaw)}`,
+			);
+		}
+		temperature = parsed;
+	}
+
 	// Same validate-don't-ignore rule as `thinking:`: a typo'd backend would
 	// silently fall back to the legacy engine and look like it worked, which
 	// is exactly the silent degradation a selection field must not allow.
@@ -256,6 +318,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		"tools",
 		"system",
 		"thinking",
+		"temperature",
 		"scope",
 		"budget",
 		"backend",
@@ -275,6 +338,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		tools,
 		systemPath,
 		thinking: thinkingRaw as ThinkingLevel | undefined,
+		temperature,
 		scope: parseScope(r.scope),
 		budget: parseBudget(r.budget),
 		prompt: parsePrompt(r.prompt),

@@ -574,6 +574,9 @@ describe("applyAgent model inheritance", () => {
       // object rather than replacing it — dropping a sibling flag would
       // silently turn a configured feature off.
       gemini: { thinkingLevel: null, googleSearch: true },
+      // What `loadConfig` actually produces for an omitted top-level
+      // `temperature:` — null, not undefined.
+      temperature: null,
     }) as unknown as MikroConfig;
 
   const agentWith = (spec: Record<string, unknown>) =>
@@ -658,6 +661,54 @@ describe("applyAgent model inheritance", () => {
       config.gemini.thinkingLevel = "minimal";
       const next = applyAgent(config, agentWith({ thinking: "high" }));
       assert.equal(next.gemini.thinkingLevel, "high");
+    });
+  });
+
+  /**
+   * `temperature:` must land on `config.temperature` — the same field
+   * `--temperature` and mikro.yaml's top-level key write, and the only one
+   * `rlmLoop` forwards to `llmComplete`. Same single-answer rule as
+   * `thinking:`, with one extra hazard: `0` is a real value, so the merge has
+   * to be written with `!= null` and never truthiness.
+   */
+  describe("temperature", () => {
+    it("writes the declared temperature onto config.temperature", () => {
+      const next = applyAgent(ambient(), agentWith({ temperature: 0.7 }));
+      assert.equal(next.temperature, 0.7);
+    });
+
+    /**
+     * The regression this whole field is written to avoid. `if (spec.temperature)`
+     * typechecks, reads fine, and drops exactly the value a run pinning
+     * sampling drift cares about most.
+     */
+    it("survives an exact zero through the merge", () => {
+      const next = applyAgent(ambient(), agentWith({ temperature: 0 }));
+      assert.equal(next.temperature, 0);
+      assert.notEqual(next.temperature, null);
+    });
+
+    it("lets an exact zero outrank a non-zero ambient temperature", () => {
+      const config = ambient();
+      config.temperature = 1.5;
+      const next = applyAgent(config, agentWith({ temperature: 0 }));
+      assert.equal(next.temperature, 0);
+    });
+
+    it("leaves the ambient temperature alone when the agent declares none", () => {
+      const config = ambient();
+      config.temperature = 1.5;
+      assert.equal(applyAgent(config, agentWith({})).temperature, 1.5);
+    });
+
+    it("leaves an unset ambient temperature unset", () => {
+      assert.equal(applyAgent(ambient(), agentWith({})).temperature, null);
+    });
+
+    it("does not mutate the ambient config in place", () => {
+      const config = ambient();
+      applyAgent(config, agentWith({ temperature: 0 }));
+      assert.equal(config.temperature, null);
     });
   });
 

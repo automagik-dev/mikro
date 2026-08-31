@@ -20,6 +20,15 @@ const VALID_BACKENDS = [
     "prime",
     "prime-sdk",
 ];
+/**
+ * Inclusive bounds for `temperature:`. Kept local rather than imported from
+ * `src/config.ts` so this parser stays free of the project config loader —
+ * the same reason `VALID_BACKENDS` is spelled out here. The canonical
+ * definition (and the reason the ceiling is 2) is `TEMPERATURE_MIN` /
+ * `TEMPERATURE_MAX` in `src/config.ts`; keep the two in step.
+ */
+const TEMPERATURE_MIN = 0;
+const TEMPERATURE_MAX = 2;
 const VALID_SHAPES = [
     "single-step",
     "loop",
@@ -128,6 +137,29 @@ export function parseAgentSpec(yamlText, dir) {
         throw new Error(`agent.yaml: thinking must be one of ${THINKING_LEVELS.join(" | ")}, ` +
             `got "${thinkingRaw}"`);
     }
+    // `temperature:` is validated rather than passed through for the same
+    // reason as `thinking:` — but with a sharper edge. A null value is "unset"
+    // (the convention `prompt:` and mikro.yaml already use), while *anything
+    // else* that is not a finite number in range throws: an out-of-range or
+    // misspelled temperature that fell back to unset would look exactly like a
+    // working pin, and pinning sampling is the entire point of declaring it.
+    //
+    // `asNumber` is the right gate here: it returns `0` (unlike a truthiness
+    // check) and rejects NaN/Infinity, which would otherwise pass the range
+    // comparison — `NaN >= 0` and `NaN <= 2` are both false, so a bare
+    // range test alone would let NaN through as "in range: no".
+    const temperatureRaw = r.temperature;
+    let temperature;
+    if (temperatureRaw !== undefined && temperatureRaw !== null) {
+        const parsed = asNumber(temperatureRaw);
+        if (parsed === undefined ||
+            parsed < TEMPERATURE_MIN ||
+            parsed > TEMPERATURE_MAX) {
+            throw new Error(`agent.yaml: temperature must be a number between ${TEMPERATURE_MIN} and ${TEMPERATURE_MAX}, ` +
+                `got ${JSON.stringify(temperatureRaw)}`);
+        }
+        temperature = parsed;
+    }
     // Same validate-don't-ignore rule as `thinking:`: a typo'd backend would
     // silently fall back to the legacy engine and look like it worked, which
     // is exactly the silent degradation a selection field must not allow.
@@ -149,6 +181,7 @@ export function parseAgentSpec(yamlText, dir) {
         "tools",
         "system",
         "thinking",
+        "temperature",
         "scope",
         "budget",
         "backend",
@@ -168,6 +201,7 @@ export function parseAgentSpec(yamlText, dir) {
         tools,
         systemPath,
         thinking: thinkingRaw,
+        temperature,
         scope: parseScope(r.scope),
         budget: parseBudget(r.budget),
         prompt: parsePrompt(r.prompt),

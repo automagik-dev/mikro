@@ -1,9 +1,17 @@
 import { describe, it } from "node:test";
+import type { MikroConfig } from "../src/config.js";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { applyModelRef, loadConfig, parseModelRef, parseToolsMd } from "../src/config.js";
+import {
+  applyModelRef,
+  applyTemperatureOverride,
+  loadConfig,
+  parseModelRef,
+  parseTemperatureFlag,
+  parseToolsMd,
+} from "../src/config.js";
 
 /** Helper: create .mikro/ dir with mikro.yaml content */
 async function makeConfig(dir: string, yamlContent: string): Promise<void> {
@@ -266,6 +274,243 @@ tools-level: standard
     assert.equal(cfg.prompt.appendStopProtocol, true);
     assert.equal(cfg.configSource, "defaults");
     await rm(dir, { recursive: true });
+  });
+
+  /**
+   * Top-level `temperature:` — deliberately NOT under `gemini:`, because
+   * pi-ai maps `temperature` on every api family and `gemini.thinking-level`
+   * is the standing evidence of what that nesting costs a reader.
+   */
+  describe("temperature", () => {
+    it("defaults to null when mikro.yaml omits it", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "model:\n  provider: anthropic\n");
+      const cfg = await loadConfig(dir);
+      assert.equal(cfg.temperature, null);
+      await rm(dir, { recursive: true });
+    });
+
+    it("default config (no yaml) leaves temperature null", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      const cfg = await loadConfig(dir);
+      assert.equal(cfg.temperature, null);
+      assert.equal(cfg.configSource, "defaults");
+      await rm(dir, { recursive: true });
+    });
+
+    it("reads a value from the top level, not from under gemini:", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "temperature: 0.7\ngemini:\n  thinking-level: low\n");
+      const cfg = await loadConfig(dir);
+      assert.equal(cfg.temperature, 0.7);
+      await rm(dir, { recursive: true });
+    });
+
+    /**
+     * The value the whole feature exists for, and the one every truthiness bug
+     * eats. `temperature: 0` is greedy decoding — a real, deliberate pin — and
+     * must survive the loader as `0`, never collapse to the unset `null`.
+     */
+    it("keeps an exact zero rather than collapsing it to unset", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "temperature: 0\n");
+      const cfg = await loadConfig(dir);
+      assert.equal(cfg.temperature, 0);
+      assert.notEqual(cfg.temperature, null);
+      await rm(dir, { recursive: true });
+    });
+
+    it("accepts both ends of the range", async () => {
+      for (const value of [0, 1, 2]) {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, `temperature: ${value}\n`);
+        const cfg = await loadConfig(dir);
+        assert.equal(cfg.temperature, value);
+        await rm(dir, { recursive: true });
+      }
+    });
+
+    it("treats a null temperature as unset", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "temperature:\n");
+      const cfg = await loadConfig(dir);
+      assert.equal(cfg.temperature, null);
+      await rm(dir, { recursive: true });
+    });
+
+    it("rejects a temperature above the ceiling", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "temperature: 2.5\n");
+      await assert.rejects(
+        () => loadConfig(dir),
+        (err: unknown) => {
+          assert.ok(err instanceof Error);
+          assert.match(
+            err.message,
+            /Invalid temperature in mikro\.yaml: must be a number between 0 and 2, got 2\.5\./
+          );
+          return true;
+        }
+      );
+      await rm(dir, { recursive: true });
+    });
+
+    it("rejects a negative temperature", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "temperature: -1\n");
+      await assert.rejects(() => loadConfig(dir), /Invalid temperature in mikro\.yaml/);
+      await rm(dir, { recursive: true });
+    });
+
+    /**
+     * The yaml surface never sees a numeric-prefix string as a number: YAML
+     * parses `1oops` as the string `"1oops"`, and the check is `typeof value
+     * === "number"`, so the `--temperature` trailing-junk trap cannot reach it.
+     * Locked here so a future "be lenient, coerce strings" change has to fail
+     * a test rather than quietly re-open it.
+     */
+    it("rejects a numeric-prefix string temperature", async () => {
+      for (const raw of ["1oops", "0.5.3"]) {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, `temperature: ${raw}\n`);
+        await assert.rejects(
+          () => loadConfig(dir),
+          /Invalid temperature in mikro\.yaml/,
+          `expected "${raw}" to be rejected`
+        );
+        await rm(dir, { recursive: true });
+      }
+    });
+
+    it("rejects a non-number temperature", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "temperature: hot\n");
+      await assert.rejects(
+        () => loadConfig(dir),
+        (err: unknown) => {
+          assert.ok(err instanceof Error);
+          assert.match(err.message, /Invalid temperature in mikro\.yaml/);
+          assert.match(err.message, /got "hot"\./);
+          return true;
+        }
+      );
+      await rm(dir, { recursive: true });
+    });
+  });
+});
+
+/**
+ * `--temperature` arrives as a *string* (`parseArgs` types it that way), so the
+ * flag surface owns a parse step the yaml surface does not. `NaN` is the trap:
+ * `Number.parseFloat("hot")` is NaN, and NaN fails every `<`/`>` comparison, so
+ * a range check alone would report it as "not out of range" and let it through.
+ */
+describe("parseTemperatureFlag", () => {
+  it("returns null for an absent flag", () => {
+    assert.equal(parseTemperatureFlag(undefined), null);
+    assert.equal(parseTemperatureFlag(null), null);
+  });
+
+  it("rejects an empty or whitespace-only value rather than reading it as unset", () => {
+    // `Number("")` and `Number("   ")` are both `0`, so without an explicit
+    // reject `--temperature ""` would silently pin greedy decoding.
+    for (const raw of ["", " ", "\t"]) {
+      assert.throws(
+        () => parseTemperatureFlag(raw),
+        /--temperature must be a number/,
+        `expected ${JSON.stringify(raw)} to be rejected`
+      );
+    }
+  });
+
+  it("rejects a numeric prefix followed by trailing junk", () => {
+    // `Number.parseFloat` stops at the first character it cannot read, so these
+    // would otherwise parse as 1 / 0.5 / 2 and run at a temperature nobody asked for.
+    for (const raw of ["1oops", "0.5.3", "2deg", "0 7", "1,5"]) {
+      assert.throws(
+        () => parseTemperatureFlag(raw),
+        /--temperature must be a number/,
+        `expected "${raw}" to be rejected`
+      );
+    }
+  });
+
+  it("still accepts a value padded with surrounding whitespace", () => {
+    assert.equal(parseTemperatureFlag(" 0.7 "), 0.7);
+  });
+
+  it("parses the string form of an exact zero", () => {
+    assert.equal(parseTemperatureFlag("0"), 0);
+    assert.equal(parseTemperatureFlag("0.0"), 0);
+  });
+
+  it("parses fractional and boundary values", () => {
+    assert.equal(parseTemperatureFlag("0.7"), 0.7);
+    assert.equal(parseTemperatureFlag("1"), 1);
+    assert.equal(parseTemperatureFlag("2"), 2);
+  });
+
+  it("rejects a non-numeric value and quotes what it got", () => {
+    assert.throws(
+      () => parseTemperatureFlag("hot"),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /--temperature must be a number between 0 and 2/);
+        assert.match(err.message, /got "hot"/);
+        return true;
+      }
+    );
+  });
+
+  it("rejects NaN and Infinity rather than passing the range check", () => {
+    for (const raw of ["NaN", "Infinity", "-Infinity"]) {
+      assert.throws(
+        () => parseTemperatureFlag(raw),
+        /--temperature must be a number/,
+        `expected "${raw}" to be rejected`
+      );
+    }
+  });
+
+  it("rejects out-of-range values at both ends", () => {
+    assert.throws(() => parseTemperatureFlag("-0.1"), /--temperature must be a number/);
+    assert.throws(() => parseTemperatureFlag("2.1"), /--temperature must be a number/);
+  });
+});
+
+/**
+ * The apply step the CLI runs after parsing. Its whole job is the `!= null`
+ * guard: `if (temperature)` would drop `--temperature 0`, which is the value
+ * anyone pinning sampling drift reaches for first.
+ */
+describe("applyTemperatureOverride", () => {
+  const loaded = (temperature: number | null): MikroConfig =>
+    ({ temperature }) as unknown as MikroConfig;
+
+  it("applies an exact zero over an unset config", () => {
+    const config = loaded(null);
+    applyTemperatureOverride(config, parseTemperatureFlag("0"));
+    assert.equal(config.temperature, 0);
+  });
+
+  it("applies an exact zero over a non-zero mikro.yaml value", () => {
+    const config = loaded(1.5);
+    applyTemperatureOverride(config, parseTemperatureFlag("0"));
+    assert.equal(config.temperature, 0);
+  });
+
+  it("outranks the yaml value for ordinary temperatures too", () => {
+    const config = loaded(1.5);
+    applyTemperatureOverride(config, 0.2);
+    assert.equal(config.temperature, 0.2);
+  });
+
+  it("leaves the config alone when the flag is absent", () => {
+    const config = loaded(1.5);
+    applyTemperatureOverride(config, null);
+    assert.equal(config.temperature, 1.5);
+    applyTemperatureOverride(config, undefined);
+    assert.equal(config.temperature, 1.5);
   });
 });
 

@@ -133,6 +133,71 @@ describe("parseAgentSpec — thinking:", () => {
     });
 });
 /**
+ * `temperature:` — per-agent sampling temperature, the agent.yaml twin of
+ * `mikro --temperature` and of mikro.yaml's top-level `temperature:`.
+ *
+ * Validated rather than ignored for the same reason as `thinking:` — a
+ * declaration that quietly falls back to the ambient value looks exactly like a
+ * working pin — with one extra hazard the other fields don't have: `0` is a
+ * *meaningful* value here, so the parser must not treat it as absent.
+ */
+describe("parseAgentSpec — temperature:", () => {
+    const DIR = "/tmp/fake-agent";
+    it("parses an exact zero as zero, not as unset", () => {
+        // Greedy decoding. The one value a truthiness check silently eats, and
+        // the one a committee gate pinning sampling drift reaches for first.
+        const spec = parseAgentSpec("temperature: 0\n", DIR);
+        assert.equal(spec.temperature, 0);
+        assert.notEqual(spec.temperature, undefined);
+    });
+    it("parses fractional and boundary values", () => {
+        assert.equal(parseAgentSpec("temperature: 0.7\n", DIR).temperature, 0.7);
+        assert.equal(parseAgentSpec("temperature: 1\n", DIR).temperature, 1);
+        assert.equal(parseAgentSpec("temperature: 2\n", DIR).temperature, 2);
+    });
+    it("leaves temperature undefined when the key is absent", () => {
+        assert.equal(parseAgentSpec("shape: loop\n", DIR).temperature, undefined);
+    });
+    it("treats an explicit null as unset", () => {
+        assert.equal(parseAgentSpec("temperature: null\n", DIR).temperature, undefined);
+    });
+    it("rejects an out-of-range value and shows what it got", () => {
+        assert.throws(() => parseAgentSpec("temperature: 2.5\n", DIR), (err) => {
+            assert.ok(err instanceof Error);
+            assert.match(err.message, /agent\.yaml: temperature must be a number between 0 and 2/);
+            assert.match(err.message, /got 2\.5/);
+            return true;
+        });
+        assert.throws(() => parseAgentSpec("temperature: -1\n", DIR), /agent\.yaml: temperature must be a number between 0 and 2/);
+    });
+    it("rejects a non-number rather than defaulting to the ambient value", () => {
+        // Unlike `thinking:`, type drift is NOT waved through here: a
+        // `temperature: hot` that silently inherited the ambient temperature is
+        // indistinguishable from a working pin, and pinning is the whole point.
+        assert.throws(() => parseAgentSpec("temperature: hot\n", DIR), (err) => {
+            assert.ok(err instanceof Error);
+            assert.match(err.message, /agent\.yaml: temperature must be a number/);
+            assert.match(err.message, /got "hot"/);
+            return true;
+        });
+    });
+    it("rejects .inf, which YAML parses as a number but no range check catches", () => {
+        // `Infinity >= 0 && Infinity <= 2` is false, so the range test alone
+        // would happen to catch this one — but `NaN` fails *both* comparisons,
+        // so the finite check is what actually holds the line. Pin both.
+        assert.throws(() => parseAgentSpec("temperature: .inf\n", DIR), /agent\.yaml: temperature must be a number/);
+        assert.throws(() => parseAgentSpec("temperature: .nan\n", DIR), /agent\.yaml: temperature must be a number/);
+    });
+    it("does not leave temperature in the extras bag", () => {
+        // Regression guard, same as `thinking:` and `prompt:`: a key that parses
+        // but lands on extras is read by nobody, so the agent declares a
+        // temperature and silently does not get it.
+        const spec = parseAgentSpec("temperature: 0\n", DIR);
+        assert.equal(spec.extras.temperature, undefined);
+        assert.deepEqual(Object.keys(spec.extras), []);
+    });
+});
+/**
  * `prompt.append-stop-protocol:` — per-agent opt-out from the FINAL/repl
  * termination protocol mikro appends to a custom system prompt.
  *

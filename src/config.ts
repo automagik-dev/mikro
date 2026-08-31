@@ -152,6 +152,27 @@ export interface MikroConfig {
    */
   prompt?: PromptConfig;
   /**
+   * Sampling temperature for the root loop's model calls, `0`–`2`.
+   *
+   * Top-level rather than under `gemini:`, deliberately. `gemini.thinking-level`
+   * is the standing reminder of what nesting a provider-wide knob costs: pi-ai
+   * maps `reasoning` on every api family it supports, so the prefix has misled
+   * every reader of that key since (see the note above `piOptions.reasoning`,
+   * `src/llm.ts`). `temperature` is mapped just as widely and starts un-nested.
+   *
+   * `null`/absent means **unset**, and unset is not "the provider's documented
+   * default": `llmComplete` omits the key from the pi-ai options entirely, so
+   * whatever the provider does with no temperature at all is what happens. This
+   * is why the field is nullable and why every guard on it is `!= null` — `0`
+   * is greedy decoding, a real and deliberate setting that a truthiness check
+   * would silently drop.
+   *
+   * Optional for the same reason `prompt?` is: `MikroConfig` is a published SDK
+   * type and full-literal test helpers should not have to churn. Every config
+   * this repo builds sets it.
+   */
+  temperature?: number | null;
+  /**
    * Providers declared in config (settings.json merged with mikro.yaml; the
    * yaml wins per id). Also mirrored on `model.providers`.
    */
@@ -241,6 +262,74 @@ export const DEFAULT_PROMPT_CONFIG: PromptConfig = {
   appendStopProtocol: true,
 };
 
+/**
+ * Inclusive bounds for `temperature`, shared by all three surfaces that accept
+ * it (mikro.yaml, `agent.yaml`, `--temperature`). `2` is the widest ceiling any
+ * supported provider accepts; providers with a narrower range reject the excess
+ * themselves, which is a clearer failure than mikro guessing per model.
+ */
+export const TEMPERATURE_MIN = 0;
+export const TEMPERATURE_MAX = 2;
+
+/**
+ * The one definition of "a usable temperature". Rejects non-numbers, `NaN` and
+ * `Infinity` before the range comparison — `NaN < 0` and `NaN > 2` are both
+ * false, so a bare range check would wave `NaN` straight through to the wire.
+ */
+export function isValidTemperature(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= TEMPERATURE_MIN &&
+    value <= TEMPERATURE_MAX
+  );
+}
+
+/**
+ * Parse a `--temperature` flag value. `node:util`'s `parseArgs` hands every
+ * `{ type: "string" }` flag back as a string, so the parse has to happen here
+ * rather than at the range check.
+ *
+ * Returns `null` for an absent flag — the same "unset" `MikroConfig.temperature`
+ * uses — and throws on anything that is not a number in `[0, 2]`.
+ *
+ * The conversion is `Number`, not `Number.parseFloat`: `parseFloat` stops at the
+ * first character it cannot read, so `--temperature 1oops` and `--temperature
+ * 0.5.3` would parse as `1` and `0.5` and silently run at a temperature nobody
+ * asked for. `Number` demands the *whole* trimmed token be numeric. Its one trap
+ * is that `Number("")` and `Number("   ")` are `0` rather than `NaN`, so an
+ * empty or whitespace-only value is rejected explicitly before the conversion —
+ * `--temperature ""` is a malformed flag, not an absent one.
+ */
+export function parseTemperatureFlag(raw: string | undefined | null): number | null {
+  if (raw === undefined || raw === null) return null;
+  const trimmed = raw.trim();
+  const parsed = trimmed === "" ? Number.NaN : Number(trimmed);
+  if (!isValidTemperature(parsed)) {
+    throw new Error(
+      `--temperature must be a number between ${TEMPERATURE_MIN} and ${TEMPERATURE_MAX} (got "${raw}")`
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Write a parsed temperature override onto a loaded config.
+ *
+ * Exists as a named function rather than an inline `if` because the guard is
+ * the whole risk of this field: `if (temperature)` drops `0`, and `0` is greedy
+ * decoding — the single most likely value anyone pins a temperature *to*. One
+ * `!= null` in one place, reused by every caller.
+ */
+export function applyTemperatureOverride(
+  config: MikroConfig,
+  temperature: number | null | undefined
+): void {
+  if (temperature != null) {
+    config.temperature = temperature;
+  }
+}
+
 // ─── YAML Schema ─────────────────────────────────────────
 
 /** Shape of mikro.yaml on disk (config-only — no system/criteria) */
@@ -301,6 +390,8 @@ interface RawYamlConfig {
   prompt?: {
     "append-stop-protocol"?: boolean;
   };
+  /** Top level, not under `gemini:` — see `MikroConfig.temperature`. */
+  temperature?: number | null;
   providers?: unknown;
 }
 
@@ -642,6 +733,18 @@ function parseYamlConfig(
     appendStopProtocol: rawAppendStopProtocol,
   };
 
+  // Parse temperature. A bare `temperature:` key parses as YAML null, which is
+  // the same "unset" the absent key means — the convention `rtk.enabled` and
+  // `prompt.append-stop-protocol` already follow. Anything else must be a
+  // number in range: `temperature: hot` reaching the wire is a run that either
+  // errors deep inside a provider SDK or, worse, gets silently normalised.
+  const rawTemperature = cfg.temperature ?? null;
+  if (rawTemperature !== null && !isValidTemperature(rawTemperature)) {
+    throw new Error(
+      `Invalid temperature in mikro.yaml: must be a number between ${TEMPERATURE_MIN} and ${TEMPERATURE_MAX}, got ${JSON.stringify(rawTemperature)}.`
+    );
+  }
+
   return {
     model,
     configDir: dir,
@@ -654,6 +757,7 @@ function parseYamlConfig(
     storage,
     rtk,
     prompt,
+    temperature: rawTemperature,
     providers,
     configSource: "yaml",
   };
@@ -680,6 +784,7 @@ function defaultConfig(dir: string, providers: CustomProviderConfig[] = []): Mik
     storage: { ...DEFAULT_STORAGE_CONFIG },
     rtk: { ...DEFAULT_RTK_CONFIG },
     prompt: { ...DEFAULT_PROMPT_CONFIG },
+    temperature: null,
     providers,
     configSource: "defaults",
     validate: null,

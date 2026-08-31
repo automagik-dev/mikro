@@ -246,6 +246,84 @@ export function checkModelConfig(modelConfig: ModelConfig): string | null {
   }
 }
 
+/** Per-call options accepted by `llmComplete`. */
+export interface LlmCompleteOptions {
+  maxTokens?: number;
+  signal?: AbortSignal;
+  logger?: Logger;
+  iteration?: number;
+  cacheConfig?: CacheLLMConfig;
+  thinkingLevel?: ThinkingLevel | null;
+  /**
+   * Sampling temperature, `0`–`2`. `null`/absent means **unset**, and unset
+   * leaves no `temperature` key on the pi-ai options at all — see
+   * `buildPiOptions`. Validated at the config surfaces, not here.
+   */
+  temperature?: number | null;
+  outputSchema?: Record<string, unknown> | null;
+  geminiConfig?: GeminiConfig;
+}
+
+/**
+ * Build the pi-ai options for one completion: the sampling and caching half,
+ * before any provider payload hooks are attached.
+ *
+ * Split out of `llmComplete` so the exact object handed to pi-ai is assertable
+ * without a network call — which matters most for the fields whose *absence* is
+ * the contract. An unset knob must produce no key at all rather than an
+ * explicit `undefined`/`null`, so that adding this plumbing left every existing
+ * call byte-for-byte as it was.
+ */
+export function buildPiOptions(options?: LlmCompleteOptions): SimpleStreamOptions {
+  // Build cache options for pi/ai when cache is enabled
+  const cacheOpts = options?.cacheConfig?.enabled
+    ? {
+        cacheRetention: options.cacheConfig.retention,
+        sessionId: options.cacheConfig.sessionId,
+      }
+    : {};
+
+  const piOptions: SimpleStreamOptions = {
+    maxTokens: options?.maxTokens ?? 16384,
+    signal: options?.signal,
+    ...cacheOpts,
+  };
+
+  // Reasoning effort. Named `gemini.thinking-level` in config for historical
+  // reasons, but pi-ai maps `reasoning` on every api family: OpenAI Responses
+  // (`reasoning.effort`), OpenAI Completions and its deepseek/openrouter/zai
+  // dialects (`reasoning_effort`), Google (`thinkingConfig.thinkingLevel`), and
+  // Anthropic (`thinking.budget_tokens`). Leaving it unset does not mean
+  // "provider default" either — pi-ai then explicitly disables reasoning on
+  // models that support it. Whatever is set here is clamped to the resolved
+  // model's supported levels, searching upward first, so a low request can come
+  // back raised.
+  if (options?.thinkingLevel) {
+    piOptions.reasoning = options.thinkingLevel;
+  }
+
+  // Sampling temperature. pi-ai sends `temperature` on every one of its api
+  // families; exactly one of them guards it. On `anthropic-messages` the field
+  // is dropped when a reasoning level is set, and again when the resolved
+  // model declares `compat.supportsTemperature: false`. The guard is a
+  // property of the *api*, not of the model family: Claude reached through
+  // OpenRouter (`openai-completions`) or Bedrock (`bedrock-converse-stream`)
+  // keeps its temperature even with reasoning on. So a pinned temperature is
+  // best-effort, and which way it goes depends on the transport.
+  //
+  // `!= null`, never truthiness: `0` is greedy decoding, the value a run most
+  // likely pins *to*, and `if (options?.temperature)` would drop exactly it.
+  // Conditional rather than `temperature: options?.temperature ?? undefined`,
+  // because unset has to leave the key off the object entirely — an explicit
+  // `undefined` would still serialize into some provider payloads as a present
+  // key, and a `null` would go on the wire.
+  if (options?.temperature != null) {
+    piOptions.temperature = options.temperature;
+  }
+
+  return piOptions;
+}
+
 /**
  * Call pi/ai completeSimple with messages.
  * Tracks cost and time_ms per call. Optionally emits to a Logger.
@@ -253,16 +331,7 @@ export function checkModelConfig(modelConfig: ModelConfig): string | null {
 export async function llmComplete(
   messages: ChatMessage[],
   modelConfig: ModelConfig,
-  options?: {
-    maxTokens?: number;
-    signal?: AbortSignal;
-    logger?: Logger;
-    iteration?: number;
-    cacheConfig?: CacheLLMConfig;
-    thinkingLevel?: ThinkingLevel | null;
-    outputSchema?: Record<string, unknown> | null;
-    geminiConfig?: GeminiConfig;
-  }
+  options?: LlmCompleteOptions
 ): Promise<LLMResponse> {
   // The station catalog is dynamic: the gateway may serve ids that are not in
   // the static baseline. Apply the overlay before resolving so those resolve.
@@ -308,33 +377,8 @@ export async function llmComplete(
       } satisfies PiAssistantMessage;
     });
 
-  // Build cache options for pi/ai when cache is enabled
-  const cacheOpts = options?.cacheConfig?.enabled
-    ? {
-        cacheRetention: options.cacheConfig.retention,
-        sessionId: options.cacheConfig.sessionId,
-      }
-    : {};
-
-  // Build pi/ai options with thinking level and onPayload hook
-  const piOptions: SimpleStreamOptions = {
-    maxTokens: options?.maxTokens ?? 16384,
-    signal: options?.signal,
-    ...cacheOpts,
-  };
-
-  // Reasoning effort. Named `gemini.thinking-level` in config for historical
-  // reasons, but pi-ai maps `reasoning` on every api family: OpenAI Responses
-  // (`reasoning.effort`), OpenAI Completions and its deepseek/openrouter/zai
-  // dialects (`reasoning_effort`), Google (`thinkingConfig.thinkingLevel`), and
-  // Anthropic (`thinking.budget_tokens`). Leaving it unset does not mean
-  // "provider default" either — pi-ai then explicitly disables reasoning on
-  // models that support it. Whatever is set here is clamped to the resolved
-  // model's supported levels, searching upward first, so a low request can come
-  // back raised.
-  if (options?.thinkingLevel) {
-    piOptions.reasoning = options.thinkingLevel;
-  }
+  // Sampling, caching and reasoning options; the onPayload hook is attached below.
+  const piOptions = buildPiOptions(options);
 
   const payloadHooks: Array<(payload: unknown, model: unknown) => unknown | Promise<unknown>> = [];
 

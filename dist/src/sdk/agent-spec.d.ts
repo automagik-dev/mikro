@@ -68,6 +68,30 @@ export interface AgentSpec {
      *    *disables* reasoning on models that support it.
      */
     readonly thinking?: ThinkingLevel;
+    /**
+     * Sampling temperature for this agent's own model calls, `0`–`2` — the
+     * `agent.yaml` twin of `mikro --temperature`. `undefined` means "not
+     * declared", so the ambient config decides.
+     *
+     * Consumers apply it by writing `config.temperature`, the single field
+     * `llmComplete` turns into pi-ai's `temperature` option (see `applyAgent` in
+     * `src/mcp/server.ts`) — the same field mikro.yaml's top-level `temperature:`
+     * writes, so an agent's declaration simply outranks the ambient one.
+     *
+     * Two caveats, both the same shape as `thinking:`'s:
+     *
+     * 1. `0` is a **meaningful** value (greedy decoding), not a synonym for
+     *    unset. Every guard on this field is `!= null` / `!== undefined` and
+     *    never truthiness.
+     * 2. It is best-effort. pi-ai sends `temperature` on every api family and
+     *    drops it on exactly one — `anthropic-messages` — either when a
+     *    reasoning level is set or when the resolved model declares
+     *    `compat.supportsTemperature: false`. The guard belongs to the api,
+     *    not the model family: Claude reached via OpenRouter or Bedrock keeps
+     *    its temperature regardless. A declared temperature is a request, not
+     *    a guarantee.
+     */
+    readonly temperature?: number;
     readonly scope?: AgentScope;
     readonly budget?: AgentBudget;
     /** System-prompt assembly overrides. `undefined` means "not declared". */

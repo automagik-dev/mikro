@@ -210,6 +210,7 @@ your own schema without forking the parser.
 | `budget.max_depth` | — | Recursion depth ceiling, for `shape: recurse`. |
 | `scope.reads` / `scope.writes` | — | Advisory glob hints. The SDK does **not** enforce them; individual tool handlers do. |
 | `thinking` | ambient config | `minimal` \| `low` \| `medium` \| `high` — reasoning effort for this agent's own model calls. An unknown value is a hard error. The four levels are graded only on providers that accept a reasoning effort; on `station/` models they collapse to on/off, where **on breaks the Qwen GGUF models** — see the two notes below. |
+| `temperature` | ambient config | Sampling temperature `0`–`2` for this agent's own model calls, the `agent.yaml` twin of `--temperature`. Writes the same `config.temperature` mikro.yaml's top-level `temperature:` writes, so an agent's value outranks the project's. `0` is greedy decoding — a real pin, not a synonym for unset — while an explicit `null` or an omitted key inherits. A non-number or an out-of-range value is a hard error, unlike most type drift in this parser: a temperature that silently fell back would be indistinguishable from one that took. Best-effort: pi/ai sends `temperature` on every api family and drops it only on the `anthropic-messages` api — when a reasoning level is set, or when the resolved model declares `compat.supportsTemperature: false`. Claude reached via OpenRouter or Bedrock does not get that guard, so the model family alone does not tell you whether the pin took. |
 
 > **`thinking` is not tuning — it is a default worth overriding.** Omitting it
 > does **not** mean "provider default": pi/ai explicitly *disables* reasoning
@@ -821,6 +822,26 @@ Model selection is the `model:` block in `.mikro/mikro.yaml`, `--model <ref>` fo
 one run, or `mikro config set model.provider …` globally. There is no
 `MODEL.md` — nothing loads it.
 
+### Sampling temperature
+
+Provider-neutral, and deliberately **top-level** in `mikro.yaml` rather than
+under `gemini:` — pi/ai maps `temperature` on every api family, not just Google's.
+
+```yaml
+# .mikro/mikro.yaml
+temperature: 0   # 0-2. Omit the key (or set it to null) to send no temperature at all.
+```
+
+| Setting | Config | CLI Flag | Description |
+|---------|--------|----------|-------------|
+| Sampling temperature | `temperature` (top-level) | `--temperature` | 0-2 on the root loop's calls. `0` is greedy decoding, not "unset". Also settable per agent via `agent.yaml`'s `temperature:`, which outranks mikro.yaml and is itself outranked by the flag. Omitting it sends no temperature at all, leaving the provider's own default in place. |
+
+Best-effort, like a thinking level: pi/ai sends `temperature` on every api family
+and drops it only on the `anthropic-messages` api — when a reasoning level is
+set, or when the resolved model declares `compat.supportsTemperature: false`.
+Claude reached via OpenRouter or Bedrock is not subject to that guard, so the
+model family alone does not tell you whether the pin took.
+
 ### Migrating from `rlmx` (`mikro migrate`)
 
 Everything public was renamed from `rlmx` to `mikro` on 2026-08-29: the
@@ -943,6 +964,7 @@ Options:
   --model <ref>           Model for this run: "provider/model" or a bare model id
   --ext <list>            File extensions for context dirs (comma-separated)
   --thinking <level>      Thinking level: minimal, low, medium, high (Gemini 3)
+  --temperature <n>       Sampling temperature, 0-2 (default: unset, provider decides)
   --cache                 Enable cache mode (full context in system prompt)
   --no-session            Disable auto-save of session data
   --estimate              Show context size and cost estimate without caching (cache)

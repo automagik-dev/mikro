@@ -51,6 +51,64 @@ export const DEFAULT_RTK_CONFIG = {
 export const DEFAULT_PROMPT_CONFIG = {
     appendStopProtocol: true,
 };
+/**
+ * Inclusive bounds for `temperature`, shared by all three surfaces that accept
+ * it (mikro.yaml, `agent.yaml`, `--temperature`). `2` is the widest ceiling any
+ * supported provider accepts; providers with a narrower range reject the excess
+ * themselves, which is a clearer failure than mikro guessing per model.
+ */
+export const TEMPERATURE_MIN = 0;
+export const TEMPERATURE_MAX = 2;
+/**
+ * The one definition of "a usable temperature". Rejects non-numbers, `NaN` and
+ * `Infinity` before the range comparison — `NaN < 0` and `NaN > 2` are both
+ * false, so a bare range check would wave `NaN` straight through to the wire.
+ */
+export function isValidTemperature(value) {
+    return (typeof value === "number" &&
+        Number.isFinite(value) &&
+        value >= TEMPERATURE_MIN &&
+        value <= TEMPERATURE_MAX);
+}
+/**
+ * Parse a `--temperature` flag value. `node:util`'s `parseArgs` hands every
+ * `{ type: "string" }` flag back as a string, so the parse has to happen here
+ * rather than at the range check.
+ *
+ * Returns `null` for an absent flag — the same "unset" `MikroConfig.temperature`
+ * uses — and throws on anything that is not a number in `[0, 2]`.
+ *
+ * The conversion is `Number`, not `Number.parseFloat`: `parseFloat` stops at the
+ * first character it cannot read, so `--temperature 1oops` and `--temperature
+ * 0.5.3` would parse as `1` and `0.5` and silently run at a temperature nobody
+ * asked for. `Number` demands the *whole* trimmed token be numeric. Its one trap
+ * is that `Number("")` and `Number("   ")` are `0` rather than `NaN`, so an
+ * empty or whitespace-only value is rejected explicitly before the conversion —
+ * `--temperature ""` is a malformed flag, not an absent one.
+ */
+export function parseTemperatureFlag(raw) {
+    if (raw === undefined || raw === null)
+        return null;
+    const trimmed = raw.trim();
+    const parsed = trimmed === "" ? Number.NaN : Number(trimmed);
+    if (!isValidTemperature(parsed)) {
+        throw new Error(`--temperature must be a number between ${TEMPERATURE_MIN} and ${TEMPERATURE_MAX} (got "${raw}")`);
+    }
+    return parsed;
+}
+/**
+ * Write a parsed temperature override onto a loaded config.
+ *
+ * Exists as a named function rather than an inline `if` because the guard is
+ * the whole risk of this field: `if (temperature)` drops `0`, and `0` is greedy
+ * decoding — the single most likely value anyone pins a temperature *to*. One
+ * `!= null` in one place, reused by every caller.
+ */
+export function applyTemperatureOverride(config, temperature) {
+    if (temperature != null) {
+        config.temperature = temperature;
+    }
+}
 // ─── File Helpers ────────────────────────────────────────
 /**
  * Try to read a file, returning null if it doesn't exist.
@@ -314,6 +372,15 @@ function parseYamlConfig(content, dir, globalProviders = []) {
     const prompt = {
         appendStopProtocol: rawAppendStopProtocol,
     };
+    // Parse temperature. A bare `temperature:` key parses as YAML null, which is
+    // the same "unset" the absent key means — the convention `rtk.enabled` and
+    // `prompt.append-stop-protocol` already follow. Anything else must be a
+    // number in range: `temperature: hot` reaching the wire is a run that either
+    // errors deep inside a provider SDK or, worse, gets silently normalised.
+    const rawTemperature = cfg.temperature ?? null;
+    if (rawTemperature !== null && !isValidTemperature(rawTemperature)) {
+        throw new Error(`Invalid temperature in mikro.yaml: must be a number between ${TEMPERATURE_MIN} and ${TEMPERATURE_MAX}, got ${JSON.stringify(rawTemperature)}.`);
+    }
     return {
         model,
         configDir: dir,
@@ -326,6 +393,7 @@ function parseYamlConfig(content, dir, globalProviders = []) {
         storage,
         rtk,
         prompt,
+        temperature: rawTemperature,
         providers,
         configSource: "yaml",
     };
@@ -352,6 +420,7 @@ function defaultConfig(dir, providers = []) {
         storage: { ...DEFAULT_STORAGE_CONFIG },
         rtk: { ...DEFAULT_RTK_CONFIG },
         prompt: { ...DEFAULT_PROMPT_CONFIG },
+        temperature: null,
         providers,
         configSource: "defaults",
         validate: null,
