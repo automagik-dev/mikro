@@ -83,10 +83,13 @@ export interface AgentSpec {
      * 1. `0` is a **meaningful** value (greedy decoding), not a synonym for
      *    unset. Every guard on this field is `!= null` / `!== undefined` and
      *    never truthiness.
-     * 2. It is best-effort per provider. pi-ai maps `temperature` on every api
-     *    family, but guards it per model — Anthropic omits it when thinking is
-     *    enabled, and any model declaring `supportsTemperature: false` never
-     *    receives it. A declared temperature is a request, not a guarantee.
+     * 2. It is best-effort. pi-ai sends `temperature` on every api family and
+     *    drops it on exactly one — `anthropic-messages` — either when a
+     *    reasoning level is set or when the resolved model declares
+     *    `compat.supportsTemperature: false`. The guard belongs to the api,
+     *    not the model family: Claude reached via OpenRouter or Bedrock keeps
+     *    its temperature regardless. A declared temperature is a request, not
+     *    a guarantee.
      */
     readonly temperature?: number;
     readonly scope?: AgentScope;

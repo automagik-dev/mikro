@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { buildPiOptions } from "../src/llm.js";
 
 /**
@@ -108,5 +109,94 @@ describe("buildPiOptions — unchanged behaviour", () => {
 
   it("omits reasoning when no thinking level is given", () => {
     assert.equal(Object.hasOwn(buildPiOptions({ thinkingLevel: null }), "reasoning"), false);
+  });
+});
+
+// ─── Call-site adoption (source-level) ────────────────────
+
+/**
+ * The plumbing contract, pinned at the source.
+ *
+ * `rlmLoop` has no injection seam for the LLM — the two `llmComplete()` calls
+ * that make up the root loop (the per-iteration call and the forced-final
+ * call) cannot be driven from a test, so nothing above `buildPiOptions` would
+ * notice if a call site simply stopped passing `temperature`. The knob would
+ * still parse, still validate, still reach `config.temperature`, and still be
+ * dropped silently one line before it mattered.
+ *
+ * So this is a tripwire on the text of `src/rlm.ts`: every root-loop
+ * `llmComplete()` option bag that pins the *other* per-call sampling knob
+ * (`thinkingLevel`) must pin `temperature` too. The two travel together by
+ * design — both are read off the ambient config, both apply to the root loop's
+ * own calls and deliberately not to `llm_query()` sub-calls or recursive
+ * children — so `thinkingLevel:` is the marker for "this is a root-loop call
+ * that must carry the sampling config".
+ *
+ * Resolved from `dist/tests/` at run time, so `../../` is the repo root.
+ */
+describe("rlm.ts llmComplete() call-site adoption", () => {
+  const source = readFileSync(new URL("../../src/rlm.ts", import.meta.url), "utf8")
+    // Strip comments so prose naming these fields is not counted. Both call
+    // sites carry an explanatory comment mentioning `temperature`.
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
+
+  /** The argument text of every `llmComplete(...)` call, paren-balanced. */
+  const callArgs: string[] = [];
+  for (const match of source.matchAll(/(?<![\w$.])llmComplete\(/g)) {
+    let depth = 1;
+    let i = match.index + match[0].length;
+    const start = i;
+    while (i < source.length && depth > 0) {
+      const ch = source[i];
+      if (ch === "(") depth += 1;
+      else if (ch === ")") depth -= 1;
+      i += 1;
+    }
+    callArgs.push(source.slice(start, i - 1));
+  }
+
+  it("finds both root-loop llmComplete() call sites", () => {
+    assert.equal(
+      callArgs.length,
+      2,
+      `expected exactly 2 llmComplete() calls in src/rlm.ts (the per-iteration ` +
+        `root call and the forced-final call) but found ${callArgs.length}. A new ` +
+        `root-loop model call must pass the ambient sampling config the same way; ` +
+        `update this count with the reason if the loop legitimately grew one.`
+    );
+  });
+
+  it("passes temperature wherever it passes thinkingLevel", () => {
+    const withThinking = callArgs.filter((args) => /\bthinkingLevel\s*:/.test(args));
+    const withBoth = withThinking.filter((args) => /\btemperature\s*:/.test(args));
+    assert.equal(
+      withThinking.length,
+      2,
+      `expected both root-loop llmComplete() calls to pin thinkingLevel, found ` +
+        `${withThinking.length}`
+    );
+    assert.equal(
+      withBoth.length,
+      withThinking.length,
+      `every root-loop llmComplete() option bag that passes \`thinkingLevel:\` must ` +
+        `also pass \`temperature:\` — ${withThinking.length} call site(s) pin the ` +
+        `thinking level but only ${withBoth.length} pin the temperature. The loop has ` +
+        `no LLM seam, so a dropped \`temperature:\` here is invisible to every other ` +
+        `test: the knob would parse, validate and land on config.temperature, and then ` +
+        `never reach pi-ai.`
+    );
+  });
+
+  it("passes the ambient config's temperature, not a literal", () => {
+    for (const args of callArgs) {
+      assert.match(
+        args,
+        /\btemperature\s*:\s*config\.temperature\b/,
+        `a root-loop llmComplete() call must forward \`config.temperature\` verbatim ` +
+          `so that null/undefined stay "unset" and a pinned 0 survives; found a ` +
+          `different expression in: ${args.slice(0, 200)}`
+      );
+    }
   });
 });

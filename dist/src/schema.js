@@ -132,7 +132,7 @@ export const MIKRO_CLI_SCHEMA = {
             name: "--temperature",
             type: "number",
             default: null,
-            description: "Sampling temperature, 0-2. Outranks agent.yaml and mikro.yaml's top-level `temperature:`. Unset sends no temperature at all, leaving the provider's own behaviour in place. Best-effort per provider: pi/ai omits it on models that declare no temperature support, and on Anthropic when thinking is enabled.",
+            description: "Sampling temperature, 0-2. Outranks agent.yaml and mikro.yaml's top-level `temperature:`. Unset sends no temperature at all, leaving the provider's own behaviour in place. Best-effort: pi/ai sends it on every api family and drops it only on the `anthropic-messages` api — when a reasoning level is set, or when the model declares `compat.supportsTemperature: false`. Claude reached via OpenRouter or Bedrock is not subject to that guard.",
             appliesTo: ["query"],
         },
         {

@@ -184,10 +184,14 @@ export function buildPiOptions(options) {
     if (options?.thinkingLevel) {
         piOptions.reasoning = options.thinkingLevel;
     }
-    // Sampling temperature. Like `reasoning`, pi-ai maps `temperature` on every
-    // api family — and guards it per model: Anthropic drops it when thinking is
-    // enabled, and any model declaring `supportsTemperature: false` never
-    // receives it. So a pinned temperature is best-effort per provider.
+    // Sampling temperature. pi-ai sends `temperature` on every one of its api
+    // families; exactly one of them guards it. On `anthropic-messages` the field
+    // is dropped when a reasoning level is set, and again when the resolved
+    // model declares `compat.supportsTemperature: false`. The guard is a
+    // property of the *api*, not of the model family: Claude reached through
+    // OpenRouter (`openai-completions`) or Bedrock (`bedrock-converse-stream`)
+    // keeps its temperature even with reasoning on. So a pinned temperature is
+    // best-effort, and which way it goes depends on the transport.
     //
     // `!= null`, never truthiness: `0` is greedy decoding, the value a run most
     // likely pins *to*, and `if (options?.temperature)` would drop exactly it.
