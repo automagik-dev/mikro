@@ -25,6 +25,7 @@ import { createEmitter } from "./sdk/emitter.js";
 import { createRecursionBridge } from "./sdk/recursion-bridge.js";
 import { createMetricsRecorder } from "./sdk/metrics.js";
 import { makeEvent } from "./sdk/events.js";
+import { MAX_VALIDATE_ATTEMPTS, RETRY_HINT_FINAL, buildOutputSchemaSection, buildRetryHint, shouldRetry, validateAgainstSchema, } from "./sdk/validate.js";
 // ── rlmLoop's two designed aborts ──────────────────────────────────────────
 // rlmLoop throws on unexpected failures, but its two *designed* aborts return
 // normally with the reason as the `answer`, so a caller that wants to tell an
@@ -76,6 +77,16 @@ export function buildSystemPrompt(config, _context, storageRecordCount) {
         system +=
             "\n\n## Output Criteria\n\nWhen providing your FINAL answer, follow these criteria:\n" +
                 config.criteria;
+    }
+    // Disclose the pack's VALIDATE.md contract. LAST of the three appends on
+    // purpose: `appendStopProtocol` decides from `config.system` alone and has
+    // already run, so the literal `FINAL(` examples below cannot suppress the
+    // stop-protocol section (`src/stop-protocol.ts` — do not reorder).
+    // Skipped in structured-output mode for the same reason the stop protocol
+    // is: that path finalizes provider-constrained schema JSON and never parses
+    // FINAL(), so instructing `FINAL(<compact JSON>)` would fight the schema.
+    if (config.validate && !isStructuredOutputMode(config)) {
+        system += "\n\n" + buildOutputSchemaSection(config.validate.rawBlock);
     }
     // Append storage mode instructions when context is in PostgreSQL
     if (storageRecordCount !== undefined) {
@@ -144,6 +155,90 @@ function prepareReplContext(context) {
         return items.map((item) => ({ path: item.path, content: item.content }));
     }
     return context.content;
+}
+// ── VALIDATE.md enforcement on the FINAL channel ───────────────────────────
+//
+// `src/sdk/validate.ts` owns the schema check, the retry policy and the hint
+// text. What lives here is everything specific to *this* surface: FINAL
+// captures a raw string, not a parsed value, and this loop's terminal policy
+// is fail-OPEN — a payload that never conforms is still returned, flagged
+// `validation_failed`, because the downstream consumer (a committee gate)
+// wants the payload and decides for itself. That is a deliberate divergence
+// from `runAgent`'s fail-closed `ValidationFailed` error; both policies reuse
+// the same primitives and each is pinned by its own tests.
+/**
+ * Strip a FINAL payload down to the text `JSON.parse` should see: trim, then
+ * unwrap one enclosing markdown fence.
+ *
+ * The fence strip exists because models fence JSON reflexively, and a fenced
+ * payload is a *formatting* miss, not a shape miss — charging a validate
+ * attempt for it would spend the retry budget on punctuation.
+ */
+export function normalizeFinalPayload(answer) {
+    const trimmed = answer.trim();
+    const fenced = /^```[A-Za-z0-9_+-]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/.exec(trimmed);
+    return fenced ? fenced[1].trim() : trimmed;
+}
+/**
+ * Validate one FINAL payload against the pack's schema.
+ *
+ * Unparsable text is reported as an ordinary shape failure rather than a
+ * thrown error, so it flows through the same retry path as a missing field —
+ * and the synthetic message names the actual problem, which for this channel
+ * is usually a `FINAL_VAR` of a Python dict (single-quoted `str()` repr).
+ */
+export function validateFinalAnswer(answer, validate) {
+    let parsed;
+    try {
+        parsed = JSON.parse(normalizeFinalPayload(answer));
+    }
+    catch {
+        return {
+            ok: false,
+            errors: [
+                "<root>: expected JSON matching the VALIDATE.md schema, got unparsable text",
+            ],
+            schemaSource: validate.rawBlock,
+        };
+    }
+    return validateAgainstSchema(parsed, validate.schema, validate.rawBlock);
+}
+/**
+ * The single place the validate/retry/flag policy is decided. Every finalize
+ * site branches on the result; none of them re-derives it.
+ */
+export function decideValidatedFinal(answer, gate) {
+    if (!gate.validate) {
+        return { kind: "finalize", validationFailed: false, errors: [] };
+    }
+    const result = validateFinalAnswer(answer, gate.validate);
+    if (result.ok) {
+        return { kind: "finalize", validationFailed: false, errors: [] };
+    }
+    if (gate.retryCapable && gate.roomForRetry && shouldRetry(result, gate.attempt)) {
+        return {
+            kind: "retry",
+            hint: buildRetryHint(result, RETRY_HINT_FINAL),
+            errors: result.errors,
+        };
+    }
+    return { kind: "finalize", validationFailed: true, errors: result.errors };
+}
+/**
+ * Give the granted retry its user turn.
+ *
+ * Merged into a trailing user message when there is one — exactly the move
+ * the soft-limit nudge below makes — so the history stays strictly
+ * alternating. The alternative, a second consecutive user message, is a
+ * shape some providers reject outright.
+ */
+export function appendValidationRetryTurn(messages, hint) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === "user") {
+        last.content += `\n\n${hint}`;
+        return;
+    }
+    messages.push({ role: "user", content: hint });
 }
 /**
  * Main RLM loop entry point.
@@ -382,7 +477,7 @@ export async function rlmLoop(query, context, config, options = {}) {
             return results;
         });
         /** Cleanup timeout/REPL/storage and build the final result. */
-        const finalize = async (answer, iterations) => {
+        const finalize = async (answer, iterations, validationFailed = false) => {
             clearTimeout(timeoutHandle);
             // Record final observability event
             if (recorder) {
@@ -406,7 +501,44 @@ export async function rlmLoop(query, context, config, options = {}) {
                 payload: { answer, iterations },
             }));
             closeEmitter("complete");
-            return buildResult(answer, usage, iterations, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage));
+            return buildResult(answer, usage, iterations, config, budget.getState().budgetHit, geminiCounts, repl.getGeminiBatteriesUsed(), buildUsageBreakdown(usage, childUsage), validationFailed);
+        };
+        // ── VALIDATE.md gate ──────────────────────────────────
+        // One wrapper, seven finalize sites. Validation logic lives in
+        // `decideValidatedFinal`; this closure supplies the run-scoped inputs
+        // (attempt counter, remaining room) and owns the observability.
+        let validateAttempts = 0;
+        const finalizeWithValidation = (answer, iteration, mode) => {
+            if (!config.validate) {
+                return { kind: "finalize", validationFailed: false, errors: [] };
+            }
+            validateAttempts += 1;
+            const decision = decideValidatedFinal(answer, {
+                validate: config.validate,
+                attempt: validateAttempts,
+                retryCapable: mode === "retry-capable",
+                // The three tests the top of the loop would apply next. Checking them
+                // here is what keeps a granted retry from degrading into the
+                // forced-final path (or into an iteration that never runs).
+                roomForRetry: iteration + 1 < opts.maxIterations &&
+                    !abortController.signal.aborted &&
+                    !budget.isExceeded(),
+            });
+            if (decision.kind === "finalize" && !decision.validationFailed)
+                return decision;
+            emitter.emit(makeEvent("Validation", {
+                sessionId: selfCorrelationId,
+                ...selfTag,
+                status: "fail",
+                attempt: validateAttempts,
+                errors: decision.errors,
+            }));
+            if (opts.verbose) {
+                logVerbose(iteration, decision.kind === "retry"
+                    ? `FINAL payload failed VALIDATE.md (attempt ${validateAttempts}/${MAX_VALIDATE_ATTEMPTS}) — retrying with the schema hint`
+                    : `FINAL payload failed VALIDATE.md (attempt ${validateAttempts}) — returning it flagged validation_failed`);
+            }
+            return decision;
         };
         // Build initial message history
         const messages = [
@@ -434,6 +566,26 @@ export async function rlmLoop(query, context, config, options = {}) {
                 break;
             }
             actualIterations = iteration + 1;
+            // Set when this iteration's FINAL lost its schema check and the wrapper
+            // granted a retry. Nothing downstream may finalize once it is set; the
+            // hint becomes this turn's user message at the very end of the body.
+            // Held in an object rather than a `let`: the only write happens inside
+            // the `settle` closure below, which makes tsc narrow every outer read
+            // to `null` and type-check none of them. A property read is re-widened
+            // at each site, so the comparisons downstream are actually checked.
+            const retryState = { hint: null };
+            /**
+             * Route one candidate final answer through the VALIDATE.md gate.
+             * Returns the result to return, or `null` when a retry was granted.
+             */
+            const settle = async (candidate, mode) => {
+                const decision = finalizeWithValidation(candidate, iteration, mode);
+                if (decision.kind === "finalize") {
+                    return finalize(candidate, iteration + 1, decision.validationFailed);
+                }
+                retryState.hint = decision.hint;
+                return null;
+            };
             // Live event: mark the iteration + reset the per-iteration metrics
             // baseline (latency / tool-call count / token deltas).
             currentIteration = iteration;
@@ -521,12 +673,15 @@ export async function rlmLoop(query, context, config, options = {}) {
             // Check for FINAL signal in the text (outside code blocks)
             const finalSignal = detectFinal(responseText, codeBlocks);
             if (finalSignal && codeBlocks.length === 0) {
-                if (finalSignal.type === "final") {
-                    return finalize(finalSignal.value, iteration + 1);
-                }
-                // FINAL_VAR without code — get variable value before stopping REPL
-                const varResult = await getVariableFromRepl(repl, finalSignal.value);
-                return finalize(varResult ?? finalSignal.value, iteration + 1);
+                const candidate = finalSignal.type === "final"
+                    ? finalSignal.value
+                    // FINAL_VAR without code — get variable value before stopping REPL
+                    : (await getVariableFromRepl(repl, finalSignal.value)) ?? finalSignal.value;
+                const settled = await settle(candidate, "retry-capable");
+                if (settled)
+                    return settled;
+                // Otherwise a retry was granted: fall through with no code blocks to
+                // execute, so the iteration ends at the hint injection below.
             }
             // Execute code blocks in REPL
             const executions = [];
@@ -567,7 +722,13 @@ export async function rlmLoop(query, context, config, options = {}) {
                     recorder.recordReplExec(iteration, block.code, execResult.stdout, execResult.stderr ?? "", execDurationMs, !!execResult.error);
                 }
                 if (execResult.final) {
-                    return finalize(execResult.final.value, iteration + 1);
+                    const settled = await settle(execResult.final.value, "retry-capable");
+                    if (settled)
+                        return settled;
+                    // Retry granted: stop executing this turn's remaining blocks, but
+                    // keep the `executions` collected so far — `formatIterationResult`
+                    // below still shows the model what its code printed.
+                    break;
                 }
             }
             // Handle server-side code execution results from Gemini (GROUP 5)
@@ -588,19 +749,32 @@ export async function rlmLoop(query, context, config, options = {}) {
                     });
                 }
             }
-            // Handle FINAL signal detected in text, after code execution
-            if (finalSignal) {
+            // Handle FINAL signal detected in text, after code execution.
+            // Skipped when the in-REPL emit above already lost its schema check —
+            // that payload is the one being retried, and re-reading it here would
+            // charge a second validate attempt for the same answer.
+            if (finalSignal && retryState.hint === null) {
                 if (finalSignal.type === "final") {
-                    return finalize(finalSignal.value, iteration + 1);
+                    const settled = await settle(finalSignal.value, "retry-capable");
+                    if (settled)
+                        return settled;
                 }
-                // FINAL_VAR — variable should now exist after code execution
-                const varExec = await repl.execute(`__final_val = str(${finalSignal.value}) if '${finalSignal.value}' in dir() else "Variable '${finalSignal.value}' not found"`);
-                if (varExec.final) {
-                    return finalize(varExec.final.value, iteration + 1);
-                }
-                const getResult = await repl.execute(`FINAL_VAR("${finalSignal.value}")`);
-                if (getResult.final) {
-                    return finalize(getResult.final.value, iteration + 1);
+                else {
+                    // FINAL_VAR — variable should now exist after code execution
+                    const varExec = await repl.execute(`__final_val = str(${finalSignal.value}) if '${finalSignal.value}' in dir() else "Variable '${finalSignal.value}' not found"`);
+                    if (varExec.final) {
+                        const settled = await settle(varExec.final.value, "retry-capable");
+                        if (settled)
+                            return settled;
+                    }
+                    else {
+                        const getResult = await repl.execute(`FINAL_VAR("${finalSignal.value}")`);
+                        if (getResult.final) {
+                            const settled = await settle(getResult.final.value, "retry-capable");
+                            if (settled)
+                                return settled;
+                        }
+                    }
                 }
             }
             // Format execution results and append to history
@@ -618,8 +792,11 @@ export async function rlmLoop(query, context, config, options = {}) {
                     content: formattedResult,
                 });
             }
-            else {
-                // No code blocks — prompt the model to use the REPL
+            else if (retryState.hint === null) {
+                // No code blocks — prompt the model to use the REPL. Suppressed when
+                // a validation retry owns this turn: the model *did* answer (that is
+                // precisely why it is being retried), so this nudge would be false
+                // and would compete with the schema hint appended below.
                 messages.push({
                     role: "user",
                     content: "You didn't write any REPL code in your last response. Please use ```repl``` code blocks to interact with the REPL environment and work towards answering the query.",
@@ -660,6 +837,13 @@ export async function rlmLoop(query, context, config, options = {}) {
                 responseModel: response.responseModel,
                 metrics: metrics.snapshot(),
             }));
+            // The validation retry's user turn, injected at the END of the body
+            // rather than via an early `continue`: the stream event and the
+            // IterationOutput node above must still fire, and they mean exactly
+            // "an iteration that continues the loop" — which a retry is.
+            if (retryState.hint !== null) {
+                appendValidationRetryTurn(messages, retryState.hint);
+            }
         }
         // Loop exited — check reason and handle accordingly
         if (emptyAbort) {
@@ -686,7 +870,12 @@ export async function rlmLoop(query, context, config, options = {}) {
             logVerbose(actualIterations, `${reason}, forcing final answer`);
         }
         const forcedResult = await forceFinalAnswer(messages, config, usage, abortController.signal, cacheConfig, langfuse, actualIterations);
-        return finalize(forcedResult, actualIterations);
+        // Flag-only: the budget that would pay for a retry is exactly what ran
+        // out to get here, so this payload is validated and flagged, never
+        // retried. Consumers disambiguate exhaustion from a shape miss with the
+        // `budgetHit` / `iterations` fields, which are unaffected.
+        const forcedDecision = finalizeWithValidation(forcedResult, actualIterations, "flag-only");
+        return finalize(forcedResult, actualIterations, forcedDecision.kind === "finalize" && forcedDecision.validationFailed);
     }
     catch (err) {
         clearTimeout(timeoutHandle);
@@ -791,7 +980,7 @@ function buildRemainingChildBudget(config, budget) {
 /**
  * Build the final RLMResult.
  */
-function buildResult(answer, usage, iterations, config, budgetHit, geminiCounts, geminiBatteriesUsed, usageBreakdown) {
+function buildResult(answer, usage, iterations, config, budgetHit, geminiCounts, geminiBatteriesUsed, usageBreakdown, validationFailed) {
     // Extract file references from the answer (paths like docs/foo/bar.md)
     const refRegex = /(?:^|[\s(["'])([a-zA-Z0-9_./-]+\.(?:md|txt|py|ts|js|json))/gm;
     const refSet = new Set();
@@ -817,6 +1006,12 @@ function buildResult(answer, usage, iterations, config, budgetHit, geminiCounts,
     }
     if (geminiBatteriesUsed && geminiBatteriesUsed.length > 0) {
         result.geminiBatteriesUsed = geminiBatteriesUsed;
+    }
+    // Set only when true, like the fields above: absent means "no schema was
+    // declared, or the answer matched it", and a consumer testing truthiness
+    // gets the same answer either way.
+    if (validationFailed) {
+        result.validation_failed = true;
     }
     return result;
 }

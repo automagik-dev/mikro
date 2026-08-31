@@ -772,6 +772,92 @@ describe("backend contract — one harness, both backends", () => {
   });
 });
 
+/**
+ * `validation_failed` — deliberately NOT a shared `SCENARIOS` entry.
+ *
+ * The flag is produced by `rlmLoop`'s VALIDATE.md gate and therefore exists
+ * only behind the legacy backend: the prime backends enforce their schema
+ * through `emit_done`'s parameter schema and can never reach this state. A
+ * scenario in the shared list would fail the cross-backend byte comparison by
+ * construction — which would be pinning an asymmetry the wish declared OUT of
+ * scope, not catching a regression. So it is asserted legacy-only, on the same
+ * real turn pipeline every other scenario uses.
+ */
+describe("validation_failed reaches the footer (legacy backend only)", () => {
+  const ANSWER = '{"verdict": "maybe"}';
+
+  /** The stub loop, plus the one field the shared `stubLoop` cannot express. */
+  function flaggingLoop(validationFailed: boolean): StubLoop {
+    return async (_query, _context, _config, options = {}) => {
+      options.emitter?.emit(ev("IterationStart"));
+      options.emitter?.close();
+      return {
+        answer: ANSWER,
+        references: [],
+        usage: USAGE,
+        iterations: 2,
+        model: "stub/stub-model",
+        budgetHit: null,
+        ...(validationFailed ? { validation_failed: true } : {}),
+      };
+    };
+  }
+
+  async function driveFlagged(validationFailed: boolean): Promise<Observed> {
+    return drive(new LegacyMikroBackend({ loop: flaggingLoop(validationFailed) }), {
+      name: "validation flag",
+      agent: undefined,
+      label: "query",
+      query: GENERIC_QUERY,
+      stub: {
+        answer: ANSWER,
+        iterations: 2,
+        budgetHit: null,
+        usage: USAGE,
+        events: [ev("IterationStart")],
+      },
+      expectedProgress: ["query · iteration 1"],
+      isError: false,
+    });
+  }
+
+  it("adds a footer segment when the loop flagged the answer", async () => {
+    const { outcome } = await driveFlagged(true);
+    const footer = splitText(outcome.text).footer;
+    assert.ok(
+      footer.includes(" · validation_failed: true · session "),
+      `footer must carry the flag ahead of the session id: ${JSON.stringify(footer)}`
+    );
+  });
+
+  it("leaves the footer untouched when the answer conformed", async () => {
+    const { outcome } = await driveFlagged(false);
+    const footer = splitText(outcome.text).footer;
+    assert.ok(!footer.includes("validation_failed"));
+    // Still the canonical footer shape — the segment is purely additive.
+    assert.equal(parseFooter(footer).sessionId, SESSION_ID);
+  });
+
+  /**
+   * The flag is footer-only by contract. `structuredContent` is a declared
+   * output schema an MCP host validates against, and widening it would be a
+   * host-visible contract change the wish explicitly froze.
+   */
+  it("never widens structuredContent beyond {answer, session_id}", async () => {
+    const { outcome } = await driveFlagged(true);
+    assert.deepEqual(
+      sessionResult(outcome.text, SESSION_ID, outcome.failed).structuredContent,
+      { answer: outcome.text, session_id: SESSION_ID }
+    );
+  });
+
+  /** A flagged answer is a real, paid, returned payload — not a failed run. */
+  it("is not classified as a failed run", async () => {
+    const { outcome } = await driveFlagged(true);
+    assert.equal(outcome.failed, false);
+  });
+});
+
 describe("backend selection", () => {
   it("defaults an agent with no backend field to the legacy backend", () => {
     assert.ok(selectBackend(fakeAgent(undefined)) instanceof LegacyMikroBackend);

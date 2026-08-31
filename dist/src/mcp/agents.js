@@ -26,7 +26,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { parseModelRef } from "../config.js";
+import { loadValidateMd, parseModelRef } from "../config.js";
 import { loadAgentSpec, resolveAgentPath } from "../sdk/agent-spec.js";
 /**
  * Reserved directory suffix for propose-only drafts.
@@ -149,6 +149,8 @@ async function loadOne(dir, name) {
             system = undefined;
         }
     }
+    // By convention, next to agent.yaml — nothing in the spec points at it.
+    const validate = await loadValidateMd(join(dir, "VALIDATE.md"));
     return {
         name,
         toolName: toToolName(name),
@@ -156,6 +158,7 @@ async function loadOne(dir, name) {
         spec,
         system,
         summary: deriveSummary(name, spec, system),
+        ...(validate ? { validate } : {}),
     };
 }
 /**

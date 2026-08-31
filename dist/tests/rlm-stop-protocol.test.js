@@ -50,6 +50,7 @@ function makeConfig(overrides = {}) {
         },
         rtk: { enabled: "auto" },
         prompt: { appendStopProtocol: true },
+        validate: overrides.validate ?? null,
         providers: [],
         configSource: "yaml",
         ...overrides,

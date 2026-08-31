@@ -217,6 +217,76 @@ describe("discoverAgents", () => {
   });
 });
 
+/**
+ * `VALIDATE.md` is discovered by convention — `<agentdir>/VALIDATE.md`, with
+ * no `agent.yaml` key pointing at it. That makes discovery the only place it
+ * can be picked up, so the three states are pinned here: shipped and readable,
+ * not shipped, and shipped broken. The broken case is load-bearing: `loadOne`
+ * already drops an agent whose `agent.yaml` fails to parse, and a malformed
+ * schema must NOT get that treatment — the agent stays listed and callable,
+ * just uncontracted.
+ */
+describe("discoverAgents — VALIDATE.md by convention", () => {
+  let tmp: string;
+  let root: string;
+  const prevEnv = process.env.MIKRO_AGENTS_DIR;
+
+  const SPEC = "schema_version: 1\nshape: loop\ndescription: d.\n";
+
+  before(() => {
+    tmp = mkdtempSync(join(tmpdir(), "mikro-validate-md-"));
+    root = join(tmp, "agents");
+    mkdirSync(root, { recursive: true });
+
+    writeAgent(root, "contracted", SPEC);
+    writeFileSync(
+      join(root, "contracted", "VALIDATE.md"),
+      '# Done\n\n```json\n{ "type": "object", "required": ["verdict"] }\n```\n',
+      "utf-8"
+    );
+
+    writeAgent(root, "uncontracted", SPEC);
+
+    writeAgent(root, "broken-schema", SPEC);
+    writeFileSync(
+      join(root, "broken-schema", "VALIDATE.md"),
+      "# Done\n\n```json\n{ oops, not json\n```\n",
+      "utf-8"
+    );
+
+    process.env.MIKRO_AGENTS_DIR = root;
+  });
+
+  after(() => {
+    if (prevEnv === undefined) delete process.env.MIKRO_AGENTS_DIR;
+    else process.env.MIKRO_AGENTS_DIR = prevEnv;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("loads the schema from the agent's own directory", async () => {
+    const agents = await discoverAgents(tmp);
+    const agent = agents.find((a) => a.name === "contracted");
+    assert.ok(agent, "contracted agent missing");
+    assert.ok(agent.validate, "VALIDATE.md next to agent.yaml was not picked up");
+    assert.equal(agent.validate.schema.type, "object");
+    assert.deepEqual(agent.validate.schema.required, ["verdict"]);
+  });
+
+  it("leaves validate undefined when the agent ships no VALIDATE.md", async () => {
+    const agents = await discoverAgents(tmp);
+    const agent = agents.find((a) => a.name === "uncontracted");
+    assert.ok(agent);
+    assert.equal(agent.validate, undefined);
+  });
+
+  it("keeps an agent with a malformed VALIDATE.md discoverable and uncontracted", async () => {
+    const agents = await discoverAgents(tmp);
+    const agent = agents.find((a) => a.name === "broken-schema");
+    assert.ok(agent, "a bad schema must not make the agent vanish from tools/list");
+    assert.equal(agent.validate, undefined);
+  });
+});
+
 describe("isProposedDir", () => {
   it("matches the reserved suffix in any casing", () => {
     for (const name of ["x.proposed", "review-lite.PROPOSED", "a.Proposed", PROPOSED_SUFFIX]) {
@@ -588,6 +658,61 @@ describe("applyAgent model inheritance", () => {
       config.gemini.thinkingLevel = "minimal";
       const next = applyAgent(config, agentWith({ thinking: "high" }));
       assert.equal(next.gemini.thinkingLevel, "high");
+    });
+  });
+
+  /**
+   * A microagent is contracted by its own VALIDATE.md or by nothing at all.
+   * An agent's file outranks the root project's the same way its model and
+   * thinking level do — and, unlike those, *silence also wins*: an agent that
+   * ships no VALIDATE.md is uncontracted even inside a repo that ships one.
+   */
+  describe("validate schema", () => {
+    const agentValidate = {
+      schema: { type: "object" as const, required: ["verdict"] },
+      rawBlock: '{ "type": "object" }',
+    };
+    const projectValidate = {
+      schema: { type: "object" as const, required: ["summary"] },
+      rawBlock: '{ "type": "object" }',
+    };
+
+    it("lets the agent's schema override the project's", () => {
+      const config = ambient();
+      config.validate = projectValidate;
+      const next = applyAgent(config, { ...agentWith({}), validate: agentValidate });
+      assert.deepEqual(next.validate?.schema.required, ["verdict"]);
+    });
+
+    /**
+     * The inverse of what this test asserted when the field was first landed
+     * (Group 1 pinned inheritance, before enforcement existed). Once `rlmLoop`
+     * *enforces* the schema, inheriting the ambient one means an uncontracted
+     * agent gets judged — and flagged `validation_failed` — against a contract
+     * its author never wrote, purely because of which repo the host happened
+     * to be started in. `if (agent.validate)` could raise a contract but never
+     * clear one, so the assignment is unconditional.
+     */
+    it("clears the project schema when the agent ships none", () => {
+      const config = ambient();
+      config.validate = projectValidate;
+      const next = applyAgent(config, agentWith({}));
+      assert.equal(next.validate, null);
+    });
+
+    it("stays null when neither side has one", () => {
+      const config = ambient();
+      config.validate = null;
+      assert.equal(applyAgent(config, agentWith({})).validate, null);
+    });
+
+    it("does not leak the agent's schema back into the ambient config", () => {
+      // `applyAgent` shallow-copies; an override that wrote through the copy
+      // would contract every later ambient run with this agent's schema.
+      const config = ambient();
+      config.validate = projectValidate;
+      applyAgent(config, { ...agentWith({}), validate: agentValidate });
+      assert.equal(config.validate, projectValidate);
     });
   });
 });
