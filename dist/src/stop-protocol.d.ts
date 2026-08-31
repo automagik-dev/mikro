@@ -28,6 +28,15 @@
  */
 import type { MikroConfig } from "./config.js";
 /**
+ * Check if structured output mode is active: `output.schema` set and the
+ * provider is Google (Gemini). In this mode the run loop treats the
+ * schema-constrained API response itself as the final answer — `detectFinal`
+ * is never consulted — so the FINAL protocol must not be taught. Lives here
+ * so `shouldAppendStopProtocol` and the run loop (`src/rlm.ts`) share one
+ * definition.
+ */
+export declare function isStructuredOutputMode(config: MikroConfig): boolean;
+/**
  * Substring that marks a system prompt as already teaching the protocol.
  *
  * Matched against `config.system` — the pack's *base* text — and never against
@@ -45,9 +54,14 @@ export declare const STOP_PROTOCOL_SECTION = "## REPL & Final Answer Protocol\n\
 /**
  * Whether `config` wants the protocol appended.
  *
- * Two ways to get `false`:
+ * Three ways to get `false`:
  * - `prompt.append-stop-protocol: false` (mikro.yaml, or an agent.yaml
  *   override applied by `applyAgent`) — an explicit opt-out.
+ * - Structured output mode (`output.schema` + a Google provider): the run
+ *   loop finalizes the schema-constrained JSON response directly and never
+ *   looks for `FINAL()`, so teaching it would demand two mutually exclusive
+ *   output shapes — the model may wrap `FINAL(...)` inside schema string
+ *   fields or fail structured generation altogether.
  * - `config.system` already contains `FINAL(` — the pack teaches the protocol
  *   itself, which is true of both shipped templates.
  *

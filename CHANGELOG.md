@@ -35,7 +35,12 @@ release is the git commit on `main`. See `docs/release-contract.md`.
   section (`src/stop-protocol.ts`) just before the criteria block.
   - Skipped when the prompt already teaches the protocol: the section is
     appended only when `config.system` does not already contain `FINAL(`, so
-    both shipped templates come through byte-for-byte unchanged.
+    the shared termination section is not appended to either shipped template
+    (`buildSystemPrompt` still substitutes `{custom_tools_section}` as before).
+  - Skipped in structured output mode (`output.schema` with a Google
+    provider): the run loop finalizes the schema-constrained JSON response
+    directly and never parses `FINAL()`, so teaching the protocol there would
+    demand two mutually exclusive output shapes.
   - Opt out with `prompt.append-stop-protocol: false` in `mikro.yaml`, or per
     agent with the same key in `agent.yaml` (the agent's declaration wins).
     Either restores the previous output byte-for-byte.

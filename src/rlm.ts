@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { MikroConfig, ToolDef } from "./config.js";
 import type { LoadedContext, ContextItem } from "./context.js";
 import { buildCachedSystemPrompt, computeContentHash, buildSessionId, estimateTokens } from "./cache.js";
-import { appendStopProtocol } from "./stop-protocol.js";
+import { appendStopProtocol, isStructuredOutputMode } from "./stop-protocol.js";
 import { REPL } from "./repl.js";
 import { PgStorage } from "./storage.js";
 import { ObservabilityRecorder } from "./observe.js";
@@ -109,13 +109,9 @@ const DEFAULT_OPTIONS: RLMOptions = {
   cache: false,
 };
 
-/**
- * Check if structured output mode is active.
- * Structured output is when output.schema is set and provider is Google (Gemini).
- */
-function isStructuredOutputMode(config: MikroConfig): boolean {
-  return config.output.schema !== null && isGoogleProvider(config.model.provider);
-}
+// isStructuredOutputMode moved to `src/stop-protocol.ts` — the append logic
+// needs the same predicate (structured mode never parses FINAL, so the
+// protocol must not be taught there).
 
 /**
  * Build the system prompt from config, tools, criteria, and context metadata.

@@ -144,6 +144,20 @@ tools-level: standard
         assert.equal(cfg.prompt.appendStopProtocol, false);
         await rm(dir, { recursive: true });
     });
+    /**
+     * A bare `append-stop-protocol:` key parses as YAML null. Null-as-unset is
+     * the deliberate convention here — the agent.yaml parser (`parsePrompt` in
+     * `src/sdk/agent-spec.ts`) and `rtk.enabled` treat null the same way — so
+     * it falls back to the default rather than erroring.
+     */
+    it("treats a null prompt.append-stop-protocol as unset (default true)", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, "prompt:\n  append-stop-protocol:\n");
+        const cfg = await loadConfig(dir);
+        assert.ok(cfg.prompt);
+        assert.equal(cfg.prompt.appendStopProtocol, true);
+        await rm(dir, { recursive: true });
+    });
     it("rejects a non-boolean prompt.append-stop-protocol", async () => {
         dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
         await makeConfig(dir, "prompt:\n  append-stop-protocol: banana\n");
