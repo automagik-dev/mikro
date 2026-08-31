@@ -769,7 +769,11 @@ export async function rlmLoop(
       // Set when this iteration's FINAL lost its schema check and the wrapper
       // granted a retry. Nothing downstream may finalize once it is set; the
       // hint becomes this turn's user message at the very end of the body.
-      let pendingRetryHint: string | null = null;
+      // Held in an object rather than a `let`: the only write happens inside
+      // the `settle` closure below, which makes tsc narrow every outer read
+      // to `null` and type-check none of them. A property read is re-widened
+      // at each site, so the comparisons downstream are actually checked.
+      const retryState: { hint: string | null } = { hint: null };
 
       /**
        * Route one candidate final answer through the VALIDATE.md gate.
@@ -783,7 +787,7 @@ export async function rlmLoop(
         if (decision.kind === "finalize") {
           return finalize(candidate, iteration + 1, decision.validationFailed);
         }
-        pendingRetryHint = decision.hint;
+        retryState.hint = decision.hint;
         return null;
       };
 
@@ -990,7 +994,7 @@ export async function rlmLoop(
       // Skipped when the in-REPL emit above already lost its schema check —
       // that payload is the one being retried, and re-reading it here would
       // charge a second validate attempt for the same answer.
-      if (finalSignal && pendingRetryHint === null) {
+      if (finalSignal && retryState.hint === null) {
         if (finalSignal.type === "final") {
           const settled = await settle(finalSignal.value, "retry-capable");
           if (settled) return settled;
@@ -1030,7 +1034,7 @@ export async function rlmLoop(
           role: "user",
           content: formattedResult,
         });
-      } else if (pendingRetryHint === null) {
+      } else if (retryState.hint === null) {
         // No code blocks — prompt the model to use the REPL. Suppressed when
         // a validation retry owns this turn: the model *did* answer (that is
         // precisely why it is being retried), so this nudge would be false
@@ -1084,8 +1088,8 @@ export async function rlmLoop(
       // rather than via an early `continue`: the stream event and the
       // IterationOutput node above must still fire, and they mean exactly
       // "an iteration that continues the loop" — which a retry is.
-      if (pendingRetryHint !== null) {
-        appendValidationRetryTurn(messages, pendingRetryHint);
+      if (retryState.hint !== null) {
+        appendValidationRetryTurn(messages, retryState.hint);
       }
 
     }

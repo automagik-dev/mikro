@@ -12,13 +12,14 @@
  * decision the loop delegates — the disclosure section both prompt builders
  * append, the normalization FINAL needs before `JSON.parse`, the
  * validate/retry/flag policy, and the history mutation a granted retry makes.
- * Site adoption (which `finalize()` calls route through the wrapper) is
- * verified by inspection in review, as the wish allows; the end-to-end
- * propagation of the resulting flag is covered in
+ * Site adoption (which `finalize()` calls route through the wrapper) cannot be
+ * driven either, so it is pinned by a source-level tripwire at the bottom of
+ * this file; the end-to-end propagation of the resulting flag is covered in
  * `tests/backend-contract.test.ts`.
  */
 
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { buildCachedSystemPrompt } from "../src/cache.js";
 import type { MikroConfig, ValidateConfig } from "../src/config.js";
@@ -330,5 +331,50 @@ describe("appendValidationRetryTurn", () => {
         `consecutive user turns at ${i}`
       );
     }
+  });
+});
+
+// ─── Site adoption (source-level) ─────────────────────────
+
+describe("rlm.ts finalize() site adoption", () => {
+  // The wrapper contract: a candidate FINAL that can still be retried must
+  // reach `finalize()` through `settle()`, which spends the validate attempt
+  // and may grant a retry instead. Only two paths may call `finalize()`
+  // directly — structured-output mode (schema-enforced by the provider) and
+  // the forced-final path (flag-only, no budget left to retry) — plus the one
+  // call inside `settle()` itself. This test is a tripwire: it fails when a
+  // new `finalize()` call site appears without going through the wrapper.
+  // Resolved from `dist/tests/` at run time, so `../../` is the repo root.
+  const source = readFileSync(new URL("../../src/rlm.ts", import.meta.url), "utf8")
+    // Strip comments so prose mentioning `finalize()` is not counted.
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
+
+  it("has exactly three direct finalize() call expressions", () => {
+    const calls = source.match(/(?<![\w$.])finalize\(/g) ?? [];
+    assert.equal(
+      calls.length,
+      3,
+      `expected 3 direct finalize() calls in src/rlm.ts (inside settle(), the ` +
+        `structured-output site, and the forced-final path) but found ${calls.length}. ` +
+        `A retry-capable final answer must route through settle() so VALIDATE.md is ` +
+        `enforced and a retry can be granted; call finalize() directly only from a ` +
+        `path that provably cannot retry, and update this count with the reason.`
+    );
+  });
+
+  it("routes every retry-capable final through settle()", () => {
+    // Argument positions only — the union type and the `mode === …` guard
+    // inside the wrapper also spell the literal but finalize nothing.
+    const retryCapable = source.match(/,\s*"retry-capable"\)/g) ?? [];
+    const viaSettle = source.match(/settle\([^)]*,\s*"retry-capable"\)/g) ?? [];
+    assert.equal(
+      viaSettle.length,
+      retryCapable.length,
+      `every "retry-capable" finalization must be an argument to settle(); ` +
+        `found ${retryCapable.length} retry-capable sites but only ${viaSettle.length} ` +
+        `settle() calls in src/rlm.ts.`
+    );
+    assert.ok(viaSettle.length > 0, "expected at least one settle() call site");
   });
 });

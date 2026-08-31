@@ -61,9 +61,13 @@ export interface MicroagentResult {
     /**
      * Mirrors `RLMResult.validation_failed` (camelCase here because this is an
      * internal seam, not a serialized wire shape): the answer above does not
-     * match the pack's declared `VALIDATE.md` schema. Only the legacy backend
-     * produces it today — the prime backends enforce their own schema through
-     * `emit_done`'s parameter schema and never reach this state.
+     * match the pack's declared `VALIDATE.md` schema. This field is
+     * legacy-backend-only today: the prime backends neither read
+     * `config.validate` nor disclose it to the model, so they never set it —
+     * not because they enforce that schema elsewhere. (`emit_done`'s parameter
+     * schema comes from `config.output.schema`, a different declaration; a
+     * `VALIDATE.md`-only pack running on prime is enforced by nothing.)
+     * Extending validation to the prime backends is out of scope per the wish.
      */
     readonly validationFailed?: boolean;
     readonly usage: {

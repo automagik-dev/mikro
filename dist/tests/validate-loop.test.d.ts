@@ -12,9 +12,9 @@
  * decision the loop delegates — the disclosure section both prompt builders
  * append, the normalization FINAL needs before `JSON.parse`, the
  * validate/retry/flag policy, and the history mutation a granted retry makes.
- * Site adoption (which `finalize()` calls route through the wrapper) is
- * verified by inspection in review, as the wish allows; the end-to-end
- * propagation of the resulting flag is covered in
+ * Site adoption (which `finalize()` calls route through the wrapper) cannot be
+ * driven either, so it is pinned by a source-level tripwire at the bottom of
+ * this file; the end-to-end propagation of the resulting flag is covered in
  * `tests/backend-contract.test.ts`.
  */
 export {};
