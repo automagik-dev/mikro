@@ -156,6 +156,31 @@ describe("stop protocol append", () => {
         assert.equal(buildCachedSystemPrompt(zeroConfig, null), STOP_PROTOCOL_SECTION);
     });
 });
+// ─── Structured output mode never teaches FINAL ──────────
+describe("stop protocol vs structured output", () => {
+    const SYSTEM = "You are a terse code reviewer.";
+    const SCHEMA = { type: "object", properties: { answer: { type: "string" } } };
+    /**
+     * With `output.schema` on a Google provider the run loop treats the
+     * schema-constrained response itself as the final answer and never parses
+     * `FINAL()` — instructing the model to wrap its answer in `FINAL(...)`
+     * would fight the schema (wrapper inside string fields, or failed
+     * structured generation).
+     */
+    it("skips the append in structured output mode, on both builders", () => {
+        const config = makeConfig({ system: SYSTEM, output: { schema: SCHEMA } });
+        assert.equal(buildSystemPrompt(config, null), SYSTEM);
+        assert.equal(buildCachedSystemPrompt(config, null), SYSTEM);
+    });
+    it("still appends when a schema is set but the provider is not Google", () => {
+        const config = makeConfig({
+            system: SYSTEM,
+            model: { provider: "anthropic", model: "claude-sonnet-4-5" },
+            output: { schema: SCHEMA },
+        });
+        assert.ok(buildSystemPrompt(config, null).includes(STOP_PROTOCOL_SECTION));
+    });
+});
 // ─── Dedupe: the shipped templates already teach it ──────
 describe("stop protocol dedupe", () => {
     for (const name of ["default", "code"]) {
