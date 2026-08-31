@@ -158,7 +158,10 @@ export function buildSystemPrompt(
   // purpose: `appendStopProtocol` decides from `config.system` alone and has
   // already run, so the literal `FINAL(` examples below cannot suppress the
   // stop-protocol section (`src/stop-protocol.ts` — do not reorder).
-  if (config.validate) {
+  // Skipped in structured-output mode for the same reason the stop protocol
+  // is: that path finalizes provider-constrained schema JSON and never parses
+  // FINAL(), so instructing `FINAL(<compact JSON>)` would fight the schema.
+  if (config.validate && !isStructuredOutputMode(config)) {
     system += "\n\n" + buildOutputSchemaSection(config.validate.rawBlock);
   }
 

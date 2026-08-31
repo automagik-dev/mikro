@@ -162,6 +162,26 @@ describe("schema disclosure — both prompt builders", () => {
     }
   });
 
+  /**
+   * Structured-output mode (Google + `output.schema`) finalizes the
+   * provider-constrained response and never parses FINAL(), so disclosing a
+   * `FINAL(<compact JSON>)` instruction there would fight the schema — the
+   * same contradiction the stop protocol skip fixes. Mirror it.
+   */
+  it("skips the disclosure in structured output mode, on both builders", () => {
+    const structured = makeConfig({
+      system: "You grade patches.",
+      validate: VERDICT,
+      output: { schema: { type: "object", properties: { answer: { type: "string" } } } },
+    });
+    for (const build of [
+      (c: MikroConfig) => buildSystemPrompt(c, null),
+      (c: MikroConfig) => buildCachedSystemPrompt(c, null),
+    ]) {
+      assert.ok(!build(structured).includes("## Output Schema"));
+    }
+  });
+
   it("keeps the cached builder's context block after the schema", () => {
     const prompt = buildCachedSystemPrompt(
       makeConfig({ system: "Be terse.", validate: VERDICT }),
