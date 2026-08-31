@@ -210,6 +210,7 @@ your own schema without forking the parser.
 | `budget.max_depth` | — | Recursion depth ceiling, for `shape: recurse`. |
 | `scope.reads` / `scope.writes` | — | Advisory glob hints. The SDK does **not** enforce them; individual tool handlers do. |
 | `thinking` | ambient config | `minimal` \| `low` \| `medium` \| `high` — reasoning effort for this agent's own model calls. An unknown value is a hard error. The four levels are graded only on providers that accept a reasoning effort; on `station/` models they collapse to on/off, where **on breaks the Qwen GGUF models** — see the two notes below. |
+| `temperature` | ambient config | Sampling temperature `0`–`2` for this agent's own model calls, the `agent.yaml` twin of `--temperature`. Writes the same `config.temperature` mikro.yaml's top-level `temperature:` writes, so an agent's value outranks the project's. `0` is greedy decoding — a real pin, not a synonym for unset — while an explicit `null` or an omitted key inherits. A non-number or an out-of-range value is a hard error, unlike most type drift in this parser: a temperature that silently fell back would be indistinguishable from one that took. Best-effort per provider; pi/ai omits it on models that declare no temperature support, and on Anthropic when thinking is enabled. |
 
 > **`thinking` is not tuning — it is a default worth overriding.** Omitting it
 > does **not** mean "provider default": pi/ai explicitly *disables* reasoning
@@ -719,6 +720,10 @@ model:
   provider: google
   model: gemini-3.1-flash-lite-preview
 
+temperature: 0                # Sampling temperature, 0-2. TOP-LEVEL, not
+                              # under `gemini:` — pi/ai maps it on every
+                              # provider. Omit to send no temperature at all.
+
 gemini:
   thinking-level: medium      # Control thinking depth
   google-search: true          # Web search in REPL
@@ -739,6 +744,7 @@ mikro "Research latest AI developments" --context ./notes/ --tools standard --th
 | Feature | Config | CLI Flag | Description |
 |---------|--------|----------|-------------|
 | Thinking levels | `gemini.thinking-level` | `--thinking` | minimal/low/medium/high — controls reasoning depth |
+| Sampling temperature | `temperature` (top-level) | `--temperature` | 0-2 on the root loop's calls. `0` is greedy decoding, not "unset". Also settable per agent via `agent.yaml`'s `temperature:`. Omitting it sends no temperature at all. Not Gemini-only — pi/ai maps it on every provider, and guards it per model. |
 | Thought signatures | automatic | — | Multi-turn quality via pi/ai signature circulation |
 | Structured output | `output.schema` | — | JSON Schema enforcement via API (not text parsing) |
 | Google Search | `gemini.google-search` | — | `web_search()` battery in REPL |
@@ -943,6 +949,7 @@ Options:
   --model <ref>           Model for this run: "provider/model" or a bare model id
   --ext <list>            File extensions for context dirs (comma-separated)
   --thinking <level>      Thinking level: minimal, low, medium, high (Gemini 3)
+  --temperature <n>       Sampling temperature, 0-2 (default: unset, provider decides)
   --cache                 Enable cache mode (full context in system prompt)
   --no-session            Disable auto-save of session data
   --estimate              Show context size and cost estimate without caching (cache)

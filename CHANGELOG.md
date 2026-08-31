@@ -24,6 +24,38 @@ release is the git commit on `main`. See `docs/release-contract.md`.
 
 ### Added
 
+- **Sampling temperature is now settable, from three surfaces.** A single
+  nullable `temperature` flows into the root loop's two model calls — the
+  per-iteration completion and the forced final answer — so a run that needs to
+  pin sampling drift can. It is absent by default, and absent means *no
+  `temperature` key on the wire at all*, not "the provider's documented
+  default": an un-pinned run sends byte-for-byte the options object it sent
+  before this existed.
+  - **`temperature: <0–2>` in `mikro.yaml`, at the top level.** Not under
+    `gemini:`. `gemini.thinking-level` is the standing evidence of what that
+    nesting costs — pi/ai maps `reasoning` on every api family it supports, and
+    the prefix has misled every reader of the key since. `temperature` is mapped
+    just as widely and starts un-nested. Out-of-range and non-number values
+    throw at load, naming the key.
+  - **`temperature:` in `agent.yaml`**, applied by `applyAgent` onto the same
+    `config.temperature` field, so an agent's value outranks the project's the
+    way its `thinking:` already does. Unlike most type drift in that parser this
+    one is a hard error: a `temperature: hot` that quietly inherited the ambient
+    value would be indistinguishable from a working pin.
+  - **`--temperature <n>`**, which outranks both.
+  - **`0` is a value, not an absence.** Greedy decoding is the setting a
+    committee gate reaches for first, and it is falsy — so every guard on the
+    path is written `!= null` and never truthiness, and each surface has a test
+    pinning that an exact zero survives it.
+  - **Best-effort per provider.** pi/ai maps `temperature` on every api family,
+    but guards it per model: Anthropic omits it when thinking is enabled or when
+    the resolved model declares `supportsTemperature: false`. A pinned
+    temperature is a request, like a thinking level, not a guarantee.
+  - Deliberately *not* threaded into `llm_query()` sub-calls, recursive
+    children, or the web/fetch/image helpers. Recursive children re-read the
+    config at their own cwd, so a `mikro.yaml` temperature propagates to them
+    while a CLI or agent value does not.
+
 - **`VALIDATE.md` is now enforced on the `FINAL` channel.** The pure validate
   primitives (`src/sdk/validate.ts`) had been wired only into the SDK's
   `runAgent()`; the core loop that serves the CLI *and* the default MCP backend

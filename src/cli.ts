@@ -5,7 +5,13 @@ import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { execFileSync } from "node:child_process";
-import { applyModelRef, loadConfig, type ToolsLevel } from "./config.js";
+import {
+  applyModelRef,
+  applyTemperatureOverride,
+  loadConfig,
+  parseTemperatureFlag,
+  type ToolsLevel,
+} from "./config.js";
 import { isValidThinkingLevel, checkFutureFlags, type ThinkingLevel } from "./gemini.js";
 import { scaffold, needsScaffold } from "./scaffold.js";
 import { loadContext, loadContextFromStdin } from "./context.js";
@@ -94,6 +100,7 @@ Options:
   --model <ref>           Model for this run: "provider/model" or a bare model id
   --ext <list>            File extensions for context dirs (comma-separated)
   --thinking <level>      Thinking level: minimal, low, medium, high (Gemini 3)
+  --temperature <n>       Sampling temperature, 0-2 (default: unset, provider decides)
   --cache                 Enable cache mode (full context in system prompt for provider caching)
   --no-session            Disable auto-save of session data
   --estimate              Show context size and cost estimate without caching (cache command)
@@ -145,6 +152,8 @@ interface CliOptions {
   model: string | null;
   ext: string[] | null;
   thinking: ThinkingLevel | null;
+  /** Parsed `--temperature`. `null` means the flag was not given. */
+  temperature: number | null;
   cache: boolean;
   estimate: boolean;
   batchFile: string | null;
@@ -176,6 +185,7 @@ function parseCliArgs(args: string[]): CliOptions {
       model: { type: "string" },
       ext: { type: "string" },
       thinking: { type: "string" },
+      temperature: { type: "string" },
       cache: { type: "boolean", default: false },
       estimate: { type: "boolean", default: false },
       parallel: { type: "string", default: "1" },
@@ -192,7 +202,7 @@ function parseCliArgs(args: string[]): CliOptions {
       query: null, command: "schema", context: null, output: "text",
       verbose: false, maxIterations: 30, timeout: 300000, dir: process.cwd(),
       stats: false, log: null, tools: null, maxCost: null, maxTokens: null,
-      maxDepth: null, model: null, ext: null, thinking: null, cache: false, estimate: false,
+      maxDepth: null, model: null, ext: null, thinking: null, temperature: null, cache: false, estimate: false,
       batchFile: null, parallel: 1, batchApi: false, noSession: false, template: "default",
     };
   }
@@ -202,7 +212,7 @@ function parseCliArgs(args: string[]): CliOptions {
       query: null, command: "help", context: null, output: "text",
       verbose: false, maxIterations: 30, timeout: 300000, dir: process.cwd(),
       stats: false, log: null, tools: null, maxCost: null, maxTokens: null,
-      maxDepth: null, model: null, ext: null, thinking: null, cache: false, estimate: false,
+      maxDepth: null, model: null, ext: null, thinking: null, temperature: null, cache: false, estimate: false,
       batchFile: null, parallel: 1, batchApi: false, noSession: false, template: "default",
     };
   }
@@ -212,7 +222,7 @@ function parseCliArgs(args: string[]): CliOptions {
       query: null, command: "version", context: null, output: "text",
       verbose: false, maxIterations: 30, timeout: 300000, dir: process.cwd(),
       stats: false, log: null, tools: null, maxCost: null, maxTokens: null,
-      maxDepth: null, model: null, ext: null, thinking: null, cache: false, estimate: false,
+      maxDepth: null, model: null, ext: null, thinking: null, temperature: null, cache: false, estimate: false,
       batchFile: null, parallel: 1, batchApi: false, noSession: false, template: "default",
     };
   }
@@ -253,6 +263,17 @@ function parseCliArgs(args: string[]): CliOptions {
     process.exit(1);
   }
 
+  // Validate --temperature. `parseArgs` hands string-typed flags back as
+  // strings, so this parses before range-checking; `parseTemperatureFlag`
+  // rejects NaN/Infinity too, which a bare `<`/`>` pair would wave through.
+  let temperature: number | null = null;
+  try {
+    temperature = parseTemperatureFlag(values.temperature as string | undefined);
+  } catch (err: unknown) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+
   // Parse --ext
   const extRaw = values.ext as string | undefined;
   const ext = extRaw
@@ -277,6 +298,7 @@ function parseCliArgs(args: string[]): CliOptions {
     model: (values.model as string) || null,
     ext,
     thinking: (thinkingRaw as ThinkingLevel) || null,
+    temperature,
     cache: values.cache as boolean,
     estimate: values.estimate as boolean,
     batchFile,
@@ -348,6 +370,11 @@ async function runQuery(opts: CliOptions): Promise<void> {
   if (opts.thinking) {
     config.gemini.thinkingLevel = opts.thinking;
   }
+  // `--temperature` outranks both `agent.yaml` and mikro.yaml's top-level
+  // `temperature:`. Routed through the shared helper so the `!= null` guard —
+  // the one that keeps `--temperature 0` from being dropped as falsy — has a
+  // single definition rather than a copy per surface.
+  applyTemperatureOverride(config, opts.temperature);
   if (opts.cache) {
     config.cache.enabled = true;
   }

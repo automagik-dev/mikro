@@ -150,6 +150,57 @@ export function checkModelConfig(modelConfig) {
     }
 }
 /**
+ * Build the pi-ai options for one completion: the sampling and caching half,
+ * before any provider payload hooks are attached.
+ *
+ * Split out of `llmComplete` so the exact object handed to pi-ai is assertable
+ * without a network call — which matters most for the fields whose *absence* is
+ * the contract. An unset knob must produce no key at all rather than an
+ * explicit `undefined`/`null`, so that adding this plumbing left every existing
+ * call byte-for-byte as it was.
+ */
+export function buildPiOptions(options) {
+    // Build cache options for pi/ai when cache is enabled
+    const cacheOpts = options?.cacheConfig?.enabled
+        ? {
+            cacheRetention: options.cacheConfig.retention,
+            sessionId: options.cacheConfig.sessionId,
+        }
+        : {};
+    const piOptions = {
+        maxTokens: options?.maxTokens ?? 16384,
+        signal: options?.signal,
+        ...cacheOpts,
+    };
+    // Reasoning effort. Named `gemini.thinking-level` in config for historical
+    // reasons, but pi-ai maps `reasoning` on every api family: OpenAI Responses
+    // (`reasoning.effort`), OpenAI Completions and its deepseek/openrouter/zai
+    // dialects (`reasoning_effort`), Google (`thinkingConfig.thinkingLevel`), and
+    // Anthropic (`thinking.budget_tokens`). Leaving it unset does not mean
+    // "provider default" either — pi-ai then explicitly disables reasoning on
+    // models that support it. Whatever is set here is clamped to the resolved
+    // model's supported levels, searching upward first, so a low request can come
+    // back raised.
+    if (options?.thinkingLevel) {
+        piOptions.reasoning = options.thinkingLevel;
+    }
+    // Sampling temperature. Like `reasoning`, pi-ai maps `temperature` on every
+    // api family — and guards it per model: Anthropic drops it when thinking is
+    // enabled, and any model declaring `supportsTemperature: false` never
+    // receives it. So a pinned temperature is best-effort per provider.
+    //
+    // `!= null`, never truthiness: `0` is greedy decoding, the value a run most
+    // likely pins *to*, and `if (options?.temperature)` would drop exactly it.
+    // Conditional rather than `temperature: options?.temperature ?? undefined`,
+    // because unset has to leave the key off the object entirely — an explicit
+    // `undefined` would still serialize into some provider payloads as a present
+    // key, and a `null` would go on the wire.
+    if (options?.temperature != null) {
+        piOptions.temperature = options.temperature;
+    }
+    return piOptions;
+}
+/**
  * Call pi/ai completeSimple with messages.
  * Tracks cost and time_ms per call. Optionally emits to a Logger.
  */
@@ -196,31 +247,8 @@ export async function llmComplete(messages, modelConfig, options) {
             timestamp: Date.now(),
         };
     });
-    // Build cache options for pi/ai when cache is enabled
-    const cacheOpts = options?.cacheConfig?.enabled
-        ? {
-            cacheRetention: options.cacheConfig.retention,
-            sessionId: options.cacheConfig.sessionId,
-        }
-        : {};
-    // Build pi/ai options with thinking level and onPayload hook
-    const piOptions = {
-        maxTokens: options?.maxTokens ?? 16384,
-        signal: options?.signal,
-        ...cacheOpts,
-    };
-    // Reasoning effort. Named `gemini.thinking-level` in config for historical
-    // reasons, but pi-ai maps `reasoning` on every api family: OpenAI Responses
-    // (`reasoning.effort`), OpenAI Completions and its deepseek/openrouter/zai
-    // dialects (`reasoning_effort`), Google (`thinkingConfig.thinkingLevel`), and
-    // Anthropic (`thinking.budget_tokens`). Leaving it unset does not mean
-    // "provider default" either — pi-ai then explicitly disables reasoning on
-    // models that support it. Whatever is set here is clamped to the resolved
-    // model's supported levels, searching upward first, so a low request can come
-    // back raised.
-    if (options?.thinkingLevel) {
-        piOptions.reasoning = options.thinkingLevel;
-    }
+    // Sampling, caching and reasoning options; the onPayload hook is attached below.
+    const piOptions = buildPiOptions(options);
     const payloadHooks = [];
     // OpenRouter's OpenAI-compatible Chat Completions endpoint still rejects the
     // newer `developer` role for several non-OpenAI routes (including DeepSeek

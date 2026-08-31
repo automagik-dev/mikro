@@ -425,6 +425,22 @@ export function applyAgent(config, agent) {
     if (agent.spec.thinking) {
         next.gemini = { ...config.gemini, thinkingLevel: agent.spec.thinking };
     }
+    // A declared `temperature:` writes the one field `--temperature` writes —
+    // `config.temperature`, which rlmLoop hands to `llmComplete` and which
+    // becomes pi-ai's `temperature`. Same single-answer rule as `thinking:`
+    // above: the agent's declaration outranks the ambient mikro.yaml, and there
+    // is no second per-agent channel.
+    //
+    // No clone, unlike `gemini` above and for the same reason `validate` needs
+    // none: this is a scalar on the shallow copy, so there is no shared object to
+    // write *through* to the ambient config.
+    //
+    // `!= null` and never truthiness. `temperature: 0` is greedy decoding — the
+    // most likely value a committee gate pins to — and `if (agent.spec.temperature)`
+    // would silently hand that run the ambient temperature instead.
+    if (agent.spec.temperature != null) {
+        next.temperature = agent.spec.temperature;
+    }
     // A microagent is contracted by its OWN `VALIDATE.md` or by nothing at all.
     // Unconditional, and that is the point: `if (agent.validate)` could only
     // ever *raise* a contract, never clear one, so an uncontracted agent invoked

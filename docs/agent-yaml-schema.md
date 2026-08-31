@@ -63,6 +63,12 @@ thinking: high               # "minimal" | "low" | "medium" | "high"
                              # Rejected with a named error if it is anything
                              # else. Omit to inherit the ambient config.
 
+# ─── Sampling temperature (optional) ──────────────────────────
+temperature: 0               # number, 0–2. `0` is greedy decoding — a real
+                             # value, not a synonym for "unset". Omit to
+                             # inherit the ambient config. Rejected with a
+                             # named error if it is not a number in range.
+
 # ─── Tools ───────────────────────────────────────────────────
 tools:
   - greet                    # Each name must resolve via the plugin
@@ -109,6 +115,7 @@ prompt:
 | `model` | string | — | passthrough | Not validated. Consumers wire it into their driver. |
 | `tools` | string[] | `[]` | SDK reads | Empty strings are filtered. Duplicate names collapse (last wins at load). |
 | `thinking` | `"minimal" \| "low" \| "medium" \| "high"` | — | SDK reads, enforces allowed values | Reasoning effort for the agent's own model calls. Rejects unknown levels with a named error. See [Reasoning effort](#reasoning-effort-thinking). |
+| `temperature` | number (`0`–`2`) | — | SDK reads, enforces range | Sampling temperature for the agent's own model calls. Applied by `applyAgent` onto `config.temperature`, so it outranks mikro.yaml's top-level `temperature:` and is outranked by `--temperature`. `0` is greedy decoding, **not** unset. A non-number or an out-of-range value is rejected with a named error. Best-effort per provider — pi/ai omits it on models declaring `supportsTemperature: false`, and on Anthropic when thinking is enabled. |
 | `system` | string | — | passthrough | Consumer is responsible for reading the file + handing its contents to the driver. |
 | `scope.reads` | string[] | — | passthrough | Advisory. Enforced by individual tool handlers (e.g. brain's `read`). |
 | `scope.writes` | string[] | — | passthrough | Advisory, same as above. |
@@ -234,11 +241,18 @@ there is no warning to notice.
 | Top-level is not a mapping (e.g. a list or scalar) | `Error: agent.yaml: expected a YAML mapping at the top level` |
 | `shape` is set to an unsupported value | `Error: agent.yaml: shape must be one of single-step \| loop \| recurse, got "..."` |
 | `thinking` is set to an unsupported level | `Error: agent.yaml: thinking must be one of minimal \| low \| medium \| high, got "..."` |
+| `temperature` is not a number, is non-finite, or is outside `0`–`2` | `Error: agent.yaml: temperature must be a number between 0 and 2, got ...` |
 | `agent.yaml` file is missing (via `loadAgentSpec`) | `ENOENT` from `node:fs` |
 
 Non-strings, non-finite numbers, and other type drift default
 silently — the parser aims to be forgiving where there's no risk of
 surprise.
+
+`temperature` is the one exception to that forgiveness, and deliberately: a
+`temperature: hot` that fell back to the ambient value would be
+indistinguishable from a working pin, and pinning sampling is the only reason
+to declare the field at all. An explicit `temperature: null` is still "unset",
+the same as omitting the key.
 
 ### How `mikro mcp` reports them
 

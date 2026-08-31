@@ -162,6 +162,14 @@ export const MIKRO_CLI_SCHEMA: MikroCliSchema = {
       appliesTo: ["query"],
     },
     {
+      name: "--temperature",
+      type: "number",
+      default: null,
+      description:
+        "Sampling temperature, 0-2. Outranks agent.yaml and mikro.yaml's top-level `temperature:`. Unset sends no temperature at all, leaving the provider's own behaviour in place. Best-effort per provider: pi/ai omits it on models that declare no temperature support, and on Anthropic when thinking is enabled.",
+      appliesTo: ["query"],
+    },
+    {
       name: "--cache",
       type: "boolean",
       default: false,

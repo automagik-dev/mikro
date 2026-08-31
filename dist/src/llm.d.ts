@@ -4,7 +4,7 @@
  * Provides completeSimple wrapper, batched calls, IPC request handling
  * from the Python REPL, and rlm_query child process spawning.
  */
-import type { AssistantMessage as PiAssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage as PiAssistantMessage, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { type CustomProviderConfig } from "./custom-providers.js";
 import type { MikroConfig, ModelConfig, GeminiConfig } from "./config.js";
 import type { LLMRequest } from "./ipc.js";
@@ -100,20 +100,39 @@ export declare function resolveModel(provider: string, modelId: string, provider
  * static and answers immediately.
  */
 export declare function checkModelConfig(modelConfig: ModelConfig): string | null;
-/**
- * Call pi/ai completeSimple with messages.
- * Tracks cost and time_ms per call. Optionally emits to a Logger.
- */
-export declare function llmComplete(messages: ChatMessage[], modelConfig: ModelConfig, options?: {
+/** Per-call options accepted by `llmComplete`. */
+export interface LlmCompleteOptions {
     maxTokens?: number;
     signal?: AbortSignal;
     logger?: Logger;
     iteration?: number;
     cacheConfig?: CacheLLMConfig;
     thinkingLevel?: ThinkingLevel | null;
+    /**
+     * Sampling temperature, `0`–`2`. `null`/absent means **unset**, and unset
+     * leaves no `temperature` key on the pi-ai options at all — see
+     * `buildPiOptions`. Validated at the config surfaces, not here.
+     */
+    temperature?: number | null;
     outputSchema?: Record<string, unknown> | null;
     geminiConfig?: GeminiConfig;
-}): Promise<LLMResponse>;
+}
+/**
+ * Build the pi-ai options for one completion: the sampling and caching half,
+ * before any provider payload hooks are attached.
+ *
+ * Split out of `llmComplete` so the exact object handed to pi-ai is assertable
+ * without a network call — which matters most for the fields whose *absence* is
+ * the contract. An unset knob must produce no key at all rather than an
+ * explicit `undefined`/`null`, so that adding this plumbing left every existing
+ * call byte-for-byte as it was.
+ */
+export declare function buildPiOptions(options?: LlmCompleteOptions): SimpleStreamOptions;
+/**
+ * Call pi/ai completeSimple with messages.
+ * Tracks cost and time_ms per call. Optionally emits to a Logger.
+ */
+export declare function llmComplete(messages: ChatMessage[], modelConfig: ModelConfig, options?: LlmCompleteOptions): Promise<LLMResponse>;
 /**
  * Call pi/ai completeSimple for a single prompt (no conversation history).
  * Used for llm_query() sub-calls from the REPL.
