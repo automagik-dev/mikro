@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { MikroConfig, ToolDef } from "./config.js";
 import type { LoadedContext, ContextItem } from "./context.js";
 import { buildCachedSystemPrompt, computeContentHash, buildSessionId, estimateTokens } from "./cache.js";
+import { appendStopProtocol, isStructuredOutputMode } from "./stop-protocol.js";
 import { REPL } from "./repl.js";
 import { PgStorage } from "./storage.js";
 import { ObservabilityRecorder } from "./observe.js";
@@ -108,18 +109,14 @@ const DEFAULT_OPTIONS: RLMOptions = {
   cache: false,
 };
 
-/**
- * Check if structured output mode is active.
- * Structured output is when output.schema is set and provider is Google (Gemini).
- */
-function isStructuredOutputMode(config: MikroConfig): boolean {
-  return config.output.schema !== null && isGoogleProvider(config.model.provider);
-}
+// isStructuredOutputMode moved to `src/stop-protocol.ts` — the append logic
+// needs the same predicate (structured mode never parses FINAL, so the
+// protocol must not be taught there).
 
 /**
  * Build the system prompt from config, tools, criteria, and context metadata.
  */
-function buildSystemPrompt(
+export function buildSystemPrompt(
   config: MikroConfig,
   _context: LoadedContext | null,
   storageRecordCount?: number
@@ -134,6 +131,11 @@ function buildSystemPrompt(
   } else if (customToolsSection) {
     system += "\n\n" + customToolsSection;
   }
+
+  // Teach the termination protocol unless the pack already does (or opted out).
+  // Must precede the criteria block: the criteria text says "when providing
+  // your FINAL answer", which only means something once FINAL is defined.
+  system = appendStopProtocol(system, config);
 
   // Append CRITERIA.md content if present
   if (config.criteria) {

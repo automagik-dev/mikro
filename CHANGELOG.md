@@ -24,6 +24,34 @@ release is the git commit on `main`. See `docs/release-contract.md`.
 
 ### Added
 
+- **Custom system prompts now carry the termination protocol.** A pack's own
+  `SYSTEM.md` *replaces* the scaffolded template rather than extending it, and
+  the ```` ```repl ```` fence contract plus the `FINAL()` / `FINAL_VAR()`
+  contract lived only in `src/templates/default/SYSTEM.md`. An agent with a
+  hand-written prompt was therefore never told how to stop: it answered in
+  prose, `detectFinal` never fired, and every run burned to `max_iterations`.
+  Both prompt builders — `buildSystemPrompt` (REPL path) and
+  `buildCachedSystemPrompt` (`--cache` path) — now append a shared runtime
+  section (`src/stop-protocol.ts`) just before the criteria block.
+  - Skipped when the prompt already teaches the protocol: the section is
+    appended only when `config.system` does not already contain `FINAL(`, so
+    the shared termination section is not appended to either shipped template
+    (`buildSystemPrompt` still substitutes `{custom_tools_section}` as before).
+  - Skipped in structured output mode (`output.schema` with a Google
+    provider): the run loop finalizes the schema-constrained JSON response
+    directly and never parses `FINAL()`, so teaching the protocol there would
+    demand two mutually exclusive output shapes.
+  - Opt out with `prompt.append-stop-protocol: false` in `mikro.yaml`, or per
+    agent with the same key in `agent.yaml` (the agent's declaration wins).
+    Either restores the previous output byte-for-byte.
+  - The section is a minimal termination contract, not a REPL tour: it
+    deliberately omits `SHOW_VARS()`, which the template mentions but which is
+    a debugging convenience rather than part of stopping.
+  - **Baseline shift:** a zero-config run (no `SYSTEM.md`) previously went out
+    with an *empty* system prompt and now gets the bare protocol section.
+    Benchmark numbers taken against the old zero-config baseline are not
+    directly comparable to new ones.
+
 - **`rlmx mcp` — stdio MCP server.** The native way to drive rlmx from Claude
   Code, Codex, or Hermes: `claude mcp add rlmx -- rlmx mcp`. Exposes an
   `rlmx_query` tool plus **one tool per `agent.yaml` microagent** discovered

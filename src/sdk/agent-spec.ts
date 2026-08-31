@@ -27,6 +27,23 @@ export interface AgentScope {
 	readonly writes?: readonly string[];
 }
 
+/**
+ * Per-agent system-prompt assembly overrides — the `agent.yaml` equivalent of
+ * mikro.yaml's `prompt:` block. `undefined` means "not declared", so the
+ * ambient config decides.
+ */
+export interface AgentPrompt {
+	/**
+	 * Opt out of the appended REPL/FINAL termination protocol
+	 * (`src/stop-protocol.ts`). Consumers apply it by writing
+	 * `config.prompt.appendStopProtocol` (see `applyAgent` in
+	 * `src/mcp/server.ts`), which is the same field mikro.yaml's
+	 * `prompt.append-stop-protocol` writes — an agent's declaration simply
+	 * outranks the ambient one.
+	 */
+	readonly appendStopProtocol?: boolean;
+}
+
 export interface AgentSpec {
 	/** Agent directory on disk — parent of agent.yaml. All tool-file
 	 *  resolutions are relative to this path. */
@@ -61,6 +78,8 @@ export interface AgentSpec {
 	readonly thinking?: ThinkingLevel;
 	readonly scope?: AgentScope;
 	readonly budget?: AgentBudget;
+	/** System-prompt assembly overrides. `undefined` means "not declared". */
+	readonly prompt?: AgentPrompt;
 	/**
 	 * Internal, undocumented: which runtime backend executes this agent's
 	 * turns (wish mikro-v2-prime-backend). Absent means `mikro` — the legacy
@@ -129,6 +148,29 @@ function parseBudget(raw: unknown): AgentBudget | undefined {
 		return undefined;
 	}
 	return out;
+}
+
+/**
+ * Parse the `prompt:` block. Kebab-case is the documented spelling (it matches
+ * mikro.yaml's `prompt.append-stop-protocol`); the snake_case and camelCase
+ * spellings are accepted the way `budget:` accepts both of its own.
+ *
+ * A non-boolean value throws rather than being ignored, for the same reason
+ * `thinking:` and `backend:` throw: silently keeping the default here would
+ * look exactly like a working opt-out.
+ */
+function parsePrompt(raw: unknown): AgentPrompt | undefined {
+	if (!raw || typeof raw !== "object") return undefined;
+	const p = raw as Record<string, unknown>;
+	const value =
+		p["append-stop-protocol"] ?? p.append_stop_protocol ?? p.appendStopProtocol;
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "boolean") {
+		throw new Error(
+			`agent.yaml: prompt.append-stop-protocol must be true or false, got ${JSON.stringify(value)}`,
+		);
+	}
+	return { appendStopProtocol: value };
 }
 
 function parseScope(raw: unknown): AgentScope | undefined {
@@ -217,6 +259,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		"scope",
 		"budget",
 		"backend",
+		"prompt",
 	]);
 	const extras: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(r)) {
@@ -234,6 +277,7 @@ export function parseAgentSpec(yamlText: string, dir: string): AgentSpec {
 		thinking: thinkingRaw as ThinkingLevel | undefined,
 		scope: parseScope(r.scope),
 		budget: parseBudget(r.budget),
+		prompt: parsePrompt(r.prompt),
 		backend: backendRaw as AgentSpec["backend"] | undefined,
 		extras,
 	};
