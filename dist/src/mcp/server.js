@@ -425,6 +425,20 @@ export function applyAgent(config, agent) {
     if (agent.spec.thinking) {
         next.gemini = { ...config.gemini, thinkingLevel: agent.spec.thinking };
     }
+    // A microagent is contracted by its OWN `VALIDATE.md` or by nothing at all.
+    // Unconditional, and that is the point: `if (agent.validate)` could only
+    // ever *raise* a contract, never clear one, so an uncontracted agent invoked
+    // from inside a repo that ships `.mikro/VALIDATE.md` would be judged — and,
+    // now that `rlmLoop` enforces the schema, flagged — against a contract its
+    // author never wrote. Ambient inheritance is wrong for the same reason the
+    // model pin is: an agent is a portable pack, not a resident of the caller's
+    // repo. CLI runs are unaffected; they read the project file directly.
+    //
+    // No clone needed, unlike `budget`/`gemini` above: this assigns a whole
+    // reference on the shallow copy and the object behind it is readonly all the
+    // way down (`ValidateConfig`, `src/config.ts`), so nothing here is ever
+    // written *through* to the ambient config.
+    next.validate = agent.validate ?? null;
     // `prompt.append-stop-protocol` in agent.yaml outranks the ambient
     // mikro.yaml, same precedence as `thinking:`. Cloned for the same aliasing
     // reason — `next` is shallow, so mutating `next.prompt` in place would leak
@@ -484,11 +498,15 @@ function formatFooter(label, config, result, elapsedMs, sessionId) {
     const model = `${config.model.provider}/${config.model.model}`;
     const seconds = (elapsedMs / 1000).toFixed(1);
     const budget = result.budgetHit ? ` · budget hit: ${result.budgetHit}` : "";
+    // The flag rides the footer rather than `structuredContent`, which stays
+    // exactly `{answer, session_id}`. The key is spelled as it is in
+    // `--output json` so one grep finds it on either surface.
+    const validation = result.validationFailed ? " · validation_failed: true" : "";
     // The session id is echoed in prose as well as structuredContent: a host
     // that renders only the text block still shows the model how to follow up.
     return (`mikro · ${label} · ${model} · ${result.iterations} iteration` +
         `${result.iterations === 1 ? "" : "s"} · ${tokensIn} in / ${tokensOut} out ` +
-        `· ${formatCost(result.usage.totalCost)} · ${seconds}s${budget}` +
+        `· ${formatCost(result.usage.totalCost)} · ${seconds}s${budget}${validation}` +
         ` · session ${sessionId}`);
 }
 /**

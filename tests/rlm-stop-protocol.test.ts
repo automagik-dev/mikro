@@ -55,6 +55,7 @@ function makeConfig(overrides: Partial<MikroConfig> = {}): MikroConfig {
     },
     rtk: { enabled: "auto" },
     prompt: { appendStopProtocol: true },
+    validate: overrides.validate ?? null,
     providers: [],
     configSource: "yaml",
     ...overrides,

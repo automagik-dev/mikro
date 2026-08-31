@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from "./gemini.js";
 import { type CustomProviderConfig } from "./custom-providers.js";
+import { type ValidateSchema } from "./sdk/validate.js";
 /** Parsed tool: name → Python code */
 export interface ToolDef {
     name: string;
@@ -134,6 +135,29 @@ export interface MikroConfig {
     providers: CustomProviderConfig[];
     /** Config source: "yaml" | "defaults" */
     configSource: "yaml" | "defaults";
+    /**
+     * The pack's `VALIDATE.md` contract for `emit_done` payloads, or null when
+     * the pack ships none. See `ValidateConfig` for why "ships none" and "ships
+     * a broken one" are deliberately the same value.
+     */
+    validate: ValidateConfig | null;
+}
+/**
+ * A pack's `VALIDATE.md`, loaded by convention rather than declared: the file
+ * sits next to `mikro.yaml` (project) or next to `agent.yaml` (microagent) and
+ * needs no key to switch it on.
+ *
+ * Only ever constructed when the markdown yielded a schema we could actually
+ * parse, so `schema` and `rawBlock` are both non-null here. A missing file and
+ * a malformed one collapse to the same `null` on `MikroConfig` on purpose: a
+ * contract we could not read must not be enforced as if it were one, and it
+ * must not stop the run from loading either. `rawBlock` rides along because
+ * the retry hint quotes the schema back at the model verbatim
+ * (`buildRetryHint`, src/sdk/validate.ts).
+ */
+export interface ValidateConfig {
+    readonly schema: ValidateSchema;
+    readonly rawBlock: string;
 }
 export declare const DEFAULT_STORAGE_CONFIG: StorageConfig;
 export declare const DEFAULT_RTK_CONFIG: RtkConfig;
@@ -168,6 +192,20 @@ export declare function applyModelRef(model: ModelConfig, ref: string): ModelCon
  */
 export declare function parseToolsMd(content: string): ToolDef[];
 /**
+ * Load a `VALIDATE.md` sitting at `path`, by convention.
+ *
+ * Three inputs, two answers. No file → null. A file whose fenced block is
+ * missing or is not valid JSON → also null, and never a throw: `parseValidateMd`
+ * reports both as `schema: null`, and a pack that ships a broken schema has to
+ * degrade to "unvalidated" rather than fail to load at all — the alternative is
+ * a typo in a markdown file taking the whole agent off the air. Only a block we
+ * parsed becomes a `ValidateConfig`.
+ *
+ * Shared by both load paths (project `.mikro/` and a microagent's own
+ * directory) so "what counts as a usable schema" has exactly one definition.
+ */
+export declare function loadValidateMd(path: string): Promise<ValidateConfig | null>;
+/**
  * Providers declared globally in ~/.mikro/settings.json under `"providers"`.
  * Read on every load (the file is small) so a `mikro config` edit takes effect
  * on the next run. A malformed block is an error, not a silent skip — the
@@ -180,7 +218,12 @@ export declare function loadGlobalProviders(): Promise<CustomProviderConfig[]>;
  *   2. .mikro/SYSTEM.md (auto-loaded when present)
  *   3. .mikro/CRITERIA.md (auto-loaded when present)
  *   4. .mikro/TOOLS.md (auto-loaded and parsed when present)
- *   5. Defaults if no .mikro/mikro.yaml
+ *   5. .mikro/VALIDATE.md (auto-loaded and parsed when present)
+ *   6. Defaults if no .mikro/mikro.yaml
+ *
+ * The auto-loaded `.md` files belong to the yaml branch only. The defaults
+ * branch reads no files at all today, and VALIDATE.md does not change that:
+ * a directory with no mikro.yaml is not a pack.
  *
  * Config-declared providers come from ~/.mikro/settings.json (`"providers"`)
  * overlaid by mikro.yaml (`providers:`), in both the yaml and the defaults

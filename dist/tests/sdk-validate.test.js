@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { MAX_VALIDATE_ATTEMPTS, buildRetryHint, parseValidateMd, shouldRetry, validateAgainstSchema, } from "../src/sdk/index.js";
+// Not re-exported from the SDK barrel: the FINAL surface belongs to the core
+// loop, not to the SDK's public API. `buildRetryHint` itself is re-exported
+// there and simply gained an optional second parameter.
+import { RETRY_HINT_FINAL } from "../src/sdk/validate.js";
 describe("SDK validate — schema check (Wish B Group 2)", () => {
     it("validateAgainstSchema passes a matching object", () => {
         const schema = {
@@ -125,6 +129,49 @@ describe("shouldRetry + buildRetryHint — WISH.md G2 criterion 3", () => {
     });
     it("MAX_VALIDATE_ATTEMPTS is 2 per spec", () => {
         assert.equal(MAX_VALIDATE_ATTEMPTS, 2);
+    });
+});
+/**
+ * The FINAL text protocol (`rlmLoop`) reuses the same hint builder as the
+ * SDK's `emit_done` tool. Only the opening line and the re-emit instruction
+ * are surface-specific; everything else — the error list, the quoted schema —
+ * is shared, and the default output stays byte-identical (pinned above).
+ */
+describe("buildRetryHint — FINAL surface variant", () => {
+    const failure = {
+        ok: false,
+        errors: ['verdict: value not in enum (pass, fail)'],
+        schemaSource: '{ "type": "object", "required": ["verdict"] }',
+    };
+    it("omitting the surface leaves the emit_done output byte-identical", () => {
+        assert.equal(buildRetryHint(failure), buildRetryHint(failure, undefined));
+        assert.ok(buildRetryHint(failure).includes("`emit_done` payload"));
+        assert.ok(buildRetryHint(failure).endsWith("Emit a corrected payload."));
+    });
+    it("names FINAL, never emit_done", () => {
+        const hint = buildRetryHint(failure, RETRY_HINT_FINAL);
+        assert.match(hint, /^Your previous FINAL answer did not match VALIDATE\.md:/);
+        assert.ok(!hint.includes("emit_done"));
+    });
+    it("closes with the compact single-line FINAL re-emit instruction", () => {
+        const hint = buildRetryHint(failure, RETRY_HINT_FINAL);
+        assert.ok(hint.includes("FINAL(<compact single-line JSON>)"));
+        assert.ok(hint.includes("json.dumps"));
+        assert.ok(hint.includes("FINAL_VAR(name)"));
+    });
+    it("carries the shape errors and the schema, and nothing else", () => {
+        const hint = buildRetryHint(failure, RETRY_HINT_FINAL);
+        for (const e of failure.errors)
+            assert.ok(hint.includes(e));
+        assert.ok(hint.includes(failure.schemaSource));
+        // The hint is shape-only by contract: no fixture, example answer, or
+        // guidance about what the payload should *say*.
+        for (const forbidden of ["example", "for instance", "fixture", "should say"]) {
+            assert.ok(!hint.toLowerCase().includes(forbidden), `hint drifted into content guidance: ${forbidden}`);
+        }
+    });
+    it("still returns empty for a pass, whatever the surface", () => {
+        assert.equal(buildRetryHint({ ok: true, errors: [] }, RETRY_HINT_FINAL), "");
     });
 });
 //# sourceMappingURL=sdk-validate.test.js.map

@@ -23,6 +23,7 @@
  * One name is reserved: a directory whose name ends `.proposed` is a draft
  * awaiting human approval and is skipped everywhere — see `PROPOSED_SUFFIX`.
  */
+import { type ValidateConfig } from "../config.js";
 import { type AgentSpec } from "../sdk/agent-spec.js";
 /** A discovered microagent, ready to be exposed as one MCP tool. */
 export interface Microagent {
@@ -44,6 +45,16 @@ export interface Microagent {
      * message instead of spinning up a run that would fail identically.
      */
     readonly modelProblem?: string;
+    /**
+     * The agent's own `VALIDATE.md` contract, when it ships one.
+     *
+     * Loaded by *convention* — `<agentdir>/VALIDATE.md`, no `agent.yaml` key —
+     * for the same reason `SYSTEM.md` is the conventional name: a pack is a
+     * directory of well-known files, and a key that could only ever hold one
+     * value is a key worth not having. Absent or unparseable is the same
+     * `undefined`; see `loadValidateMd`.
+     */
+    readonly validate?: ValidateConfig;
 }
 /**
  * Reserved directory suffix for propose-only drafts.

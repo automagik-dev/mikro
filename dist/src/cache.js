@@ -7,7 +7,8 @@
  * for repeated queries over the same context.
  */
 import { createHash } from "node:crypto";
-import { appendStopProtocol } from "./stop-protocol.js";
+import { appendStopProtocol, isStructuredOutputMode } from "./stop-protocol.js";
+import { buildOutputSchemaSection } from "./sdk/validate.js";
 // Provider context window limits (approximate token counts)
 export const PROVIDER_LIMITS = {
     anthropic: 200000,
@@ -107,6 +108,15 @@ export function buildCachedSystemPrompt(config, context) {
         system +=
             "\n\n## Output Criteria\n\nWhen providing your FINAL answer, follow these criteria:\n" +
                 config.criteria;
+    }
+    // Same disclosure, same position as `buildSystemPrompt` (`src/rlm.ts`):
+    // after the stop-protocol and criteria appends, so its literal `FINAL(`
+    // examples are invisible to the stop protocol's `config.system` sentinel.
+    // The `## Context Files` block below still comes last. Skipped in
+    // structured-output mode, same as the stop protocol — that path never
+    // parses FINAL().
+    if (config.validate && !isStructuredOutputMode(config)) {
+        system += "\n\n" + buildOutputSchemaSection(config.validate.rawBlock);
     }
     if (!context) {
         return system;
