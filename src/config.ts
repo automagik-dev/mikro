@@ -101,6 +101,20 @@ export interface RtkConfig {
   enabled: "auto" | "always" | "never";
 }
 
+/** System-prompt assembly config */
+export interface PromptConfig {
+  /**
+   * Append mikro's REPL/FINAL termination protocol to the system prompt
+   * (`src/stop-protocol.ts`). Default true.
+   *
+   * The append is already skipped when the pack's own `SYSTEM.md` teaches the
+   * protocol, so this switch is for the rarer case: a prompt that terminates
+   * some other way, or a benchmark that needs the pre-protocol prompt
+   * byte-for-byte.
+   */
+  appendStopProtocol: boolean;
+}
+
 /** Tool level — controls which functions are available in the REPL */
 export type ToolsLevel = "core" | "standard" | "full";
 
@@ -128,6 +142,15 @@ export interface MikroConfig {
   storage: StorageConfig;
   /** RTK (Rust Token Killer) integration */
   rtk: RtkConfig;
+  /**
+   * System-prompt assembly settings.
+   *
+   * Optional purely for source compatibility — `MikroConfig` is a published
+   * SDK type, and every config this repo builds (`loadConfig`, including the
+   * defaults-only path) sets it. Absent therefore means "defaults", which for
+   * `appendStopProtocol` is `true`.
+   */
+  prompt?: PromptConfig;
   /**
    * Providers declared in config (settings.json merged with mikro.yaml; the
    * yaml wins per id). Also mirrored on `model.providers`.
@@ -214,6 +237,10 @@ export const DEFAULT_RTK_CONFIG: RtkConfig = {
   enabled: "auto",
 };
 
+export const DEFAULT_PROMPT_CONFIG: PromptConfig = {
+  appendStopProtocol: true,
+};
+
 // ─── YAML Schema ─────────────────────────────────────────
 
 /** Shape of mikro.yaml on disk (config-only — no system/criteria) */
@@ -270,6 +297,9 @@ interface RawYamlConfig {
   };
   rtk?: {
     enabled?: string;
+  };
+  prompt?: {
+    "append-stop-protocol"?: boolean;
   };
   providers?: unknown;
 }
@@ -600,6 +630,18 @@ function parseYamlConfig(
     enabled: rawRtkEnabled as RtkConfig["enabled"],
   };
 
+  // Parse prompt config
+  const rawAppendStopProtocol =
+    cfg.prompt?.["append-stop-protocol"] ?? DEFAULT_PROMPT_CONFIG.appendStopProtocol;
+  if (typeof rawAppendStopProtocol !== "boolean") {
+    throw new Error(
+      `Invalid prompt.append-stop-protocol in mikro.yaml: must be true or false, got ${JSON.stringify(rawAppendStopProtocol)}.`
+    );
+  }
+  const prompt: PromptConfig = {
+    appendStopProtocol: rawAppendStopProtocol,
+  };
+
   return {
     model,
     configDir: dir,
@@ -611,6 +653,7 @@ function parseYamlConfig(
     output,
     storage,
     rtk,
+    prompt,
     providers,
     configSource: "yaml",
   };
@@ -636,6 +679,7 @@ function defaultConfig(dir: string, providers: CustomProviderConfig[] = []): Mik
     output: { ...DEFAULT_OUTPUT_CONFIG },
     storage: { ...DEFAULT_STORAGE_CONFIG },
     rtk: { ...DEFAULT_RTK_CONFIG },
+    prompt: { ...DEFAULT_PROMPT_CONFIG },
     providers,
     configSource: "defaults",
     validate: null,

@@ -88,6 +88,15 @@ budget:
 system: SYSTEM.md            # Relative to agent dir. Consumer loads
                              # the content and passes it to the
                              # driver (e.g. rlmDriver({ system })).
+
+# ─── Prompt assembly (optional) ──────────────────────────────
+prompt:
+  append-stop-protocol: false  # or append_stop_protocol / appendStopProtocol
+                               # Default: true — mikro appends its
+                               # FINAL/repl termination protocol section to
+                               # the system prompt. Set false for a
+                               # deliberately bare prompt. Rejected with a
+                               # named error if it is not a boolean.
 ```
 
 ## Field reference
@@ -106,6 +115,7 @@ system: SYSTEM.md            # Relative to agent dir. Consumer loads
 | `budget.max_cost` / `maxCost` | number | — | passthrough | Consumer threads it into their budget tracker. |
 | `budget.max_iterations` / `maxIterations` | number | — | SDK/consumer | Can be passed to `runAgent({ maxIterations })`. |
 | `budget.max_depth` / `maxDepth` | number | — | passthrough | For recursive shapes. |
+| `prompt.append-stop-protocol` / `append_stop_protocol` / `appendStopProtocol` | boolean | `true` | SDK reads, enforces boolean | Whether mikro appends its FINAL/repl termination protocol section to the system prompt. Set `false` for a deliberately bare prompt. A non-boolean is rejected with a named error. |
 
 ## Reasoning effort: `thinking`
 

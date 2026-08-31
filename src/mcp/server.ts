@@ -553,6 +553,17 @@ export function applyAgent(config: MikroConfig, agent: Microagent): MikroConfig 
     next.validate = agent.validate;
   }
 
+  // `prompt.append-stop-protocol` in agent.yaml outranks the ambient
+  // mikro.yaml, same precedence as `thinking:`. Cloned for the same aliasing
+  // reason — `next` is shallow, so mutating `next.prompt` in place would leak
+  // the opt-out into every later ambient run.
+  if (agent.spec.prompt?.appendStopProtocol !== undefined) {
+    next.prompt = {
+      ...config.prompt,
+      appendStopProtocol: agent.spec.prompt.appendStopProtocol,
+    };
+  }
+
   return next;
 }
 

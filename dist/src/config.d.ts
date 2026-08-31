@@ -80,6 +80,19 @@ export interface RtkConfig {
      */
     enabled: "auto" | "always" | "never";
 }
+/** System-prompt assembly config */
+export interface PromptConfig {
+    /**
+     * Append mikro's REPL/FINAL termination protocol to the system prompt
+     * (`src/stop-protocol.ts`). Default true.
+     *
+     * The append is already skipped when the pack's own `SYSTEM.md` teaches the
+     * protocol, so this switch is for the rarer case: a prompt that terminates
+     * some other way, or a benchmark that needs the pre-protocol prompt
+     * byte-for-byte.
+     */
+    appendStopProtocol: boolean;
+}
 /** Tool level — controls which functions are available in the REPL */
 export type ToolsLevel = "core" | "standard" | "full";
 /** Full mikro config */
@@ -106,6 +119,15 @@ export interface MikroConfig {
     storage: StorageConfig;
     /** RTK (Rust Token Killer) integration */
     rtk: RtkConfig;
+    /**
+     * System-prompt assembly settings.
+     *
+     * Optional purely for source compatibility — `MikroConfig` is a published
+     * SDK type, and every config this repo builds (`loadConfig`, including the
+     * defaults-only path) sets it. Absent therefore means "defaults", which for
+     * `appendStopProtocol` is `true`.
+     */
+    prompt?: PromptConfig;
     /**
      * Providers declared in config (settings.json merged with mikro.yaml; the
      * yaml wins per id). Also mirrored on `model.providers`.
@@ -139,6 +161,7 @@ export interface ValidateConfig {
 }
 export declare const DEFAULT_STORAGE_CONFIG: StorageConfig;
 export declare const DEFAULT_RTK_CONFIG: RtkConfig;
+export declare const DEFAULT_PROMPT_CONFIG: PromptConfig;
 /**
  * Split a `"<provider>/<model>"` reference into its parts.
  *

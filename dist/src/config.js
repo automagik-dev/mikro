@@ -48,6 +48,9 @@ export const DEFAULT_STORAGE_CONFIG = {
 export const DEFAULT_RTK_CONFIG = {
     enabled: "auto",
 };
+export const DEFAULT_PROMPT_CONFIG = {
+    appendStopProtocol: true,
+};
 // ─── File Helpers ────────────────────────────────────────
 /**
  * Try to read a file, returning null if it doesn't exist.
@@ -303,6 +306,14 @@ function parseYamlConfig(content, dir, globalProviders = []) {
     const rtk = {
         enabled: rawRtkEnabled,
     };
+    // Parse prompt config
+    const rawAppendStopProtocol = cfg.prompt?.["append-stop-protocol"] ?? DEFAULT_PROMPT_CONFIG.appendStopProtocol;
+    if (typeof rawAppendStopProtocol !== "boolean") {
+        throw new Error(`Invalid prompt.append-stop-protocol in mikro.yaml: must be true or false, got ${JSON.stringify(rawAppendStopProtocol)}.`);
+    }
+    const prompt = {
+        appendStopProtocol: rawAppendStopProtocol,
+    };
     return {
         model,
         configDir: dir,
@@ -314,6 +325,7 @@ function parseYamlConfig(content, dir, globalProviders = []) {
         output,
         storage,
         rtk,
+        prompt,
         providers,
         configSource: "yaml",
     };
@@ -339,6 +351,7 @@ function defaultConfig(dir, providers = []) {
         output: { ...DEFAULT_OUTPUT_CONFIG },
         storage: { ...DEFAULT_STORAGE_CONFIG },
         rtk: { ...DEFAULT_RTK_CONFIG },
+        prompt: { ...DEFAULT_PROMPT_CONFIG },
         providers,
         configSource: "defaults",
         validate: null,

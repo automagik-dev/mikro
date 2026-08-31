@@ -184,6 +184,40 @@ tools-level: standard
         assert.equal(cfg.configSource, "defaults");
         await rm(dir, { recursive: true });
     });
+    it("defaults prompt.append-stop-protocol to true when mikro.yaml omits it", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, "model:\n  provider: anthropic\n");
+        const cfg = await loadConfig(dir);
+        assert.ok(cfg.prompt);
+        assert.equal(cfg.prompt.appendStopProtocol, true);
+        await rm(dir, { recursive: true });
+    });
+    it("accepts prompt.append-stop-protocol: false", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, "prompt:\n  append-stop-protocol: false\n");
+        const cfg = await loadConfig(dir);
+        assert.ok(cfg.prompt);
+        assert.equal(cfg.prompt.appendStopProtocol, false);
+        await rm(dir, { recursive: true });
+    });
+    it("rejects a non-boolean prompt.append-stop-protocol", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, "prompt:\n  append-stop-protocol: banana\n");
+        await assert.rejects(() => loadConfig(dir), (err) => {
+            assert.ok(err instanceof Error);
+            assert.match(err.message, /Invalid prompt\.append-stop-protocol in mikro\.yaml: must be true or false, got "banana"\./);
+            return true;
+        });
+        await rm(dir, { recursive: true });
+    });
+    it("default config (no yaml) sets prompt.appendStopProtocol to true", async () => {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        const cfg = await loadConfig(dir);
+        assert.ok(cfg.prompt);
+        assert.equal(cfg.prompt.appendStopProtocol, true);
+        assert.equal(cfg.configSource, "defaults");
+        await rm(dir, { recursive: true });
+    });
 });
 describe("parseToolsMd", () => {
     it("extracts tools from markdown format", () => {

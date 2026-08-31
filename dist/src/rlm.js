@@ -10,6 +10,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { buildCachedSystemPrompt, computeContentHash, buildSessionId, estimateTokens } from "./cache.js";
+import { appendStopProtocol } from "./stop-protocol.js";
 import { REPL } from "./repl.js";
 import { PgStorage } from "./storage.js";
 import { ObservabilityRecorder } from "./observe.js";
@@ -59,7 +60,7 @@ function isStructuredOutputMode(config) {
 /**
  * Build the system prompt from config, tools, criteria, and context metadata.
  */
-function buildSystemPrompt(config, _context, storageRecordCount) {
+export function buildSystemPrompt(config, _context, storageRecordCount) {
     // Use SYSTEM.md content or paper default (from scaffold)
     let system = config.system ?? "";
     // Inject custom tools section from TOOLS.md
@@ -70,6 +71,10 @@ function buildSystemPrompt(config, _context, storageRecordCount) {
     else if (customToolsSection) {
         system += "\n\n" + customToolsSection;
     }
+    // Teach the termination protocol unless the pack already does (or opted out).
+    // Must precede the criteria block: the criteria text says "when providing
+    // your FINAL answer", which only means something once FINAL is defined.
+    system = appendStopProtocol(system, config);
     // Append CRITERIA.md content if present
     if (config.criteria) {
         system +=

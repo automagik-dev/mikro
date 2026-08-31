@@ -9,6 +9,7 @@ import {
 } from "../src/cache.js";
 import type { LoadedContext, ContextItem } from "../src/context.js";
 import type { MikroConfig } from "../src/config.js";
+import { STOP_PROTOCOL_SECTION } from "../src/stop-protocol.js";
 
 // ─── Test helpers ────────────────────────────────────────
 
@@ -181,10 +182,14 @@ describe("buildSessionId", () => {
 // ─── buildCachedSystemPrompt ─────────────────────────────
 
 describe("buildCachedSystemPrompt", () => {
-  it("returns system prompt alone when no context", () => {
+  it("returns the system prompt plus the stop protocol when no context", () => {
+    // The prompt no longer comes back bare: a custom SYSTEM.md replaces the
+    // template, so the FINAL contract is appended by the runtime instead
+    // (`src/stop-protocol.ts`; see tests/rlm-stop-protocol.test.ts). What this
+    // test still pins is that no Context Files section appears.
     const config = makeConfig({ system: "You are a test bot." });
     const result = buildCachedSystemPrompt(config, null);
-    assert.equal(result, "You are a test bot.");
+    assert.equal(result, `You are a test bot.\n\n${STOP_PROTOCOL_SECTION}`);
   });
 
   it("includes criteria in output", () => {

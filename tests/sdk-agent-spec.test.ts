@@ -165,6 +165,73 @@ describe("parseAgentSpec — thinking:", () => {
 	});
 });
 
+/**
+ * `prompt.append-stop-protocol:` — per-agent opt-out from the FINAL/repl
+ * termination protocol mikro appends to a custom system prompt.
+ *
+ * Kebab-case is the documented spelling (it matches mikro.yaml); snake_case and
+ * camelCase are accepted the way `budget:` accepts both of its own. A
+ * non-boolean throws rather than defaulting, because silently keeping the
+ * default here would look exactly like a working opt-out.
+ */
+describe("parseAgentSpec — prompt.append-stop-protocol:", () => {
+	const DIR = "/tmp/fake-agent";
+
+	it("accepts the kebab, snake and camel spellings", () => {
+		for (const key of [
+			"append-stop-protocol",
+			"append_stop_protocol",
+			"appendStopProtocol",
+		]) {
+			const spec = parseAgentSpec(`prompt:\n  ${key}: false\n`, DIR);
+			assert.equal(
+				spec.prompt?.appendStopProtocol,
+				false,
+				`expected ${key} to parse`,
+			);
+		}
+	});
+
+	it("parses an explicit true", () => {
+		const spec = parseAgentSpec("prompt:\n  append-stop-protocol: true\n", DIR);
+		assert.equal(spec.prompt?.appendStopProtocol, true);
+	});
+
+	it("leaves prompt undefined when the block is absent", () => {
+		const spec = parseAgentSpec("shape: loop\n", DIR);
+		assert.equal(spec.prompt, undefined);
+	});
+
+	it("leaves prompt undefined for an empty prompt block", () => {
+		const spec = parseAgentSpec("prompt: {}\n", DIR);
+		assert.equal(spec.prompt, undefined);
+	});
+
+	it("rejects a non-boolean value and shows what it got", () => {
+		assert.throws(
+			() => parseAgentSpec("prompt:\n  append-stop-protocol: yes please\n", DIR),
+			(err: unknown) => {
+				assert.ok(err instanceof Error);
+				assert.match(
+					err.message,
+					/agent\.yaml: prompt\.append-stop-protocol must be true or false/,
+				);
+				assert.match(err.message, /got "yes please"/);
+				return true;
+			},
+		);
+	});
+
+	it("does not leave prompt in the extras bag", () => {
+		// Regression guard, same as `thinking:`: a key that parses but lands on
+		// extras is read by nobody — the agent would declare the opt-out and
+		// silently not get it.
+		const spec = parseAgentSpec("prompt:\n  append-stop-protocol: false\n", DIR);
+		assert.equal(spec.extras.prompt, undefined);
+		assert.deepEqual(Object.keys(spec.extras), []);
+	});
+});
+
 describe("loadAgentSpec — filesystem wrapper (G3a)", () => {
 	let dir = "";
 	before(async () => {

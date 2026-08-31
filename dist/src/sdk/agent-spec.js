@@ -60,6 +60,27 @@ function parseBudget(raw) {
     }
     return out;
 }
+/**
+ * Parse the `prompt:` block. Kebab-case is the documented spelling (it matches
+ * mikro.yaml's `prompt.append-stop-protocol`); the snake_case and camelCase
+ * spellings are accepted the way `budget:` accepts both of its own.
+ *
+ * A non-boolean value throws rather than being ignored, for the same reason
+ * `thinking:` and `backend:` throw: silently keeping the default here would
+ * look exactly like a working opt-out.
+ */
+function parsePrompt(raw) {
+    if (!raw || typeof raw !== "object")
+        return undefined;
+    const p = raw;
+    const value = p["append-stop-protocol"] ?? p.append_stop_protocol ?? p.appendStopProtocol;
+    if (value === undefined || value === null)
+        return undefined;
+    if (typeof value !== "boolean") {
+        throw new Error(`agent.yaml: prompt.append-stop-protocol must be true or false, got ${JSON.stringify(value)}`);
+    }
+    return { appendStopProtocol: value };
+}
 function parseScope(raw) {
     if (!raw || typeof raw !== "object")
         return undefined;
@@ -131,6 +152,7 @@ export function parseAgentSpec(yamlText, dir) {
         "scope",
         "budget",
         "backend",
+        "prompt",
     ]);
     const extras = {};
     for (const [k, v] of Object.entries(r)) {
@@ -148,6 +170,7 @@ export function parseAgentSpec(yamlText, dir) {
         thinking: thinkingRaw,
         scope: parseScope(r.scope),
         budget: parseBudget(r.budget),
+        prompt: parsePrompt(r.prompt),
         backend: backendRaw,
         extras,
     };
