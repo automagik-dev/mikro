@@ -69,6 +69,72 @@ tools-level: standard
     await rm(dir, { recursive: true });
   });
 
+  /**
+   * `VALIDATE.md` is loaded by convention, like SYSTEM/CRITERIA/TOOLS — no
+   * mikro.yaml key turns it on. The three cases below are the whole contract:
+   * a readable schema arrives parsed, and *both* failure modes (no file, bad
+   * file) collapse to `null` without throwing. The malformed case is the one
+   * that matters: a typo in a markdown file must not take the pack off the
+   * air, and it must not be enforced as a half-read contract either.
+   */
+  describe("VALIDATE.md auto-load", () => {
+    it("parses the schema when .mikro/VALIDATE.md is present", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "model:\n  provider: google\n");
+      await writeFile(
+        join(dir, ".mikro", "VALIDATE.md"),
+        '# Done payload\n\n```json\n{\n  "type": "object",\n  "required": ["summary"],\n  "properties": { "summary": { "type": "string" } }\n}\n```\n'
+      );
+      const cfg = await loadConfig(dir);
+      assert.ok(cfg.validate, "VALIDATE.md should have been loaded");
+      assert.equal(cfg.validate.schema.type, "object");
+      assert.deepEqual(cfg.validate.schema.required, ["summary"]);
+      // The raw block rides along so the retry hint can quote it verbatim.
+      assert.match(cfg.validate.rawBlock, /"summary"/);
+      await rm(dir, { recursive: true });
+    });
+
+    it("is null when the pack ships no VALIDATE.md", async () => {
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await makeConfig(dir, "model:\n  provider: google\n");
+      const cfg = await loadConfig(dir);
+      assert.equal(cfg.validate, null);
+      await rm(dir, { recursive: true });
+    });
+
+    it("is null — not a throw — when the file is malformed", async () => {
+      for (const body of [
+        "# Broken\n\n```json\n{ not json at all,\n```\n", // fenced but unparseable
+        "# Empty\n\nNo fenced block here at all.\n", // no block
+        "```json\n\n```\n", // empty block
+      ]) {
+        dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+        await makeConfig(dir, "model:\n  provider: google\n");
+        await writeFile(join(dir, ".mikro", "VALIDATE.md"), body);
+        const cfg = await loadConfig(dir);
+        assert.equal(cfg.validate, null, `expected null for ${JSON.stringify(body)}`);
+        // The rest of the config must still have loaded normally.
+        assert.equal(cfg.configSource, "yaml");
+        await rm(dir, { recursive: true });
+      }
+    });
+
+    it("leaves the defaults branch (no mikro.yaml) unchanged", async () => {
+      // The defaults branch reads no files. A VALIDATE.md next to a
+      // non-existent mikro.yaml is not a pack, and must not become one.
+      dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
+      await mkdir(join(dir, ".mikro"), { recursive: true });
+      await writeFile(
+        join(dir, ".mikro", "VALIDATE.md"),
+        '```json\n{ "type": "object" }\n```\n'
+      );
+      const cfg = await loadConfig(dir);
+      assert.equal(cfg.configSource, "defaults");
+      assert.equal(cfg.validate, null);
+      await rm(dir, { recursive: true });
+    });
+  });
+
   it("loads minimal .mikro/mikro.yaml with defaults", async () => {
     dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
     await makeConfig(dir, "model:\n  provider: anthropic\n");

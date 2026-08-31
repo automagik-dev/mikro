@@ -544,6 +544,15 @@ export function applyAgent(config: MikroConfig, agent: Microagent): MikroConfig 
     next.gemini = { ...config.gemini, thinkingLevel: agent.spec.thinking };
   }
 
+  // An agent that ships its own `VALIDATE.md` is contracted by that file, not
+  // by whatever the root project happens to validate. No clone needed, unlike
+  // `budget`/`gemini` above: this replaces the whole reference with an object
+  // built fresh per load and never written through, so the ambient config's
+  // own `validate` is untouched.
+  if (agent.validate) {
+    next.validate = agent.validate;
+  }
+
   return next;
 }
 

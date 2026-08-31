@@ -28,7 +28,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { parseModelRef } from "../config.js";
+import { loadValidateMd, parseModelRef, type ValidateConfig } from "../config.js";
 import { loadAgentSpec, resolveAgentPath, type AgentSpec } from "../sdk/agent-spec.js";
 
 /** A discovered microagent, ready to be exposed as one MCP tool. */
@@ -51,6 +51,16 @@ export interface Microagent {
    * message instead of spinning up a run that would fail identically.
    */
   readonly modelProblem?: string;
+  /**
+   * The agent's own `VALIDATE.md` contract, when it ships one.
+   *
+   * Loaded by *convention* — `<agentdir>/VALIDATE.md`, no `agent.yaml` key —
+   * for the same reason `SYSTEM.md` is the conventional name: a pack is a
+   * directory of well-known files, and a key that could only ever hold one
+   * value is a key worth not having. Absent or unparseable is the same
+   * `undefined`; see `loadValidateMd`.
+   */
+  readonly validate?: ValidateConfig;
 }
 
 /**
@@ -185,6 +195,9 @@ async function loadOne(dir: string, name: string): Promise<Microagent | null> {
     }
   }
 
+  // By convention, next to agent.yaml — nothing in the spec points at it.
+  const validate = await loadValidateMd(join(dir, "VALIDATE.md"));
+
   return {
     name,
     toolName: toToolName(name),
@@ -192,6 +205,7 @@ async function loadOne(dir: string, name: string): Promise<Microagent | null> {
     spec,
     system,
     summary: deriveSummary(name, spec, system),
+    ...(validate ? { validate } : {}),
   };
 }
 
