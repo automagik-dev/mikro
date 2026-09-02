@@ -1,18 +1,44 @@
-# Plans Index
+# Mikro lifecycle index
 
-## Raw
-- **rlmx-proof** (wish 2 of the stable-release program) — benchmark checkpoint/resume + model matrix + full Aider polyglot (225) across 4 arms (local `station/Brain-35B` ±rlmx, cheap cloud ±rlmx) + rlmx-scoped RTK savings → `docs/benchmarks.md`. Frontier baselines **cited** from the Aider leaderboard, never run. Brainstorm when wish 1 ships. See `brainstorms/rlmx-stable-release/DRAFT.md`.
-- **rlmx-launch** (wish 3) — README from scratch around the three proven claims, microagent recipes, visible-recursion demo, `rtk-ai/rtk` reciprocity. **Blocked on rlmx-proof's numbers** — the README cannot be written before the benchmarks exist.
+Reconciled on 2026-08-31 after planning review split the over-broad recovery umbrella into independently payable designs. Git-backed plans are durable; no execution authority is inferred from a design, an old wish, or an empty local board.
 
-## Simmering
-- [rlmx-stable-release](brainstorms/rlmx-stable-release/DRAFT.md) — **program record + roadmap** for the stable release. Decisions D1–D8 settled 2026-07-25: calendar versioning stays, `rlmx acp` experimental, positioning = three evidence-backed claims (cost · cheap/local capability unlock · context effectiveness), full Aider polyglot with 4 arms, three sequenced wishes. Stays Simmering until all three child wishes land.
+## Program
 
-## Ready
-- [rlmx-claude-plugin](brainstorms/rlmx-claude-plugin/DESIGN.md) — Claude Code plugin + workspace microagent program: offload repeatable delegation to cheap khal/station models via `rlmx mcp`; `/microagent-create` self-reflection over transcripts; khal model shootout. Supersedes the three ad-hoc global agents; reshapes rlmx-proof's bench arms (khal replaces "cheap cloud"; polyglot stays owned by rlmx-proof). **Design review SHIP 2026-07-26 (rev 5, rcp-05, digest-stamped)** after three FIX-FIRST rounds (rcp-01/02/04; 16+7+8 findings, all resolved). Rev 4-5 added the user's Agent-tool-isomorphism decision (D12): MCP surface mirrors the native Agent tool — `prompt` param, spawn-style descriptions, `session_id` resume via conversation replay (fresh REPL per call). Two wishes: A `rlmx-explore-offload` (**Poured** — see below), B `rlmx-microagent-plugin` (plugin + /microagent-create + shootout + archival, depends on A; brainstormless pour from the same design when A's gate passes). Board task t_ms24agnq8b41b3de.
-- [rlmx-release-hygiene](brainstorms/rlmx-release-hygiene/DESIGN.md) — wish 1 of 3: `js-yaml` (high) + `protobufjs` prod-tree advisories, stale release-contract correction (no `dev` branch, `drogo/*` obsolete), CHANGELOG backfill for the ACP/recursion/pi-ai-0.80/station era, ACP experimental labeling, dist-tag repoint, calendar release cut. **Unblocked — depends on no benchmark.** Design review pending.
+- [Mikro evidence-led recovery portfolio charter](brainstorms/mikro-nine-wish-triage/DESIGN.md) — **NON-EXECUTABLE; prior umbrella review FIX-FIRST; no SHIP stamp.** Coordinates seven children, waves, clean B0/P0 bootstrap, exclusive `dev` integration, and final identity/rollback rules. Never pass this charter to singular `wish`.
+- `PROGRAM.md` — superseded historical umbrella retained only in the local recovery workspace; it is not part of this reviewed candidate and grants no execution authority.
 
-## Poured
-- [rlmx-microagent-plugin](wishes/rlmx-microagent-plugin/WISH.md) — Wish B under the design's Amendment 2026-07-27 (first-pass + escalate, user decision post-gate). Claude Code plugin at `plugins/claude-code/` (MCP registration with `--dir`), offload-guidance skill (pre-registered routing eval: train tasks 3–7 + the recorded REPL-timeout planted case), propose-only `/microagent-create` (`.proposed/` skip rule built in `src/mcp/agents.ts`), amended B2 bench (station n=2, not-rank-comparable, consolidated `docs/worker-models.md`), copy-then-verify archival of all three legacy agents (host removal = documented user step). **Executed 2026-07-28, PR #120** (stacked on #119): all four groups adversarially verified PASS — plugin installed + proven, routing eval 5/5 with escalation triggering, .proposed boundary built and proven live, git-historian dogfood proposal, worker-models table + recipe tree. 526 tests, audit 0. Nine evidence-precision corrections post-verification. Merge chain #118 → #119 → #120, all awaiting user UI merge.
-- [rlmx-explore-offload](wishes/rlmx-explore-offload/WISH.md) — Wish A of rlmx-claude-plugin, **executed 2026-07-27, PR #119**. Groups 1–3 shipped and adversarially verified (khal provider, MCP Agent-tool isomorphism + live refresh + `--dir`, explore microagent + 6-task mined suite). **Parity gate: FAIL** — 16 rounds/104 invocations/$12.31 across flash→mimo→kimi-code→haiku, 0/6 tasks at rubric threshold on any tier (best 8–9/10 facts; token reduction 366–2110× real but reported-not-gated); independently re-scored, byte-identical matrix regeneration. **Round 2 complete 2026-07-27: gate FAIL again, twice-falsified with the paper-faithful arm.** User override ran the full arsenal: recursion made real (3 product bugs fixed at source — child model pinning, rlm_query model arg, loud child failure), 5-generation GEPA campaign on an authored train suite (frozen six sealed eval-only), model matrix (flash 29–31/34 beats deepseek-v4-pro/glm-5.2/qwen3.7-max at 1/9–1/19th their cost), gen-4 ensemble REJECTED (train-term leakage + holdout regression). Declared frozen shot (gen-1+flash, pre-registered, adversarially re-scored byte-identical): **0/6 tasks at the ≥90% bar; 215/215 citations resolve, 0 fabrications, 14,872 premium tokens vs native 16,023,854 = 1,077× for $0.22.** Durable result: cheap recursive explore delivers ~50% deep-parity coverage / 85–94% on shallower authored tasks at ~1000× token reduction with perfect citation integrity — a first-pass tool, not a parity replacement. Wish B blocked per design failure branch; next shape = user decision. Report: `docs/parity-explore.md`.
-- [rlmx-acp-adapter](wishes/rlmx-acp-adapter/WISH.md) — `rlmx acp` stdio ACP agent (via @agentclientprotocol/sdk) driving the instrumented `rlmLoop` in-process, translating the recursion event stream → ACP session updates; consumed by Tidewave (web) + pi native TUI; pi-acp as reference. Design SHIP + plan APPROVED 2026-07-20. **depends-on rlmx-live-tui** (emitter seam).
-- [rlmx-live-tui](wishes/rlmx-live-tui/WISH.md) — pi-ai 0.77→latest (Models runtime) + instrument the recursion path (RecurseEvent producer + rlmLoop→emitter + child-result bridge). **Amended + re-reviewed SHIP 2026-07-20: custom TUI dropped; viewing moves to rlmx-acp + pi native TUI.** `blocks` extract-200-percent + rlmx-acp-adapter.
+## Ready — reviewed SHIP
+
+Each entry below is one single-wish child at WRS 100/100 with independently verified SHIP evidence. This index records readiness only; execution still requires its own `wish` handoff and approval.
+
+- [npm-only reproducible toolchain](brainstorms/mikro-npm-only-toolchain/DESIGN.md) — one npm/package-lock authority, pre-install hard guard, no dependency upgrades.
+- [Cache contract truth](brainstorms/mikro-cache-contract-truth/DESIGN.md) — obsolete TTL/expire-time keys hard-fail and require a manual choice of `cache.retention: short` or `cache.retention: long`; no semantic auto-migration.
+- [Prime 0.8.1 reconciliation](brainstorms/mikro-prime-081-reconciliation/DESIGN.md) — evidence-first eligibility gate with truthful CAP-09 gap; Mikro remains default unless every later gate and owner decision passes.
+- [Orchestration CLI truth](brainstorms/mikro-orchestration-cli-truth/DESIGN.md) — removed `--parallel` hard failure and complete query-only JSONL with terminal failure and awaited flush.
+- [ACP correctness and opt-in direct mode](brainstorms/mikro-acp-correctness-direct-mode/DESIGN.md) — loop-default selector, serialized hierarchical leases, bounded direct completion, and transactional successful-turn storage.
+- [Repeated CLI context roots](brainstorms/mikro-repeated-cli-context-roots/DESIGN.md) — schema-visible repeatability, ordered canonical-root dedupe, singleton byte parity, deterministic collision identities for query/cache/batch.
+- [Dev and release promotion](brainstorms/mikro-dev-release-promotion/DESIGN.md) — clean B0/P0 lane, exclusive compare-and-fast-forward `dev`, exact-SHA journeys, one rolling PR, identity-bound merge/release and revert-only rollback.
+
+## Superseded wish records
+
+These local-only wish paths are historical planning inputs, not links in this reviewed candidate. They are not the executable handoff for the corrected portfolio and were not modified by this correction.
+
+- `wishes/mikro-sanitize-recovered-data/WISH.md` — retired/out of the corrected product program.
+- `wishes/mikro-reproducible-toolchain/WISH.md` — superseded by the npm-only child design above.
+- `wishes/mikro-cache-ttl-enforcement/WISH.md` — superseded by cache contract truth; arbitrary TTL remains out.
+- `wishes/mikro-prime-backend-reconciliation/WISH.md` — superseded by the deterministic Prime 0.8.1 child design above.
+- `wishes/mikro-orchestration-quality-repro/WISH.md` — broad reproduction retired; narrow CLI truth moved to its child.
+- `wishes/mikro-acp-direct-recovery/WISH.md` — superseded by the ordered ACP child design above.
+- `wishes/mikro-context-targeting/WISH.md` — superseded by the repeated CLI roots child design above.
+- `wishes/mikro-release-truth/WISH.md` — superseded by the dev/release promotion child design above.
+- `wishes/mikro-remote-ref-retirement/WISH.md` — retired/out; no remote branch deletion in this program.
+
+## Delivery admission
+
+No child is admitted by this index alone. The delivery child must first freeze fresh `origin/main` B0, replay the reviewed Prime patch/manifest into a clean worktree as P0, create remote `dev` from B0 under an exclusive integrator, and establish the canonical draft rolling PR. Every child then requires independent review, its own approved wish, exact path ownership/base, aggregate wave gates, and expected-SHA remote/CI/install read-back.
+
+## Historical sources
+
+- `wishes/_archive/INDEX.md` — local archive of delivered, settled, and superseded legacy plans; not included in this candidate.
+- `brainstorms/_archive/INDEX.md` — local archive of completed historical design records; not included in this candidate.
+- `TRIAGE.md` — local recovery and triage ledger; not included in this candidate.
