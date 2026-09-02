@@ -607,13 +607,11 @@ export async function rlmLoop(query, context, config, options = {}) {
                 iteration,
             });
             const response = await llmComplete(messages, config.model, {
+                maxTokens: opts.maxOutputTokens,
+                maxRetries: opts.maxRetries,
                 signal: abortController.signal,
                 cacheConfig,
                 thinkingLevel: config.gemini.thinkingLevel,
-                // Passed straight through: null and undefined both mean "unset", and
-                // `buildPiOptions` collapses them with one `!= null` so a pinned 0
-                // survives. Only the root loop's own calls are pinned — `llm_query()`
-                // sub-calls and recursive children deliberately are not.
                 temperature: config.temperature,
                 outputSchema: config.output.schema,
                 geminiConfig: config.gemini,
@@ -929,9 +927,6 @@ async function forceFinalAnswer(messages, config, usage, signal, cacheConfig, la
         signal,
         cacheConfig,
         thinkingLevel: config.gemini.thinkingLevel,
-        // The forced final is a root-loop call like any other, so it samples at the
-        // same pinned temperature. Diverging here would make the last turn of a
-        // pinned run the one turn that drifted.
         temperature: config.temperature,
         outputSchema: config.output.schema,
         geminiConfig: config.gemini,

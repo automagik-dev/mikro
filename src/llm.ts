@@ -249,6 +249,7 @@ export function checkModelConfig(modelConfig: ModelConfig): string | null {
 /** Per-call options accepted by `llmComplete`. */
 export interface LlmCompleteOptions {
   maxTokens?: number;
+  maxRetries?: number;
   signal?: AbortSignal;
   logger?: Logger;
   iteration?: number;
@@ -285,6 +286,7 @@ export function buildPiOptions(options?: LlmCompleteOptions): SimpleStreamOption
 
   const piOptions: SimpleStreamOptions = {
     maxTokens: options?.maxTokens ?? 16384,
+    ...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
     signal: options?.signal,
     ...cacheOpts,
   };

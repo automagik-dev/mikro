@@ -39,7 +39,7 @@
  * | `output.schema` | **honored** — the schema becomes `emit_done`'s parameter schema, so the model's structured payload is validated by prime's own tool-call layer before it reaches us, and the run's answer is that payload as JSON. |
  * | `budget.maxDepth` | **honored** — passed as `createAgentSession`'s first-class `rlmMaxDepth` option (see "Deviations" below). |
  * | `dict` context | **honored** — every context type is snapshotted to 0600 files under the run's scratch dir and named in the prompt, so there is no context shape left that cannot be mapped. |
- * | `station` provider, and every provider beyond google/deepseek | **honored** — `khal` / `wafer` / `station` are emitted into a generated `models.json` under the scratch `agentDir`; `google`, `openrouter`, and `deepseek` resolve against prime's built-in catalog under their own mikro names (no `prime-inference` remap). |
+ * | `station` provider, and every provider beyond Prime's catalog | **honored** — `khal` / `wafer` / `station` are emitted into a generated `models.json` under the scratch `agentDir`; `google`, `openrouter`, `deepseek`, and `openai-codex` resolve against Prime's built-in catalog under their own Mikro names. |
  * | gemini grounding flags | **still rejected** — `googleSearch`, `urlContext`, `codeExecution`, `computerUse`, `mapsGrounding`, `fileSearch`, `mediaResolution` are mikro-side request decoration prime cannot replicate. |
  * | `config.tools` (TOOLS.md) | **still rejected** — see below. |
  *
@@ -100,16 +100,9 @@
  * loud reject instead.
  *
  * ## Deviations from the brief (deliberate, each verified)
- * - **Version pin.** The brief said to assert against `prime.ts`'s
- *   `EXPECTED_PRIME_VERSION`. On this base that constant is `0.7.2` while
- *   the installed binary — and the SDK surface this module is written
- *   against — is `0.8.1`; the `0.8.1` bump lives on an unmerged branch.
- *   Asserting the subprocess pin would make this backend dead on arrival,
- *   so the SDK carries its own pin ({@link EXPECTED_PRIME_SDK_VERSION}).
- *   They are genuinely different compatibility surfaces: the CLI's JSON
- *   stream versus the programmatic session API. The mismatch error names
- *   both so an operator sees the divergence. When the subprocess pin
- *   reaches 0.8.1 the two constants converge and can be unified.
+ * - **Version pin.** The subprocess and SDK are two compatibility surfaces
+ *   (CLI JSON stream versus programmatic session API), but both target one
+ *   deliberate prime-agent release through `EXPECTED_PRIME_VERSION`.
  * - **Sub-call depth.** The brief said to set a `RLM_MAX_DEPTH` env var.
  *   `createAgentSession` accepts `rlmMaxDepth` directly, so this uses that
  *   instead: `process.env` is process-global, and the MCP server runs turns
@@ -143,12 +136,8 @@ import type { Microagent } from "../agents.js";
 import type { BackendRequest, MicroagentResult, RuntimeBackend } from "../backend.js";
 import { DEFAULT_PRIME_DEADLINE_MS, EXPECTED_PRIME_VERSION } from "./prime.js";
 
-/**
- * The exact prime-agent version whose SDK surface this module is written
- * against. Deliberately separate from `prime.ts`'s `EXPECTED_PRIME_VERSION`
- * (the CLI/JSON-stream pin) — see "Deviations" in the module header.
- */
-export const EXPECTED_PRIME_SDK_VERSION = "0.8.1";
+/** The shared prime-agent release whose SDK surface this module targets. */
+export const EXPECTED_PRIME_SDK_VERSION = EXPECTED_PRIME_VERSION;
 
 /** The tool through which a run reports its final answer. */
 export const EMIT_DONE_TOOL = "emit_done";
@@ -161,6 +150,8 @@ const PRIME_BUILTIN_PROVIDERS: ReadonlySet<string> = new Set([
   "google",
   "openrouter",
   "deepseek",
+  "openai-codex",
+  "zai",
 ]);
 
 /**
@@ -240,6 +231,8 @@ export interface PrimeSdkMessage {
   readonly role?: string;
   readonly content?: string | ReadonlyArray<{ type?: string; text?: string }>;
   readonly usage?: PrimeSdkUsage;
+  readonly stopReason?: string;
+  readonly errorMessage?: string;
 }
 
 export interface PrimeSdkEvent {
@@ -258,6 +251,7 @@ export interface PrimeSdkSession {
 export interface PrimeSdkModel {
   readonly provider: string;
   readonly id: string;
+  readonly maxTokens?: number;
 }
 
 export interface PrimeSdkModelRegistry {
@@ -267,12 +261,16 @@ export interface PrimeSdkModelRegistry {
 
 /** Exactly the SDK surface this backend touches — the contract a fake must meet. */
 export interface PrimeSdkModule {
+  getAgentDir(): string;
   defineTool(tool: PrimeSdkToolDefinition): PrimeSdkToolDefinition;
-  readonly AuthStorage: { create(path: string): unknown };
+  readonly AuthStorage: { create(path?: string): unknown };
   readonly ModelRegistry: {
     create(authStorage: unknown, modelsJsonPath?: string): PrimeSdkModelRegistry;
   };
-  readonly SettingsManager: { inMemory(settings?: Record<string, unknown>): unknown };
+  readonly SettingsManager: {
+    inMemory(settings?: Record<string, unknown>): unknown;
+    create(cwd: string, agentDir?: string): unknown;
+  };
   readonly SessionManager: { inMemory(): unknown };
   readonly DefaultResourceLoader: new (options: Record<string, unknown>) => {
     reload(): Promise<unknown>;
@@ -304,7 +302,7 @@ export interface PrimeModelsJson {
  * without a session.
  */
 export interface PrimeSdkPlan {
-  /** 0700 per-run scratch dir; also the session's `agentDir`. */
+  /** 0700 per-run scratch dir for context and generated provider overrides. */
   readonly scratchDir: string;
   /** Where the agent works — the server's cwd, never the scratch dir. */
   readonly cwd: string;
@@ -313,6 +311,8 @@ export interface PrimeSdkPlan {
   readonly appendSystemPrompt: string;
   readonly provider: string;
   readonly modelId: string;
+  /** Provider-level output cap for each root call. */
+  readonly maxOutputTokens: number | null;
   readonly thinkingLevel: string | null;
   /** `budget.max_depth`, passed as `rlmMaxDepth`. */
   readonly rlmMaxDepth: number | null;
@@ -361,6 +361,12 @@ export type PrimeSdkEngine = (
   limits: PrimeSdkRunLimits
 ) => Promise<PrimeSdkRunResult>;
 
+/** Optional hermetic provider-payload transform, implemented as an inline Prime extension. */
+export type PrimeSdkProviderPayloadTransform = (
+  payload: unknown,
+  plan: PrimeSdkPlan
+) => unknown | Promise<unknown>;
+
 export interface PrimeSdkBackendOptions {
   /** Test seam: the SDK module. Supplying it skips root resolution and the version pin. */
   readonly loader?: PrimeSdkLoader;
@@ -370,6 +376,10 @@ export interface PrimeSdkBackendOptions {
   readonly expectedVersion?: string;
   /** Explicit prime package root; overrides `MIKRO_PRIME_AGENT_ROOT` and PATH discovery. */
   readonly primeRoot?: string;
+  /** Canonical Prime config dir; defaults to the SDK's getAgentDir(), exactly like the CLI. */
+  readonly primeAgentDir?: string;
+  /** Inline-only transform; host extension discovery remains disabled. */
+  readonly providerPayloadTransform?: PrimeSdkProviderPayloadTransform;
 }
 
 /** Kill reasons this backend owns — each a designed, non-throwing abort. */
@@ -773,6 +783,7 @@ export async function buildPlan(
     appendSystemPrompt: buildAppendedRole(agent, config, contextNote, answerSchema !== null),
     provider,
     modelId,
+    maxOutputTokens: request.maxOutputTokens ?? null,
     thinkingLevel: config.gemini?.thinkingLevel ?? null,
     rlmMaxDepth: config.budget?.maxDepth ?? null,
     modelsJson,
@@ -821,16 +832,24 @@ export function runSdkSession(
   load: PrimeSdkLoader,
   plan: PrimeSdkPlan,
   emit: (message: string) => void,
-  limits: PrimeSdkRunLimits
+  limits: PrimeSdkRunLimits,
+  configuredPrimeAgentDir?: string,
+  providerPayloadTransform?: PrimeSdkProviderPayloadTransform
 ): Promise<PrimeSdkRunResult> {
   return (async () => {
     const sdk = await load();
     materializePlan(plan);
+    const primeAgentDir = configuredPrimeAgentDir ?? sdk.getAgentDir();
 
-    const authStorage = sdk.AuthStorage.create(join(plan.scratchDir, "auth.json"));
+    // Match the CLI's canonical config inputs. Scratch is used only when Mikro
+    // generated a per-run custom-provider override; built-in providers must see
+    // the same evolving models.json catalog the CLI sees.
+    const authStorage = sdk.AuthStorage.create(join(primeAgentDir, "auth.json"));
     const modelRegistry = sdk.ModelRegistry.create(
       authStorage,
-      join(plan.scratchDir, "models.json")
+      plan.modelsJson
+        ? join(plan.scratchDir, "models.json")
+        : join(primeAgentDir, "models.json")
     );
     const model = modelRegistry.find(plan.provider, plan.modelId);
     if (!model) {
@@ -841,10 +860,16 @@ export function runSdkSession(
           "Re-pin the agent's model, or switch the agent back to `backend: mikro`."
       );
     }
+    // Registry models are shared catalog values. Clone rather than mutate so
+    // concurrent turns with different provider output caps cannot race.
+    const sessionModel = plan.maxOutputTokens === null
+      ? model
+      : { ...model, maxTokens: plan.maxOutputTokens };
 
     let turns = 0;
     let lastTurnText: string | null = null;
     let lastText = "";
+    let lastProviderError: string | null = null;
     let emitDoneArgs: Record<string, unknown> | null = null;
     let killed: KillReason | null = null;
     const usage = { inputTokens: 0, outputTokens: 0, totalCost: 0 };
@@ -873,7 +898,7 @@ export function runSdkSession(
       })
     );
 
-    const settingsManager = sdk.SettingsManager.inMemory({});
+    const settingsManager = sdk.SettingsManager.create(plan.cwd, primeAgentDir);
     const resourceLoader = new sdk.DefaultResourceLoader({
       cwd: plan.cwd,
       agentDir: plan.scratchDir,
@@ -887,6 +912,20 @@ export function runSdkSession(
       noThemes: true,
       noContextFiles: true,
       bundledSkillsDir: null,
+      extensionFactories: providerPayloadTransform
+        ? [
+            (api: {
+              on(
+                event: "before_provider_request",
+                handler: (event: { payload: unknown }) => unknown | Promise<unknown>
+              ): void;
+            }) => {
+              api.on("before_provider_request", (event) =>
+                providerPayloadTransform(event.payload, plan)
+              );
+            },
+          ]
+        : [],
       // Appended, never `systemPrompt` — replacing would strip prime's base
       // prompt and handicap the leg, the same reason prime.ts uses
       // --append-system-prompt.
@@ -896,10 +935,10 @@ export function runSdkSession(
 
     const { session } = await sdk.createAgentSession({
       cwd: plan.cwd,
-      agentDir: plan.scratchDir,
+      agentDir: primeAgentDir,
       authStorage,
       modelRegistry,
-      model,
+      model: sessionModel,
       ...(plan.thinkingLevel ? { thinkingLevel: plan.thinkingLevel } : {}),
       // The allowlist MUST name emit_done: it gates custom tools too, and an
       // empty list silently disables the answer channel (verified live).
@@ -935,6 +974,12 @@ export function runSdkSession(
           emit(`iteration ${turns + 1}`);
           break;
         case "turn_end":
+          // Prime may still emit the aborted turn's terminal event after the
+          // (cap+1)th turn_start triggered abort. That turn never completed
+          // within Mikro's budget and must not inflate the reported count.
+          if (killed === "max-turns" && limits.maxTurns !== null && turns >= limits.maxTurns) {
+            break;
+          }
           turns += 1;
           if (isAssistant(event.message)) lastTurnText = textOf(event.message);
           break;
@@ -944,6 +989,12 @@ export function runSdkSession(
         case "message_end":
           if (isAssistant(event.message)) {
             lastText = textOf(event.message);
+            if (
+              (event.message.stopReason === "error" || event.message.stopReason === "aborted") &&
+              typeof event.message.errorMessage === "string"
+            ) {
+              lastProviderError = event.message.errorMessage;
+            }
             // Usage is read HERE ONLY. The following turn_end carries the same
             // message object with the same usage — counting both would double
             // every total and halve every cost ceiling.
@@ -1030,6 +1081,9 @@ export function runSdkSession(
 
     const answer = reported();
     if (answer === null) {
+      if (lastProviderError !== null) {
+        throw new Error(`prime-sdk provider error: ${lastProviderError}`);
+      }
       if (plan.answerSchema) {
         // A schema was promised to the host. Prose is not that, and quietly
         // returning it would be exactly the silent degradation this backend
@@ -1068,7 +1122,15 @@ export class PrimeSdkBackend implements RuntimeBackend {
       // backend but never runs a turn must not pay for them, and must not
       // fail to start on a machine without prime-agent.
       const load = options.loader ?? createPrimeSdkLoader(options);
-      this.engine = (plan, emit, limits) => runSdkSession(load, plan, emit, limits);
+      this.engine = (plan, emit, limits) =>
+        runSdkSession(
+          load,
+          plan,
+          emit,
+          limits,
+          options.primeAgentDir,
+          options.providerPayloadTransform
+        );
     }
   }
 
