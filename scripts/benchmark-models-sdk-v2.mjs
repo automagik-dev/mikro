@@ -13,6 +13,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const FIXTURE_PATH = join(ROOT, "scripts/benchmark-models-v2.mjs");
 const PRIME_ROOT = "/home/genie/.local/lib/node_modules/prime-agent";
+const PINNED_PRIME_VERSION = "0.8.1";
 const BWS_PROJECT_ID = "09229871-62e6-4331-9ede-b4a7012ec521";
 const MODEL_MAX_TOKENS = 17_408;
 const ROOT_OUTPUT_TOKENS = 8_192;
@@ -75,7 +76,7 @@ function manifest() {
     harnessSha256: sha256(readFileSync(SCRIPT_PATH)),
     fixtureHarnessSha256: sha256(readFileSync(FIXTURE_PATH)),
     primeSdkAdapterSha256: sha256(readFileSync(join(ROOT, "dist/src/mcp/backends/prime-sdk.js"))),
-    primeVersion: packageVersion(join(PRIME_ROOT, "package.json")),
+    primeVersion: PINNED_PRIME_VERSION,
     runtime: "Mikro PrimeSdkBackend using Prime Agent 0.8.1 in-process SDK",
     wire: "Prime AgentSession -> prime-agent-ai -> OpenRouter and direct DeepSeek OpenAI chat completions",
     routePolicy: "GLM via pinned OpenRouter FP8; DeepSeek via its official direct API",
@@ -237,7 +238,8 @@ async function preflight() {
       requiredParameters: requiredParameters.every((parameter) => upstreamEndpoint?.supported_parameters?.includes(parameter)),
     }];
   }));
-  const pass = frozen.primeVersion === "0.8.1" && Boolean(key) && MODELS.every((model) => {
+  const installedPrimeVersion = packageVersion(join(PRIME_ROOT, "package.json"));
+  const pass = installedPrimeVersion === frozen.primeVersion && Boolean(key) && MODELS.every((model) => {
     const check = checks[model.id];
     if (model.wireProvider === "deepseek") {
       return check.directModelPresent && check.primeBuiltInPresent

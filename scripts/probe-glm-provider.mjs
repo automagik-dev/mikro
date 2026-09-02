@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const PRIME_ROOT = "/home/genie/.local/lib/node_modules/prime-agent";
+const PINNED_PRIME_VERSION = "0.8.1";
 const BWS_PROJECT_ID = "09229871-62e6-4331-9ede-b4a7012ec521";
 const PROVIDER = Object.freeze({ name: "GMICloud", slug: "gmicloud", tag: "gmicloud/fp8", quantization: "fp8" });
 const MODELS = Object.freeze([
@@ -48,7 +49,7 @@ function manifest() {
     version: "glm-provider-stability-probe-v1",
     baseSha: spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout.trim(),
     harnessSha256: null,
-    primeVersion: packageVersion(join(PRIME_ROOT, "package.json")),
+    primeVersion: PINNED_PRIME_VERSION,
     wire: "OpenRouter OpenAI chat completions",
     provider: PROVIDER,
     routing: ROUTING,
@@ -122,7 +123,8 @@ async function preflight() {
       uptimeLast1d: endpoint?.uptime_last_1d ?? null,
     }];
   }));
-  const pass = frozen.primeVersion === "0.8.1" && Boolean(key) && MODELS.every((model) => {
+  const installedPrimeVersion = packageVersion(join(PRIME_ROOT, "package.json"));
+  const pass = installedPrimeVersion === frozen.primeVersion && Boolean(key) && MODELS.every((model) => {
     const check = checks[model.id];
     return check.present && check.healthy && check.quantization === PROVIDER.quantization && Object.values(check.requiredParameters).every(Boolean);
   });

@@ -11,6 +11,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const PRIME_ROOT = "/home/genie/.local/lib/node_modules/prime-agent";
 const PRIME_AI_ROOT = join(PRIME_ROOT, "node_modules/@earendil-works/pi-ai");
+const PINNED_PRIME_VERSION = "0.8.1";
+const PINNED_PRIME_AI_VERSION = "0.8.1";
+const PINNED_PRIME_AI_PACKAGE_SHA256 = "794ea86b13fe4c241c73aa8580cda0dedb0f3d20ee879bc93c50616cc0016f79";
 const BWS_PROJECT_ID = "09229871-62e6-4331-9ede-b4a7012ec521";
 const ROUTE = Object.freeze({
   gateway: "openrouter",
@@ -416,9 +419,9 @@ function manifest() {
     version: "mikro-model-benchmark-v2",
     baseSha: git("rev-parse", "HEAD"),
     harnessSha256: sha256(readFileSync(SCRIPT_PATH)),
-    primeVersion: packageVersion(PRIME_ROOT),
-    primeAiVersion: packageVersion(PRIME_AI_ROOT),
-    primeAiPackageSha256: sha256(readFileSync(join(PRIME_AI_ROOT, "package.json"))),
+    primeVersion: PINNED_PRIME_VERSION,
+    primeAiVersion: PINNED_PRIME_AI_VERSION,
+    primeAiPackageSha256: PINNED_PRIME_AI_PACKAGE_SHA256,
     runtime: "prime-agent-ai direct completeSimple",
     wire: "openai-completions",
     route: ROUTE,
@@ -523,8 +526,9 @@ async function preflight() {
       supportedReasoningEfforts: supportedEfforts,
     }];
   }));
-  const pass = frozen.primeVersion === "0.8.1"
-    && frozen.primeAiVersion === "0.8.1"
+  const pass = packageVersion(PRIME_ROOT) === frozen.primeVersion
+    && packageVersion(PRIME_AI_ROOT) === frozen.primeAiVersion
+    && sha256(readFileSync(join(PRIME_AI_ROOT, "package.json"))) === frozen.primeAiPackageSha256
     && Boolean(key)
     && MODELS.every((model) => {
       const check = routeChecks[model.id];

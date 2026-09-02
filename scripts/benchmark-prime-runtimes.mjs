@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const PINNED_PRIME_VERSION = "0.8.1";
 const BWS_PROJECT_ID = "09229871-62e6-4331-9ede-b4a7012ec521";
 const RUNTIMES = ["mikro", "prime", "prime-sdk"];
 const MAX_ITERATIONS_BY_RUNTIME = { mikro: 1, prime: 1, "prime-sdk": 2 };
@@ -232,7 +233,7 @@ function manifest() {
   return {
     version: "mikro-prime-runtime-benchmark-v1",
     baseSha: git("rev-parse", "HEAD"),
-    primeVersion: primeVersion(),
+    primeVersion: PINNED_PRIME_VERSION,
     harnessSha256: sha256(readFileSync(join(ROOT, "scripts/benchmark-prime-runtimes.mjs"))),
     candidateSha256: filesDigest(CANDIDATE_FILES),
     candidateFiles: CANDIDATE_FILES,
@@ -571,6 +572,7 @@ async function runCampaign(options) {
 async function preflight() {
   const frozen = manifest();
   const manifestSha256 = sha256(stable(frozen));
+  const installedPrimeVersion = primeVersion();
   await projectCredentials();
   const sdk = await import("/home/genie/.local/lib/node_modules/prime-agent/dist/index.js");
   const checkRoot = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), "mikro-prime-preflight-"));
@@ -590,7 +592,7 @@ async function preflight() {
   await rm(checkRoot, { recursive: true, force: true });
   return {
     pass: frozen.baseSha === git("rev-parse", "HEAD")
-      && frozen.primeVersion === "0.8.1"
+      && installedPrimeVersion === frozen.primeVersion
       && openrouterPresent
       && retrySettings.enabled === false
       && providerRetrySettings.maxRetries === 0

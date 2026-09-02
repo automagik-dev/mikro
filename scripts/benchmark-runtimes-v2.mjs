@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const PRIME_ROOT = "/home/genie/.local/lib/node_modules/prime-agent";
+const PINNED_PRIME_VERSION = "0.8.1";
 const SELECTION_PATH = join(ROOT, ".genie/evidence/prime-runtime-benchmark/model-benchmark-sdk-v2-selection-lock.json");
 const MODEL = Object.freeze({
   selectionId: "deepseek/deepseek-v4-pro-0813",
@@ -168,7 +169,7 @@ function manifest() {
     harnessSha256: sha256(readFileSync(SCRIPT_PATH)),
     primeSdkAdapterSha256: sha256(readFileSync(join(ROOT, "dist/src/mcp/backends/prime-sdk.js"))),
     legacyAdapterSha256: sha256(readFileSync(join(ROOT, "dist/src/mcp/backends/legacy.js"))),
-    primeVersion: JSON.parse(readFileSync(join(PRIME_ROOT, "package.json"), "utf8")).version,
+    primeVersion: PINNED_PRIME_VERSION,
     selectedCircuit: MODEL,
     selectionEvidence: {
       path: ".genie/evidence/prime-runtime-benchmark/model-benchmark-sdk-v2-selection-lock.json",
@@ -286,6 +287,7 @@ function cells(runtimes, mode) {
 async function preflight() {
   const frozen = manifest();
   const key = deepSeekKey();
+  const installedPrimeVersion = JSON.parse(readFileSync(join(PRIME_ROOT, "package.json"), "utf8")).version;
   const [catalogResponse, balance] = await Promise.all([
     fetch(`${MODEL.baseUrl}/models`, { headers: { Authorization: `Bearer ${key}` } }),
     deepSeekBalance(key),
@@ -293,7 +295,7 @@ async function preflight() {
   const catalog = await catalogResponse.json();
   const modelPresent = catalogResponse.ok && (catalog.data ?? []).some((entry) => entry.id === MODEL.id);
   return {
-    pass: frozen.primeVersion === "0.8.1" && modelPresent && Number.isFinite(balance),
+    pass: installedPrimeVersion === frozen.primeVersion && modelPresent && Number.isFinite(balance),
     manifestSha256: sha256(stable(frozen)),
     baseSha: frozen.baseSha,
     credentialNamesPresent: { DEEPSEEK_API_KEY: Boolean(key) },
