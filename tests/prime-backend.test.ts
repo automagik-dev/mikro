@@ -29,6 +29,7 @@ import {
   DEFAULT_PRIME_DEADLINE_MS,
   EXPECTED_PRIME_VERSION,
   PrimeBackend,
+  buildPrimeChildEnv,
   type PrimeEngine,
   type PrimeRunLimits,
 } from "../src/mcp/backends/prime.js";
@@ -49,7 +50,7 @@ const SHIM_BODY = `
 const fs = require("node:fs");
 const argv = process.argv.slice(2);
 if (argv.includes("--version")) {
-  const v = process.env.MIKRO_STUB_VERSION ?? "0.7.2";
+  const v = process.env.MIKRO_STUB_VERSION ?? "0.8.1";
   if (process.env.MIKRO_STUB_VERSION_STREAM === "stdout") fs.writeSync(1, v);
   else fs.writeSync(2, v);
   process.exit(0);
@@ -95,6 +96,14 @@ async function makeShim(dir: string): Promise<string> {
   await writeFile(path, `#!/usr/bin/env node${SHIM_BODY}`, "utf-8");
   await chmod(path, 0o755);
   return path;
+}
+
+/** Real-spawn test backend; only the stub receives the harness control vars. */
+async function makeSpawnBackend(dir: string): Promise<PrimeBackend> {
+  return new PrimeBackend({
+    binaryPath: await makeShim(dir),
+    environment: (source) => source,
+  });
 }
 
 /** Set process env for the duration of `fn`, restoring exactly afterward. */
@@ -292,10 +301,14 @@ function assertHasArgs(argv: readonly string[], seq: readonly string[], tag: str
 // ── Version pin ───────────────────────────────────────────────────────────
 
 describe("prime backend — version pin", () => {
+  it("pins every Prime surface to 0.8.1", () => {
+    assert.equal(EXPECTED_PRIME_VERSION, "0.8.1");
+  });
+
   it("accepts the pinned prime-agent version", async () => {
     const dir = await scratch();
     try {
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS }, async () => {
         const { result } = await runOnce(backend);
         assert.equal(result.answer, "The call sites are A and B.");
@@ -325,7 +338,7 @@ describe("prime backend — version pin", () => {
           () => new PrimeBackend({ binaryPath }),
           (err: unknown) => {
             assert.ok(err instanceof Error);
-            assert.match(err.message, /not the pinned prime-agent 0\.7\.2/);
+            assert.match(err.message, /not the pinned prime-agent 0\.8\.1/);
             assert.match(err.message, /"0\.7\.3"/);
             assert.match(err.message, /prime-agent update/);
             return true;
@@ -345,7 +358,7 @@ describe("prime backend — version pin", () => {
         (err: unknown) => {
           assert.ok(err instanceof Error);
           assert.match(err.message, /cannot run/);
-          assert.match(err.message, /install prime-agent 0\.7\.2/);
+          assert.match(err.message, /install prime-agent 0\.8\.1/);
           return true;
         }
       );
@@ -362,7 +375,7 @@ describe("prime backend — argv assembly", () => {
     const dir = await scratch();
     try {
       const argvFile = join(dir, "argv.json");
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS, MIKRO_STUB_ARGV_FILE: argvFile }, async () => {
         await runOnce(backend, { config: { ...CONFIG, system: "SYSTEM-ROLE-CONTENT" } });
       });
@@ -390,7 +403,7 @@ describe("prime backend — argv assembly", () => {
     }
   });
 
-  it("maps google/gemini-2.5-flash-lite through the prime-inference namespace (supported non-gate path)", async () => {
+  it("maps google directly through Prime 0.8.1", async () => {
     const calls: Array<{ argv: readonly string[]; limits: PrimeRunLimits }> = [];
     const backend = new PrimeBackend({ engine: recordingEngine(calls) });
     await runOnce(backend, {
@@ -399,7 +412,55 @@ describe("prime backend — argv assembly", () => {
         model: { provider: "google", model: "gemini-2.5-flash-lite", subCallModel: "gemini-2.5-flash-lite" },
       },
     });
-    assertHasArgs(calls[0]!.argv, ["--provider", "prime-inference", "--model", "google/gemini-2.5-flash-lite"], "lite model");
+    assertHasArgs(calls[0]!.argv, ["--provider", "google", "--model", "gemini-2.5-flash-lite"], "lite model");
+  });
+
+  it("passes OpenRouter model aliases through without rewriting them", async () => {
+    const calls: Array<{ argv: readonly string[]; limits: PrimeRunLimits }> = [];
+    const backend = new PrimeBackend({ engine: recordingEngine(calls) });
+    await runOnce(backend, {
+      config: {
+        ...CONFIG,
+        model: {
+          provider: "openrouter",
+          model: "~deepseek/deepseek-v4-flash-latest",
+          subCallModel: "~deepseek/deepseek-v4-flash-latest",
+        },
+      },
+    });
+    assertHasArgs(
+      calls[0]!.argv,
+      ["--provider", "openrouter", "--model", "~deepseek/deepseek-v4-flash-latest"],
+      "OpenRouter latest alias"
+    );
+  });
+
+  it("passes only the selected provider credential and forces telemetry off", () => {
+    const source = {
+      HOME: "/home/test",
+      PATH: "/bin",
+      GEMINI_API_KEY: "gemini-test",
+      OPENROUTER_API_KEY: "openrouter-test",
+      ZAI_API_KEY: "zai-test",
+      AWS_SECRET_ACCESS_KEY: "must-not-leak",
+      PRIME_AGENT_TELEMETRY: "1",
+      DO_NOT_TRACK: "0",
+    };
+    const google = buildPrimeChildEnv(source, "google");
+    assert.equal(google.HOME, "/home/test");
+    assert.equal(google.GEMINI_API_KEY, "gemini-test");
+    assert.equal(google.OPENROUTER_API_KEY, undefined);
+    assert.equal(google.AWS_SECRET_ACCESS_KEY, undefined);
+    assert.equal(google.PRIME_AGENT_TELEMETRY, "0");
+    assert.equal(google.DO_NOT_TRACK, "1");
+
+    const openrouter = buildPrimeChildEnv(source, "openrouter");
+    assert.equal(openrouter.OPENROUTER_API_KEY, "openrouter-test");
+    assert.equal(openrouter.GEMINI_API_KEY, undefined);
+
+    const zai = buildPrimeChildEnv(source, "zai");
+    assert.equal(zai.ZAI_API_KEY, "zai-test");
+    assert.equal(zai.OPENROUTER_API_KEY, undefined);
   });
 
   it("passes mikro's deepseek models through verbatim", async () => {
@@ -412,6 +473,25 @@ describe("prime backend — argv assembly", () => {
       },
     });
     assertHasArgs(calls[0]!.argv, ["--provider", "deepseek", "--model", "deepseek-v4-flash"], "deepseek model");
+  });
+
+  it("preserves Prime 0.8.1 direct and configured provider mappings", async () => {
+    for (const [provider, model] of [
+      ["prime-inference", "qwen/qwen3.7-flash"],
+      ["openai-codex", "gpt-5.6-sol"],
+      ["zai", "glm-5.2"],
+      ["khal", "deepseek-v4-flash"],
+    ] as const) {
+      const calls: Array<{ argv: readonly string[]; limits: PrimeRunLimits }> = [];
+      const backend = new PrimeBackend({ engine: recordingEngine(calls) });
+      await runOnce(backend, {
+        config: {
+          ...CONFIG,
+          model: { provider, model, subCallModel: model },
+        },
+      });
+      assertHasArgs(calls[0]!.argv, ["--provider", provider, "--model", model], provider);
+    }
   });
 
   it("maps the declared thinking level onto prime's --thinking", async () => {
@@ -459,7 +539,7 @@ describe("prime backend — argv assembly", () => {
         metadata: "",
       };
       const argvFile = join(dir, "argv.json");
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS, MIKRO_STUB_ARGV_FILE: argvFile }, async () => {
         await runOnce(backend, { context, contextRoot: ctxDir });
       });
@@ -485,7 +565,7 @@ describe("prime backend — argv assembly", () => {
       await writeFile(ctxFile, "LOG");
       const context: LoadedContext = { type: "string", content: "LOG", metadata: "" };
       const argvFile = join(dir, "argv.json");
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS, MIKRO_STUB_ARGV_FILE: argvFile }, async () => {
         await runOnce(backend, { context, contextRoot: ctxFile });
       });
@@ -501,11 +581,6 @@ describe("prime backend — argv assembly", () => {
 
 describe("prime backend — loud failures", () => {
   const cases: ReadonlyArray<{ name: string; over: Partial<BackendRequest>; pattern: RegExp }> = [
-    {
-      name: "mikro model providers prime cannot address (khal)",
-      over: { config: { ...CONFIG, model: { provider: "khal", model: "deepseek-v4-flash", subCallModel: "deepseek-v4-flash" } } as MikroConfig },
-      pattern: /khal\/deepseek-v4-flash/,
-    },
     {
       name: "mikro model providers prime cannot address (station)",
       over: { config: { ...CONFIG, model: { provider: "station", model: "Qwen3.6-35B-A3B-MTP-GGUF", subCallModel: "Qwen3.6-35B-A3B-MTP-GGUF" } } as MikroConfig },
@@ -595,7 +670,7 @@ describe("prime backend — event mapping", () => {
   it("extracts the final answer, usage, and turn count from a single-turn run", async () => {
     const dir = await scratch();
     try {
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: HAPPY_EVENTS }, async () => {
         const { result, progress } = await runOnce(backend);
         assert.equal(result.answer, "The call sites are A and B.");
@@ -621,7 +696,7 @@ describe("prime backend — event mapping", () => {
         "final report",
         u2
       );
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
         const { result, progress } = await runOnce(backend);
         assert.equal(result.answer, "final report");
@@ -644,7 +719,7 @@ describe("prime backend — event mapping", () => {
         "done",
         USAGE
       );
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
         const { progress } = await runOnce(backend);
         assert.deepEqual(progress, ["iteration 1", "tool ipython"]);
@@ -667,7 +742,7 @@ describe("prime backend — event mapping", () => {
         { type: "message_end", message: assistantMessage("direct answer", USAGE) },
         { type: "agent_end", messages: [USER_MESSAGE, assistantMessage("direct answer", USAGE)] },
       ];
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
         const { result } = await runOnce(backend);
         assert.equal(result.answer, "direct answer");
@@ -681,7 +756,7 @@ describe("prime backend — event mapping", () => {
     const dir = await scratch();
     try {
       const events = [SESSION, { type: "agent_start" }, { type: "turn_start" }];
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
         await assert.rejects(
           () => runOnce(backend),
@@ -700,7 +775,7 @@ describe("prime backend — event mapping", () => {
   it("surfaces the child's stderr when it exits non-zero", async () => {
     const dir = await scratch();
     try {
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv(
         { MIKRO_STUB_EVENTS: JSON.stringify([SESSION]), MIKRO_STUB_EXIT: "3", MIKRO_STUB_STDERR_LINE: "stub exploded" },
         async () => {
@@ -715,6 +790,59 @@ describe("prime backend — event mapping", () => {
           );
         }
       );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("turns Prime 0.8.1 model errors into a failed run instead of an empty success", async () => {
+    const dir = await scratch();
+    try {
+      const failed = {
+        role: "assistant",
+        content: [],
+        provider: "openrouter",
+        model: "deepseek/deepseek-v4-flash",
+        stopReason: "error",
+        errorMessage: "401 Missing Authentication header",
+        usage: usageOf({ input: 0, output: 0, total: 0 }),
+      };
+      const events = JSON.stringify([
+        SESSION,
+        { type: "agent_start" },
+        { type: "turn_start" },
+        { type: "message_end", message: failed },
+        { type: "turn_end", message: failed, toolResults: [] },
+        { type: "agent_end", messages: [USER_MESSAGE, failed] },
+      ]);
+      const backend = await makeSpawnBackend(dir);
+      await withEnv({ MIKRO_STUB_EVENTS: events }, async () => {
+        await assert.rejects(
+          () => runOnce(backend),
+          /model run failed \(openrouter\/deepseek\/deepseek-v4-flash\): 401 Missing Authentication header/
+        );
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects agent_end without final text instead of reporting a false success", async () => {
+    const dir = await scratch();
+    try {
+      const empty = assistantMessage("", USAGE);
+      const events = JSON.stringify([
+        SESSION,
+        { type: "agent_start" },
+        { type: "turn_start" },
+        { type: "message_end", message: empty },
+        { type: "turn_end", message: empty, toolResults: [] },
+        { type: "agent_end", messages: [USER_MESSAGE, empty] },
+      ]);
+      const backend = await makeSpawnBackend(dir);
+      await withEnv({ MIKRO_STUB_EVENTS: events }, async () => {
+        await assert.rejects(() => runOnce(backend), /without a final text answer/);
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -738,7 +866,7 @@ describe("prime backend — budget enforcement", () => {
         { type: "message_update", message: assistantMessage("partial report", { input: 10, output: 10, total: 1.0 }) },
         { type: "message_end", message: assistantMessage("partial report", { input: 10, output: 10, total: 1.0 }) },
       ];
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv(
         {
           MIKRO_STUB_EVENTS: JSON.stringify(events),
@@ -773,7 +901,7 @@ describe("prime backend — budget enforcement", () => {
         { type: "agent_start" },
         ...turnEvents("big report", { input: 600, output: 400, total: 0.01 }),
       ];
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv(
         {
           MIKRO_STUB_EVENTS: JSON.stringify(events),
@@ -803,7 +931,7 @@ describe("prime backend — budget enforcement", () => {
         { type: "agent_start" },
         ...turnEvents("", { input: 10, output: 10, total: 5.0 }),
       ];
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv({ MIKRO_STUB_EVENTS: JSON.stringify(events) }, async () => {
         const { result } = await runOnce(backend, {
           config: { ...CONFIG, budget: { maxCost: 2.0, maxTokens: null, maxDepth: null } } as MikroConfig,
@@ -822,7 +950,7 @@ describe("prime backend — budget enforcement", () => {
     try {
       const selfPidFile = join(dir, "self.pid");
       const childPidFile = join(dir, "child.pid");
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv(
         {
           MIKRO_MCP_RUN_TIMEOUT_MS: "250",
@@ -871,7 +999,7 @@ describe("prime backend — budget enforcement", () => {
         ...turnEvents("first report", USAGE),
         { type: "turn_start" }, // the second turn would start → cap of 1 fires
       ];
-      const backend = new PrimeBackend({ binaryPath: await makeShim(dir) });
+      const backend = await makeSpawnBackend(dir);
       await withEnv(
         {
           MIKRO_STUB_EVENTS: JSON.stringify(events),

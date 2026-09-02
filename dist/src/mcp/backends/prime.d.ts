@@ -22,26 +22,21 @@
  * The wish is the governing artifact; every ambiguous mapping fails loudly —
  * no silent degradation.
  *
- * - model: mikro provider `deepseek` → prime `--provider deepseek
- *   --model <id>` (same bare addressing, prime's native deepseek provider).
- *   THE GATE MODEL (wish decision 7, as amended) is deepseek/deepseek-v4-flash:
- *   it maps to `--provider deepseek --model deepseek-v4-flash`. mikro provider
- *   `google` → prime `--provider prime-inference --model google/<id>` (prime
- *   addresses its google models namespaced) remains a SUPPORTED path for
- *   `google/`-prefixed specs, but it is NOT the gate model. prime 0.7.2
- *   exposes only these two providers (`prime-agent model list`), so any other
- *   mikro provider (khal, station, openrouter, …) throws.
+ * - model: Prime 0.8.1 accepts direct `google`, `openrouter`, `deepseek`,
+ *   `prime-inference`, `openai-codex`, and `zai` provider/model pairs. Mikro's
+ *   configured `khal` provider uses Prime's custom-provider contract. Unknown
+ *   providers fail loudly.
  * - thinking: `config.gemini.thinkingLevel` (minimal|low|medium|high) is a
  *   subset of prime's `--thinking` levels; passed through verbatim.
  * - system: `config.system` (the agent's SYSTEM.md via `applyAgent`) and
  *   `config.criteria` are APPENDED to prime's base prompt via
- *   `--append-system-prompt` — never `--system-prompt`, which per prime
- *   0.7.2 `--help` *replaces* the default system prompt. Replacing would
+ *   `--append-system-prompt` — never `--system-prompt`, which per Prime
+ *   0.8.1 `--help` *replaces* the default system prompt. Replacing would
  *   strip prime's base RLM prompt and handicap the prime leg.
  * - context: `LoadedContext` items map to prime `@file` arguments at their
  *   original absolute paths (`BackendRequest.contextRoot` — the same files
  *   the caller named, so path citations stay resolvable). Every arg is the
- *   single `@<abs path>` form prime 0.7.2's parser turns into fileArgs
+ *   single `@<abs path>` form Prime 0.8.1's parser turns into fileArgs
  *   (contents inlined into the first user message): a plain path would
  *   instead become a message and spawn one garbage autonomous turn per file.
  *   Each mapped file's existence is pre-checked at spawn, so a missing
@@ -92,8 +87,8 @@
  */
 import type { Microagent } from "../agents.js";
 import type { BackendRequest, MicroagentResult, RuntimeBackend } from "../backend.js";
-/** The exact prime-agent version this build pins (wish decision 2: 0.7.2). */
-export declare const EXPECTED_PRIME_VERSION = "0.7.2";
+/** The exact prime-agent release both subprocess and SDK integrations target. */
+export declare const EXPECTED_PRIME_VERSION = "0.8.1";
 /** rlmLoop's default wall-clock cap, mirrored so the deadline default matches legacy. */
 export declare const DEFAULT_PRIME_DEADLINE_MS = 300000;
 /** Budgets the backend enforces on the spawned run, from the request. */
@@ -134,7 +129,11 @@ export interface PrimeBackendOptions {
     readonly expectedVersion?: string;
     /** Test seam: replaces the real spawn engine and skips the version check. */
     readonly engine?: PrimeEngine;
+    /** Test seam: overrides production's least-privilege child environment builder. */
+    readonly environment?: (source: NodeJS.ProcessEnv, provider: string) => NodeJS.ProcessEnv;
 }
+/** Build the least-privilege environment handed to the Prime subprocess. */
+export declare function buildPrimeChildEnv(source: NodeJS.ProcessEnv, provider: string): NodeJS.ProcessEnv;
 export declare class PrimeBackend implements RuntimeBackend {
     private readonly binaryPath;
     private readonly engine;

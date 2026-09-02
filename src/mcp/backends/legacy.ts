@@ -66,6 +66,10 @@ export class LegacyMikroBackend implements RuntimeBackend {
       output: "json",
       emitter,
       ...(request.maxIterations !== undefined ? { maxIterations: request.maxIterations } : {}),
+      ...(request.maxOutputTokens !== undefined
+        ? { maxOutputTokens: request.maxOutputTokens }
+        : {}),
+      ...(request.maxRetries !== undefined ? { maxRetries: request.maxRetries } : {}),
       ...runTimeout(),
     });
 

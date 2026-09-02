@@ -169,6 +169,7 @@ export function buildPiOptions(options) {
         : {};
     const piOptions = {
         maxTokens: options?.maxTokens ?? 16384,
+        ...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
         signal: options?.signal,
         ...cacheOpts,
     };
