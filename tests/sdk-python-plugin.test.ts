@@ -7,11 +7,13 @@ import { after, before, describe, it } from "node:test";
 import {
 	type AgentSpec,
 	createToolRegistry,
+	InvalidPluginError,
 	loadPythonPlugins,
 	makePythonPluginHandler,
 	PythonPluginError,
 	PythonPluginTimeoutError,
 } from "../src/sdk/index.js";
+import { resolvePythonScript } from "../src/sdk/python-plugin.js";
 
 function pythonAvailable(): boolean {
 	try {
@@ -39,6 +41,20 @@ async function writePyPlugin(
 	const path = join(toolsDir, `${name}.py`);
 	await writeFile(path, body, "utf8");
 	await chmod(path, 0o755);
+	return path;
+}
+
+async function writeSchema(
+	dir: string,
+	name: string,
+	contents: unknown,
+): Promise<string> {
+	const path = join(dir, "tools", `${name}.schema.json`);
+	await writeFile(
+		path,
+		typeof contents === "string" ? contents : JSON.stringify(contents),
+		"utf8",
+	);
 	return path;
 }
 
@@ -84,6 +100,74 @@ describe("python plugin loader — discovery (G3b)", () => {
 		assert.deepEqual([...result.loaded], ["echo"]);
 		assert.equal(result.missing.length, 0);
 		assert.equal(registry.has("echo"), true);
+		assert.equal(registry.describe("echo"), undefined);
+	});
+
+	it("attaches a validated sidecar schema to the registry", async () => {
+		const agentDir = join(root, "schema");
+		await writePyPlugin(agentDir, "echo", "import sys; sys.stdout.write('null')\n");
+		const schema = {
+			description: "Echo Python input",
+			parameters: {
+				type: "object",
+				properties: { text: { type: "string" } },
+				required: ["text"],
+			},
+		};
+		await writeSchema(agentDir, "echo", schema);
+
+		const registry = createToolRegistry();
+		await loadPythonPlugins(specFor(agentDir, ["echo"]), registry);
+		assert.deepEqual(registry.describe("echo"), schema);
+	});
+
+	it("accepts empty schemas and nested parameter keys without a type", async () => {
+		const agentDir = join(root, "valid-schema-shapes");
+		await writePyPlugin(agentDir, "empty", "import sys; sys.stdout.write('null')\n");
+		await writePyPlugin(agentDir, "nested", "import sys; sys.stdout.write('null')\n");
+		await writeSchema(agentDir, "empty", {});
+		const nested = { parameters: { properties: {}, required: [] } };
+		await writeSchema(agentDir, "nested", nested);
+
+		const registry = createToolRegistry();
+		await loadPythonPlugins(specFor(agentDir, ["empty", "nested"]), registry);
+		assert.deepEqual(registry.describe("empty"), {});
+		assert.deepEqual(registry.describe("nested"), nested);
+	});
+
+	it("rejects malformed sidecar schemas with the path and reason", async () => {
+		const cases: readonly [string, unknown, RegExp][] = [
+			["invalid-json", "{", /not valid JSON/],
+			["non-object", null, /plain object/],
+			["unknown-key", { extra: true }, /unknown top-level key/],
+			["description", { description: false }, /description must be a string/],
+			["parameters", { parameters: "object" }, /parameters must be a plain object/],
+			["parameter-type", { parameters: { type: "array" } }, /parameters\.type must be "object"/],
+		];
+
+		for (const [name, schema, reason] of cases) {
+			const agentDir = join(root, `invalid-schema-${name}`);
+			await writePyPlugin(agentDir, name, "import sys; sys.stdout.write('null')\n");
+			const sidecarPath = await writeSchema(agentDir, name, schema);
+			await assert.rejects(
+				loadPythonPlugins(specFor(agentDir, [name]), createToolRegistry()),
+				(err: unknown) => {
+					assert.ok(err instanceof InvalidPluginError);
+					assert.ok(err.message.includes(sidecarPath));
+					assert.match(err.message, reason);
+					return true;
+				},
+			);
+		}
+	});
+
+	it("exports resolution limited to .py", async () => {
+		const agentDir = join(root, "resolver");
+		await mkdir(join(agentDir, "tools"), { recursive: true });
+		await writeFile(join(agentDir, "tools", "javascript.mjs"), "export default () => null;\n", "utf8");
+		assert.equal(await resolvePythonScript(agentDir, "javascript"), null);
+		const pythonPath = await writePyPlugin(agentDir, "python", "pass\n");
+		assert.equal(await resolvePythonScript(agentDir, "python"), pythonPath);
 	});
 
 	it("skips names already present in the registry (pre-registered wins)", async () => {

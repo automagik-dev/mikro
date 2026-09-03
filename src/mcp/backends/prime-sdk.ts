@@ -693,10 +693,10 @@ async function planSpecTools(
       custom.push({
         name,
         description: schema?.description ?? `The mikro "${name}" tool, provided by the host.`,
-        // The loaders attach no schema today (docs/tool-authoring.md), so a
-        // permissive object is the honest default: it lets the model call the
-        // tool with the arguments the plugin documents, rather than pretending
-        // to a precision mikro has not declared.
+        // When no sidecar schema is present, a permissive object is the honest
+        // fallback: it lets the model call the tool with the arguments the
+        // plugin documents, rather than pretending to a precision mikro has
+        // not declared.
         parameters: schema?.parameters ?? { type: "object", additionalProperties: true },
         handler: (args: unknown) =>
           Promise.resolve(

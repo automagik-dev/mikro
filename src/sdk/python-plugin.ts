@@ -40,6 +40,7 @@ import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentSpec } from "./agent-spec.js";
+import { readPluginSchema } from "./tool-loader.js";
 import type { ToolHandler, ToolRegistry } from "./tool-registry.js";
 
 export const DEFAULT_PYTHON_BIN = "python3";
@@ -267,7 +268,7 @@ async function fileExists(path: string): Promise<boolean> {
 	}
 }
 
-async function resolvePythonScript(
+export async function resolvePythonScript(
 	agentDir: string,
 	name: string,
 ): Promise<string | null> {
@@ -315,6 +316,7 @@ export async function loadPythonPlugins(
 			missing.push(name);
 			continue;
 		}
+		const schema = await readPluginSchema(name, scriptPath);
 		registry.register(
 			name,
 			makePythonPluginHandler(name, scriptPath, {
@@ -323,6 +325,7 @@ export async function loadPythonPlugins(
 				// relative paths (e.g. to sibling SYSTEM.md / scope fixtures).
 				cwd: options.cwd ?? spec.dir,
 			}),
+			schema,
 		);
 		loaded.push(name);
 	}
