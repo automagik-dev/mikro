@@ -24,6 +24,14 @@ release is the git commit on `main`. See `docs/release-contract.md`.
 
 ### Added
 
+- **Declared tool schemas and truthful default-backend dispatch.** Agents can
+  add `tools/<name>.schema.json` beside `.mjs`, `.js`, or `.py` plugins; both
+  SDK loaders attach the validated description and JSON Schema parameters.
+  The default backend now uses a REPL `tool_request` / `tool_response` bridge,
+  while MCP discovery marks agents **UNAVAILABLE** for missing tools, reserved
+  REPL names, and `.mikro/TOOLS.md` collisions. Every microagent description
+  also reports its `Backend:` and declared `Tools:`.
+
 - **Sampling temperature is now settable, from three surfaces.** A single
   nullable `temperature` flows into the root loop's two model calls — the
   per-iteration completion and the forced final answer — so a run that needs to
@@ -146,6 +154,13 @@ release is the git commit on `main`. See `docs/release-contract.md`.
     client — handshake, `tools/list`, per-agent tools, and error isolation.
 
 ### Changed
+
+- **`rlmDriver` now rejects an empty model-facing tool set** (SDK public API).
+  Previously, supplying `tools` when every selected handler lacked a schema
+  silently chose one-shot execution. It now throws the exported
+  `NoExposableToolsError` at construction when no tool remaining after
+  `expose` has a schema. Add `tools/<name>.schema.json`, register the handler
+  with a `ToolSchema`, or omit `tools` when one-shot execution is intentional.
 
 - **Microagents no longer inherit the ambient project schema.** `applyAgent`
   now assigns `validate` unconditionally, so an agent that ships no

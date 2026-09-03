@@ -245,7 +245,7 @@ for await (const ev of sdk.runAgent({
 
 ```js
 export default async function greet(args, ctx) {
-	// args  — the payload from an IterationStep `tool_call`
+	// args  — an SDK tool_call payload or default-backend keyword args object
 	// ctx   — { tool, sessionId, iteration, signal }
 	return `hello ${args.name}`;
 }
@@ -254,6 +254,8 @@ export default async function greet(args, ctx) {
 Extension priority: `.mjs` → `.js` → `.py` (the last via `loadPythonPlugins`).
 TypeScript source loading is still deferred — needs a runtime TS loader
 (tsx or node --experimental-strip-types) and can land alongside G4 docs.
+See [`tool-authoring.md`](./tool-authoring.md) for sidecar schemas, validation,
+and the backend-specific native-function and REPL bridge paths.
 
 ### Python plugins (Group 3b)
 

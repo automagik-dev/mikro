@@ -14,6 +14,10 @@ consumes are validated. Unknown keys are preserved on `AgentSpec.extras`
 so consumers (brain, genie, your project) can layer their own schema
 without forking the parser.
 
+The executing backend is selected by mikro rather than set in this file;
+omitting a backend selection means `mikro`. Every MCP microagent description
+reports that executing backend and the declared tool names.
+
 ## Minimal example
 
 ```yaml
@@ -71,9 +75,9 @@ temperature: 0               # number, 0–2. `0` is greedy decoding — a real
 
 # ─── Tools ───────────────────────────────────────────────────
 tools:
-  - greet                    # Each name must resolve via the plugin
-  - search_corpus            # loader. Missing tools land on
-  - rtk                      # result.missing (or throw in strict mode).
+  - greet                    # Resolves from tools/greet.{mjs,js,py}.
+  - search_corpus            # An optional same-name .schema.json supplies
+  - rtk                      # model-facing metadata.
 
 # ─── Scope hints (advisory, SDK does NOT enforce) ────────────
 scope:
@@ -113,7 +117,7 @@ prompt:
 | `tools_api` / `toolsApi` | number | `1` | **SDK reads — stable** | Production-validated 2026-04-22. Bumped when the tool contract changes; prior versions stay loadable. |
 | `shape` | `"single-step" \| "loop" \| "recurse"` | `"single-step"` | SDK reads, enforces allowed values | Rejects unknown shapes with a named error. |
 | `model` | string | — | passthrough | Not validated. Consumers wire it into their driver. |
-| `tools` | string[] | `[]` | SDK reads | Empty strings are filtered. Duplicate names collapse (last wins at load). |
+| `tools` | string[] | `[]` | SDK reads; default backend loads | Empty strings are filtered and duplicates collapse. Plugins resolve from `tools/<name>.{mjs,js,py}`; optional `tools/<name>.schema.json` supplies the model-facing contract. The default `mikro mcp` backend exposes each plugin in the REPL with keyword arguments. |
 | `thinking` | `"minimal" \| "low" \| "medium" \| "high"` | — | SDK reads, enforces allowed values | Reasoning effort for the agent's own model calls. Rejects unknown levels with a named error. See [Reasoning effort](#reasoning-effort-thinking). |
 | `temperature` | number (`0`–`2`) | — | SDK reads, enforces range | Sampling temperature for the agent's own model calls. Applied by `applyAgent` onto `config.temperature`, so it outranks mikro.yaml's top-level `temperature:` and is outranked by `--temperature`. `0` is greedy decoding, **not** unset. A non-number or an out-of-range value is rejected with a named error. Best-effort: pi/ai sends `temperature` on every one of its ten api families and drops it only on the `anthropic-messages` api — either when a reasoning level is set, or when the resolved model declares `compat.supportsTemperature: false`. Claude reached over OpenRouter (`openai-completions`) or Bedrock (`bedrock-converse-stream`) does *not* get that guard, so the model family alone does not tell you whether the pin took. |
 | `system` | string | — | passthrough | Consumer is responsible for reading the file + handing its contents to the driver. |
@@ -187,6 +191,24 @@ reason.
 
 FastFlowLM / NPU `station` models (`*-FLM`) declare `reasoning: false`, so the
 field is simply inert on them rather than harmful.
+
+## MCP discovery and unavailable agents
+
+`mikro mcp` validates model pins and, for the default `mikro` backend, declared
+tools on every discovery scan. A declaration is advertised as **UNAVAILABLE**
+when it has no matching `.mjs`, `.js`, or `.py` file, uses a reserved REPL
+name, or collides with a function from `.mikro/TOOLS.md`. The first detected
+cause wins, the description includes its repair, and `tools/call` refuses the
+run with that same cause.
+
+The file, reserved-name, and collision probes do not pre-reject `prime` or
+`prime-sdk` agents, whose dispatch surfaces resolve tools differently. Every
+microagent description—available or unavailable—ends with
+`Backend: <name>. Tools: a, b.` or `Backend: <name>. Tools: none declared.`
+
+SDK loaders remain independently usable: a non-strict load can report a name
+in `result.missing`, while default-backend MCP discovery refuses guaranteed
+failures before a run starts.
 
 ## Extras
 
