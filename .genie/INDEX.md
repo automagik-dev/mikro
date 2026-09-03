@@ -19,6 +19,18 @@ Each entry below is one single-wish child at WRS 100/100 with independently veri
 - [Repeated CLI context roots](brainstorms/mikro-repeated-cli-context-roots/DESIGN.md) — schema-visible repeatability, ordered canonical-root dedupe, singleton byte parity, deterministic collision identities for query/cache/batch.
 - [Dev and release promotion](brainstorms/mikro-dev-release-promotion/DESIGN.md) — clean B0/P0 lane, exclusive compare-and-fast-forward `dev`, exact-SHA journeys, one rolling PR, identity-bound merge/release and revert-only rollback.
 
+## Poured — approved wish
+
+- [Declared tools truth](brainstorms/mikro-declared-tools-truth/DESIGN.md) → [WISH.md](wishes/mikro-declared-tools-truth/WISH.md) — M1+M2 of the brain handoff: default backend loads declared `tools:` through a REPL `tool_request` bridge, sidecar `<tool>.schema.json`, `rlmDriver` throws `NoExposableToolsError` instead of silent one-shot, unresolved/reserved/colliding tools advertised `UNAVAILABLE`. Design review SHIP (three rounds, digest-stamped) and plan review SHIP (two rounds) on 2026-09-03; WISH status `APPROVED`; six groups in three waves, board tasks created. Execution still requires the Delivery admission below.
+
+## Raw
+
+- [Brain consumer handoff decomposition](brainstorms/mikro-brain-consumer-handoff/DRAFT.md) — **NON-EXECUTABLE decomposition record.** Splits the 2026-09-03 khal-os/brain handoff (M1–M10) into nine single-wish children with dependencies; never pass to `wish`. Child 1 is poured (above); children 2–9 not yet brainstormed.
+
+## Simmering
+
+_(none)_
+
 ## Superseded wish records
 
 These local-only wish paths are historical planning inputs, not links in this reviewed candidate. They are not the executable handoff for the corrected portfolio and were not modified by this correction.
