@@ -22,26 +22,21 @@
  * The wish is the governing artifact; every ambiguous mapping fails loudly —
  * no silent degradation.
  *
- * - model: mikro provider `deepseek` → prime `--provider deepseek
- *   --model <id>` (same bare addressing, prime's native deepseek provider).
- *   THE GATE MODEL (wish decision 7, as amended) is deepseek/deepseek-v4-flash:
- *   it maps to `--provider deepseek --model deepseek-v4-flash`. mikro provider
- *   `google` → prime `--provider prime-inference --model google/<id>` (prime
- *   addresses its google models namespaced) remains a SUPPORTED path for
- *   `google/`-prefixed specs, but it is NOT the gate model. prime 0.7.2
- *   exposes only these two providers (`prime-agent model list`), so any other
- *   mikro provider (khal, station, openrouter, …) throws.
+ * - model: Prime 0.8.1 accepts direct `google`, `openrouter`, `deepseek`,
+ *   `prime-inference`, `openai-codex`, and `zai` provider/model pairs. Mikro's
+ *   configured `khal` provider uses Prime's custom-provider contract. Unknown
+ *   providers fail loudly.
  * - thinking: `config.gemini.thinkingLevel` (minimal|low|medium|high) is a
  *   subset of prime's `--thinking` levels; passed through verbatim.
  * - system: `config.system` (the agent's SYSTEM.md via `applyAgent`) and
  *   `config.criteria` are APPENDED to prime's base prompt via
- *   `--append-system-prompt` — never `--system-prompt`, which per prime
- *   0.7.2 `--help` *replaces* the default system prompt. Replacing would
+ *   `--append-system-prompt` — never `--system-prompt`, which per Prime
+ *   0.8.1 `--help` *replaces* the default system prompt. Replacing would
  *   strip prime's base RLM prompt and handicap the prime leg.
  * - context: `LoadedContext` items map to prime `@file` arguments at their
  *   original absolute paths (`BackendRequest.contextRoot` — the same files
  *   the caller named, so path citations stay resolvable). Every arg is the
- *   single `@<abs path>` form prime 0.7.2's parser turns into fileArgs
+ *   single `@<abs path>` form Prime 0.8.1's parser turns into fileArgs
  *   (contents inlined into the first user message): a plain path would
  *   instead become a message and spawn one garbage autonomous turn per file.
  *   Each mapped file's existence is pre-checked at spawn, so a missing
@@ -95,10 +90,62 @@ import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { TIMEOUT_ANSWER } from "../../rlm.js";
-/** The exact prime-agent version this build pins (wish decision 2: 0.7.2). */
-export const EXPECTED_PRIME_VERSION = "0.7.2";
+/** The exact prime-agent release both subprocess and SDK integrations target. */
+export const EXPECTED_PRIME_VERSION = "0.8.1";
 /** rlmLoop's default wall-clock cap, mirrored so the deadline default matches legacy. */
 export const DEFAULT_PRIME_DEADLINE_MS = 300_000;
+/** Host state required by Prime independent of the selected provider. */
+const PRIME_ENV_ALLOWLIST = [
+    "HOME",
+    "PATH",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "USER",
+    "PRIME_AGENT_CODING_AGENT_DIR",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+];
+/** Credentials admitted for each selected Prime provider. */
+const PRIME_PROVIDER_CREDENTIALS = {
+    google: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    openrouter: ["OPENROUTER_API_KEY"],
+    deepseek: ["DEEPSEEK_API_KEY"],
+    zai: ["ZAI_API_KEY"],
+    "prime-inference": ["PRIME_API_KEY"],
+    khal: ["KHAL_API_KEY", "MIKRO_KHAL_API_KEY"],
+};
+/** Build the least-privilege environment handed to the Prime subprocess. */
+export function buildPrimeChildEnv(source, provider) {
+    const child = {
+        DO_NOT_TRACK: "1",
+        PRIME_AGENT_TELEMETRY: "0",
+    };
+    for (const name of PRIME_ENV_ALLOWLIST) {
+        const value = source[name];
+        if (value !== undefined)
+            child[name] = value;
+    }
+    for (const name of PRIME_PROVIDER_CREDENTIALS[provider] ?? []) {
+        const value = source[name];
+        if (value !== undefined)
+            child[name] = value;
+    }
+    return child;
+}
 const num = (value) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 function isAssistant(message) {
     return (typeof message === "object" &&
@@ -124,14 +171,14 @@ function textOf(message) {
  * The real engine: spawn the binary, parse the JSONL event stream, enforce
  * the mikro-owned budgets, and kill the whole process tree on breach.
  */
-function spawnPrimeRun(argv, emit, limits) {
+function spawnPrimeRun(argv, emit, limits, environment) {
     return new Promise((resolve, reject) => {
         const binaryPath = argv[0];
         const child = spawn(binaryPath, argv.slice(1), {
             // Own process group: the budget kill takes the tree, descendants included.
             detached: true,
             stdio: ["ignore", "pipe", "pipe"],
-            env: process.env,
+            env: environment,
         });
         let settled = false;
         let killed = null;
@@ -310,6 +357,17 @@ function spawnPrimeRun(argv, emit, limits) {
             // (agent_end's message list, falling back to the last turn_end and the
             // streamed text); usage = the run total over every assistant message.
             const answer = finalMessage ? textOf(finalMessage) : (lastTurnText ?? lastText);
+            if (finalMessage?.stopReason === "error" || finalMessage?.errorMessage) {
+                const model = [finalMessage.provider, finalMessage.model].filter(Boolean).join("/");
+                fail(new Error(`prime backend: prime-agent model run failed${model ? ` (${model})` : ""}: ` +
+                    `${finalMessage.errorMessage?.trim() || "unknown model error"}`));
+                return;
+            }
+            if (!answer.trim()) {
+                fail(new Error("prime backend: prime-agent reported agent_end without a final text answer. " +
+                    "The run cannot be treated as successful; inspect the Prime JSON event stream."));
+                return;
+            }
             settle({
                 answer,
                 turns,
@@ -358,7 +416,7 @@ function assertPinnedVersion(binaryPath, expected) {
     }
 }
 /**
- * Map mikro's model addressing onto prime 0.7.2's two providers. Fails loudly
+ * Map mikro's model addressing onto prime 0.8.1's advertised providers. Fails loudly
  * for every mikro provider prime cannot address — a spec that says "run on X"
  * must never silently run on another model.
  */
@@ -366,15 +424,24 @@ function mapPrimeModel(model, agentName) {
     const who = agentName ? `agent "${agentName}"` : "this run";
     switch (model.provider) {
         case "google":
-            // mikro addresses gemini bare (`gemini-2.5-flash`); prime namespaces it
-            // under the prime-inference gateway (`google/gemini-2.5-flash`).
-            return { provider: "prime-inference", model: `google/${model.model}` };
+            return { provider: "google", model: model.model };
+        case "openrouter":
+            return { provider: "openrouter", model: model.model };
         case "deepseek":
             return { provider: "deepseek", model: model.model };
+        case "prime-inference":
+            return { provider: "prime-inference", model: model.model };
+        case "openai-codex":
+            return { provider: "openai-codex", model: model.model };
+        case "zai":
+            return { provider: "zai", model: model.model };
+        case "khal":
+            return { provider: "khal", model: model.model };
         default:
             throw new Error(`prime backend: ${who} is pinned to mikro model "${model.provider}/${model.model}", ` +
-                `which prime-agent 0.7.2 cannot address — prime exposes only the \`deepseek\` and \`prime-inference\` providers. ` +
-                `Re-pin the agent's model to \`google/<gemini model>\` (routed through prime-inference) or \`deepseek/<model>\`, ` +
+                `which the Mikro Prime adapter for prime-agent 0.8.1 cannot address — it supports ` +
+                `\`google\`, \`openrouter\`, \`deepseek\`, \`prime-inference\`, \`openai-codex\`, \`zai\`, and the configured \`khal\` provider. ` +
+                `Re-pin the agent to one of those providers, ` +
                 `or switch the agent back to \`backend: mikro\`.`);
     }
 }
@@ -420,8 +487,8 @@ function sanitizeSegments(relativePath) {
         .filter((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 /**
- * Map the loaded context onto prime `@file` arguments — each in the single
- * `@<abs path>` form prime 0.7.2 parses into fileArgs — at their original
+ * Map the loaded context onto Prime `@file` arguments — each in the single
+ * `@<abs path>` form Prime 0.8.1 parses into fileArgs — at their original
  * absolute paths (the same files the caller named), so path citations stay
  * resolvable. The `@` prefix is the contract itself, not decoration: a plain
  * path becomes a message and prime runs one autonomous turn per path string.
@@ -511,7 +578,16 @@ export class PrimeBackend {
     constructor(options = {}) {
         this.binaryPath =
             options.binaryPath ?? process.env.MIKRO_PRIME_BINARY_PATH ?? "prime-agent";
-        this.engine = options.engine ?? ((argv, emit, limits) => spawnPrimeRun(argv, emit, limits));
+        const environment = options.environment ?? buildPrimeChildEnv;
+        this.engine =
+            options.engine ??
+                ((argv, emit, limits) => {
+                    const providerIndex = argv.indexOf("--provider");
+                    const provider = providerIndex >= 0 ? argv[providerIndex + 1] : undefined;
+                    if (!provider)
+                        throw new Error("prime backend: internal error: spawn argv has no --provider");
+                    return spawnPrimeRun(argv, emit, limits, environment(process.env, provider));
+                });
         // Backend startup: the version pin is asserted once per instance. The
         // server constructs this lazily on first prime selection (selectBackend),
         // so a machine without prime-agent never pays for it — and the injected

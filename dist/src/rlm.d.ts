@@ -22,6 +22,10 @@ export declare const TIMEOUT_ANSWER = "Error: RLM query timed out";
 /** Options for the RLM loop. */
 export interface RLMOptions {
     maxIterations: number;
+    /** Provider-level output cap for each root iteration. */
+    maxOutputTokens?: number;
+    /** Provider transport retries per root iteration. Zero disables retries. */
+    maxRetries?: number;
     timeout: number;
     verbose: boolean;
     output: "text" | "json" | "stream";

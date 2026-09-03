@@ -883,7 +883,7 @@ describe("backend selection", () => {
       await writeFile(
         shim,
         "#!/usr/bin/env node\n" +
-          "if (process.argv.includes('--version')) { process.stderr.write('0.7.2'); process.exit(0); }\n" +
+          "if (process.argv.includes('--version')) { process.stderr.write('0.8.1'); process.exit(0); }\n" +
           "process.exit(1);\n",
         "utf-8"
       );

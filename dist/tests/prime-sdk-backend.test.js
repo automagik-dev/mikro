@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EMIT_DONE_TOOL, EXPECTED_PRIME_SDK_VERSION, PrimeSdkBackend, assertPinnedSdkVersion, buildModelsJson, createPrimeSdkLoader, } from "../src/mcp/backends/prime-sdk.js";
+import { EXPECTED_PRIME_VERSION } from "../src/mcp/backends/prime.js";
 import { TIMEOUT_ANSWER } from "../src/rlm.js";
 // ── Fixtures ─────────────────────────────────────────────────────────────
 function config(overrides = {}) {
@@ -99,11 +100,17 @@ function readTree(root) {
 function fakeSdk(script) {
     const record = { tools: [], contextFiles: [], abortCalls: 0, disposeCalls: 0, executed: [] };
     const module = {
+        getAgentDir: () => "/prime-agent",
         defineTool: (tool) => {
             record.tools.push(tool);
             return tool;
         },
-        AuthStorage: { create: (path) => ({ path }) },
+        AuthStorage: {
+            create: (path) => {
+                record.authPath = path;
+                return { path };
+            },
+        },
         ModelRegistry: {
             create: (_auth, modelsJsonPath) => {
                 record.modelsJsonPath = modelsJsonPath;
@@ -117,7 +124,10 @@ function fakeSdk(script) {
                 };
             },
         },
-        SettingsManager: { inMemory: (settings) => ({ settings }) },
+        SettingsManager: {
+            inMemory: (settings) => ({ settings }),
+            create: (_cwd, agentDir) => ({ agentDir }),
+        },
         SessionManager: { inMemory: () => ({}) },
         DefaultResourceLoader: class {
             constructor(options) {
@@ -127,7 +137,7 @@ function fakeSdk(script) {
         },
         createAgentSession: async (options) => {
             record.sessionOptions = options;
-            const scratch = String(options.agentDir);
+            const scratch = String(record.loaderOptions?.agentDir ?? options.agentDir);
             record.scratchDir = scratch;
             record.contextFiles = readTree(join(scratch, "context"));
             let listener;
@@ -140,11 +150,11 @@ function fakeSdk(script) {
                 },
                 async prompt() {
                     for (const step of script.steps) {
-                        if (aborted)
+                        if (aborted && !script.continueAfterAbort)
                             break;
                         // Yield so the backend's deadline timer can fire between steps.
                         await new Promise((r) => setImmediate(r));
-                        if (aborted)
+                        if (aborted && !script.continueAfterAbort)
                             break;
                         if (step.kind === "event") {
                             listener?.(step.event);
@@ -183,7 +193,7 @@ function fakeSdk(script) {
 /** Drive one backend run against a scripted fake SDK. */
 async function run(script, opts = {}) {
     const { module, record } = fakeSdk(script);
-    const backend = new PrimeSdkBackend({ loader: async () => module });
+    const backend = new PrimeSdkBackend({ loader: async () => module, ...opts.backendOptions });
     const progress = [];
     const result = await backend.run(opts.agent, request(opts.request), (m) => progress.push(m));
     return { result, record, progress };
@@ -220,6 +230,36 @@ describe("prime-sdk backend — the emit_done answer channel", () => {
         const allow = record.sessionOptions?.tools;
         assert.ok(Array.isArray(allow), "the session must receive an explicit tools allowlist");
         assert.ok(allow.includes(EMIT_DONE_TOOL), `allowlist ${JSON.stringify(allow)} must name emit_done`);
+    });
+    it("honors the provider-level root output cap on the session model", async () => {
+        const { record } = await run({ steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "done" } }] }, { request: { maxOutputTokens: 1024 } });
+        assert.deepEqual(record.sessionOptions?.model, {
+            provider: "deepseek",
+            id: "deepseek-v4-flash",
+            maxTokens: 1024,
+        });
+    });
+    it("offers a hermetic inline payload transform while host extension discovery stays disabled", async () => {
+        const { record } = await run({ steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "done" } }] }, {
+            backendOptions: {
+                providerPayloadTransform: (payload) => ({
+                    ...payload,
+                    temperature: 0,
+                    seed: 53,
+                }),
+            },
+        });
+        assert.equal(record.loaderOptions?.noExtensions, true);
+        const factories = record.loaderOptions?.extensionFactories;
+        assert.equal(factories.length, 1);
+        let handler;
+        factories[0]({ on: (_event, registered) => { handler = registered; } });
+        assert.ok(handler);
+        assert.deepEqual(await handler({ payload: { model: "controlled" } }), {
+            model: "controlled",
+            temperature: 0,
+            seed: 53,
+        });
     });
     it("offers no prime built-in tools unless the spec opts in", async () => {
         const { record } = await run({
@@ -285,6 +325,22 @@ describe("prime-sdk backend — structured output", () => {
                 { kind: "event", event: { type: "turn_end", message: assistant("just prose") } },
             ],
         }, { request: { config: config({ output: { schema: SCHEMA } }) } }), /finished without calling `emit_done`.*no structured output/s);
+    });
+    it("surfaces provider stream errors before the generic structured-output error", async () => {
+        await assert.rejects(run({
+            steps: [{
+                    kind: "event",
+                    event: {
+                        type: "message_end",
+                        message: {
+                            role: "assistant",
+                            content: [],
+                            stopReason: "error",
+                            errorMessage: "No endpoints found that support tool use",
+                        },
+                    },
+                }],
+        }, { request: { config: config({ output: { schema: SCHEMA } }) } }), /prime-sdk provider error: No endpoints found that support tool use/);
     });
 });
 // ── Custom tools ─────────────────────────────────────────────────────────
@@ -365,7 +421,7 @@ describe("prime-sdk backend — mikro owns the budgets", () => {
             { kind: "event", event: { type: "message_end", message: assistant(text) } },
             { kind: "event", event: { type: "turn_end", message: assistant(text) } },
         ];
-        const { result, record, progress } = await run({ steps: [...turn("first"), ...turn("second"), ...turn("third")] }, { request: { maxIterations: 2 } });
+        const { result, record, progress } = await run({ steps: [...turn("first"), ...turn("second"), ...turn("third")], continueAfterAbort: true }, { request: { maxIterations: 2 } });
         assert.equal(result.iterations, 2, "the cap is a turn ceiling");
         assert.equal(result.budgetHit, "max-iterations");
         assert.equal(result.answer, "second", "the answer is the last COMPLETED turn's");
@@ -437,6 +493,19 @@ describe("prime-sdk backend — mikro owns the budgets", () => {
 });
 // ── Providers + models.json ──────────────────────────────────────────────
 describe("prime-sdk backend — provider mapping", () => {
+    it("loads built-in-provider auth and model overrides from the same canonical agentDir as the CLI", async () => {
+        const primeAgentDir = mkdtempSync(join(tmpdir(), "mikro-prime-agent-dir-"));
+        try {
+            writeFileSync(join(primeAgentDir, "models.json"), JSON.stringify({ providers: {} }));
+            const { record } = await run({ steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }] }, { backendOptions: { primeAgentDir } });
+            assert.equal(record.authPath, join(primeAgentDir, "auth.json"));
+            assert.equal(record.modelsJsonPath, join(primeAgentDir, "models.json"));
+            assert.equal(record.sessionOptions?.agentDir, primeAgentDir);
+        }
+        finally {
+            rmSync(primeAgentDir, { recursive: true, force: true });
+        }
+    });
     it("writes no models.json for a provider prime already knows", async () => {
         const { record } = await run({
             steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }],
@@ -467,11 +536,11 @@ describe("prime-sdk backend — provider mapping", () => {
         const station = buildModelsJson("station", "qwen", "a");
         assert.equal(station?.providers.station?.apiKey, "STATION_API_KEY");
     });
-    it("passes google and openrouter through under their own mikro names", () => {
-        // The subprocess backend remaps google → prime-inference/google-<id>.
-        // In-process there is no gateway hop: prime's catalog has both providers.
+    it("passes the latest Prime built-in providers through under their own mikro names", () => {
         assert.equal(buildModelsJson("google", "gemini-2.5-flash", "a"), null);
         assert.equal(buildModelsJson("openrouter", "anthropic/claude-3.5", "a"), null);
+        assert.equal(buildModelsJson("openai-codex", "gpt-5.6-sol", "a"), null);
+        assert.equal(buildModelsJson("zai", "glm-5.2", "a"), null);
     });
     it("fails loudly on a provider neither prime nor mikro can address", () => {
         assert.throws(() => buildModelsJson("pulp", "fiction", "triage"), /is pinned to model "pulp\/fiction".*neither one of prime's built-in providers/s);
@@ -550,13 +619,14 @@ describe("prime-sdk backend — prompt assembly", () => {
         }
         assert.equal(options.bundledSkillsDir, null);
     });
-    it("runs the agent in the server's cwd, with the scratch dir only as agentDir", async () => {
+    it("runs in the server cwd, keeps canonical Prime config, and isolates resources in scratch", async () => {
         const { record } = await run({
             steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }],
         });
         assert.equal(record.sessionOptions?.cwd, "/tmp/mikro-prime-sdk-cwd");
-        assert.notEqual(record.sessionOptions?.agentDir, "/tmp/mikro-prime-sdk-cwd");
+        assert.equal(record.sessionOptions?.agentDir, "/prime-agent");
         assert.equal(record.loaderOptions?.cwd, "/tmp/mikro-prime-sdk-cwd");
+        assert.ok(String(record.loaderOptions?.agentDir).startsWith(tmpdir()));
     });
     it("passes the agent's thinking level through", async () => {
         const { record } = await run({ steps: [{ kind: "call", tool: EMIT_DONE_TOOL, args: { answer: "x" } }] }, { request: { config: config({ gemini: { thinkingLevel: "high" } }) } });
@@ -608,7 +678,7 @@ describe("prime-sdk backend — scratch lifecycle", () => {
         const wrapped = {
             ...module,
             createAgentSession: async (options) => {
-                observedMode = statSync(String(options.agentDir)).mode & 0o777;
+                observedMode = statSync(String(record.loaderOptions?.agentDir)).mode & 0o777;
                 return module.createAgentSession(options);
             },
         };
@@ -620,11 +690,11 @@ describe("prime-sdk backend — scratch lifecycle", () => {
     });
     it("removes the scratch dir even when the run throws", async () => {
         let scratchDir;
-        const module = fakeSdk({ steps: [] }).module;
+        const { module, record } = fakeSdk({ steps: [] });
         const wrapped = {
             ...module,
             createAgentSession: async (options) => {
-                scratchDir = String(options.agentDir);
+                scratchDir = String(record.loaderOptions?.agentDir);
                 throw new Error("session exploded");
             },
         };
@@ -642,6 +712,10 @@ describe("prime-sdk backend — scratch lifecycle", () => {
 });
 // ── The version pin ──────────────────────────────────────────────────────
 describe("prime-sdk backend — the version pin", () => {
+    it("shares the subprocess backend's 0.8.1 pin", () => {
+        assert.equal(EXPECTED_PRIME_SDK_VERSION, EXPECTED_PRIME_VERSION);
+        assert.equal(EXPECTED_PRIME_SDK_VERSION, "0.8.1");
+    });
     function fakeRoot(version) {
         const dir = mkdtempSync(join(tmpdir(), "mikro-prime-root-"));
         if (version !== null) {

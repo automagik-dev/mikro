@@ -103,6 +103,7 @@ export declare function checkModelConfig(modelConfig: ModelConfig): string | nul
 /** Per-call options accepted by `llmComplete`. */
 export interface LlmCompleteOptions {
     maxTokens?: number;
+    maxRetries?: number;
     signal?: AbortSignal;
     logger?: Logger;
     iteration?: number;
