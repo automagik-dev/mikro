@@ -45,12 +45,11 @@ export interface Microagent {
   /** First non-empty line of the system prompt — used as the tool description. */
   readonly summary: string;
   /**
-   * Set when the agent's `model:` pin cannot be resolved against the built-in
-   * registry or the config-declared providers. The tool is still advertised
-   * (so the host can see it and read why) but every call is refused with this
-   * message instead of spinning up a run that would fail identically.
+   * Cause and remedy when discovery proves this agent cannot run. The tool is
+   * still advertised so the host can explain how to repair it, but every call
+   * is refused before starting a doomed run.
    */
-  readonly modelProblem?: string;
+  readonly unavailable?: string;
   /**
    * The agent's own `VALIDATE.md` contract, when it ships one.
    *

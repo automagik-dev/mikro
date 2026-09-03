@@ -51,6 +51,9 @@ import { resolve } from "node:path";
 import { applyModelRef, loadConfig, type MikroConfig } from "../config.js";
 import { loadContext, type LoadedContext } from "../context.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../rlm.js";
+import { REPL_RESERVED_NAMES } from "../repl.js";
+import { resolvePythonScript } from "../sdk/python-plugin.js";
+import { resolvePluginPath } from "../sdk/tool-loader.js";
 import { VERSION } from "../version.js";
 import { checkModelConfig } from "../llm.js";
 import { discoverAgents, splitModel, type Microagent } from "./agents.js";
@@ -183,11 +186,15 @@ function genericToolSchema(): Tool["inputSchema"] {
 /** Spawn-style description: what it is, how to prompt it, what comes back. */
 function describeAgent(agent: Microagent): string {
   const model = agent.spec.model ? ` Runs on ${agent.spec.model}.` : "";
-  if (agent.modelProblem) {
+  const backend = agent.spec.backend ?? "mikro";
+  const declaredTools = agent.spec.tools.length
+    ? `Tools: ${agent.spec.tools.join(", ")}.`
+    : "Tools: none declared.";
+  const suffix = `Backend: ${backend}. ${declaredTools}`;
+  if (agent.unavailable) {
     return (
-      `UNAVAILABLE — "${agent.name}" cannot run: ${agent.modelProblem} ` +
-      `Fix the agent's model: pin or declare the provider in config, then retry. ` +
-      `${agent.summary}${model}`
+      `UNAVAILABLE — "${agent.name}" cannot run: ${agent.unavailable} ` +
+      `${agent.summary}${model} ${suffix}`
     );
   }
   return (
@@ -198,7 +205,8 @@ function describeAgent(agent: Microagent): string {
     `used plus a session_id; pass that session_id back to this tool to ` +
     `continue the conversation. ` +
     `(mikro microagent "${agent.name}", shape=${agent.spec.shape}` +
-    `${agent.spec.thinking ? `, thinking=${agent.spec.thinking}` : ""})`
+    `${agent.spec.thinking ? `, thinking=${agent.spec.thinking}` : ""}) ` +
+    suffix
   );
 }
 
@@ -617,8 +625,76 @@ export async function validateAgentModels(
     if ((agent.spec.backend ?? "mikro") !== "mikro") return agent;
     const problem = checkModelConfig(applyAgent(config, agent).model);
     if (!problem) return agent;
-    return { ...agent, modelProblem: problem };
+    return {
+      ...agent,
+      unavailable:
+        `${problem} Fix the agent's model: pin or declare the provider in config, then retry.`,
+    };
   });
+}
+
+/**
+ * Mark default-backend agents whose declared tools cannot be exposed safely.
+ * This is a resolution-only discovery probe: plugins are neither imported nor
+ * spawned here. A prior unavailability cause (notably a bad model pin) wins.
+ */
+export async function validateAgentTools(
+  cwd: string,
+  agents: readonly Microagent[]
+): Promise<Microagent[]> {
+  if (agents.length === 0) return [];
+
+  let collisions = new Set<string>();
+  try {
+    const config = await loadConfig(cwd);
+    collisions = new Set(config.tools.map((tool) => tool.name));
+  } catch {
+    // Model validation reports config failures. Tool-file and reserved-name
+    // checks remain useful even when TOOLS.md cannot be loaded.
+  }
+
+  return Promise.all(
+    agents.map(async (agent) => {
+      if ((agent.spec.backend ?? "mikro") !== "mikro" || agent.unavailable) {
+        return agent;
+      }
+
+      for (const name of agent.spec.tools) {
+        if (REPL_RESERVED_NAMES.has(name)) {
+          return {
+            ...agent,
+            unavailable:
+              `"${name}" is a reserved REPL name — rename the tool and its file.`,
+          };
+        }
+        if (collisions.has(name)) {
+          return {
+            ...agent,
+            unavailable:
+              `"${name}" collides with a TOOLS.md tool — rename one of them.`,
+          };
+        }
+      }
+
+      const missing: string[] = [];
+      for (const name of agent.spec.tools) {
+        const [{ path }, pythonPath] = await Promise.all([
+          resolvePluginPath(agent.dir, name),
+          resolvePythonScript(agent.dir, name),
+        ]);
+        if (path === null && pythonPath === null) missing.push(name);
+      }
+      if (missing.length === 0) return agent;
+
+      const example = missing.length === 1 ? missing[0] : "<name>";
+      return {
+        ...agent,
+        unavailable:
+          `missing tools: ${missing.join(", ")} — add tools/${example}.{mjs,js,py} ` +
+          `to ${agent.dir} or remove the declaration, then retry.`,
+      };
+    })
+  );
 }
 
 function applyModelOverride(config: MikroConfig, model: string): MikroConfig {
@@ -904,7 +980,7 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
   console.warn = toStderr as typeof console.warn;
 
   const registry = createAgentRegistry(async () =>
-    validateAgentModels(cwd, await discoverAgents(cwd))
+    validateAgentTools(cwd, await validateAgentModels(cwd, await discoverAgents(cwd)))
   );
   const sessions = new McpSessionStore();
 
@@ -916,9 +992,9 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
       `${initial.agents.length ? ` (${initial.agents.map((a) => a.name).join(", ")})` : ""}\n`
   );
   for (const agent of initial.agents) {
-    if (agent.modelProblem) {
+    if (agent.unavailable) {
       process.stderr.write(
-        `mikro mcp: agent "${agent.name}" is UNAVAILABLE — ${agent.modelProblem}\n`
+        `mikro mcp: agent "${agent.name}" is UNAVAILABLE — ${agent.unavailable}\n`
       );
     }
   }
@@ -986,10 +1062,10 @@ export async function runMcp(cwd: string = process.cwd()): Promise<void> {
       sessions.evictTools([name]);
       return textResult(`Unknown tool: ${name}`, true);
     }
-    if (agent?.modelProblem) {
+    if (agent?.unavailable) {
       // Refuse up front: the run would die on its first model call with the
       // same message, after paying for context loading and a REPL spawn.
-      return textResult(`mikro ${name} cannot run: ${agent.modelProblem}`, true);
+      return textResult(`mikro ${name} cannot run: ${agent.unavailable}`, true);
     }
 
     const promptArg = readArg(args?.prompt);

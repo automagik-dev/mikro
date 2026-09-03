@@ -48,6 +48,7 @@ import {
   sessionResult,
   textResult,
   toolOutputSchema,
+  validateAgentTools,
 } from "../src/mcp/server.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../src/rlm.js";
 import type { MikroConfig } from "../src/config.js";
@@ -213,6 +214,161 @@ describe("discoverAgents", () => {
     assert.equal(
       triage.summary,
       "Project triage agent that classifies inbound issues."
+    );
+  });
+});
+
+describe("validateAgentTools", () => {
+  let tmp: string;
+
+  before(() => {
+    tmp = mkdtempSync(join(tmpdir(), "mikro-mcp-tool-validation-"));
+  });
+
+  after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  function agent(
+    name: string,
+    tools: readonly string[],
+    backend?: "mikro" | "prime" | "prime-sdk"
+  ): Microagent {
+    const dir = join(tmp, "agents", name);
+    mkdirSync(join(dir, "tools"), { recursive: true });
+    return {
+      name,
+      toolName: toToolName(name),
+      dir,
+      summary: `${name} summary.`,
+      spec: {
+        dir,
+        schemaVersion: 1,
+        toolsApi: 1,
+        shape: "loop",
+        tools,
+        extras: {},
+        ...(backend ? { backend } : {}),
+      },
+    } as Microagent;
+  }
+
+  it("marks missing default-backend tools unavailable with a repair path", async () => {
+    const [missing] = await validateAgentTools(tmp, [agent("missing", ["ghost"])]);
+    assert.equal(
+      missing.unavailable,
+      `missing tools: ghost — add tools/ghost.{mjs,js,py} to ${missing.dir} ` +
+        "or remove the declaration, then retry."
+    );
+
+    const description = buildToolList([missing])[1].description ?? "";
+    assert.match(
+      description,
+      /^UNAVAILABLE — "missing" cannot run: missing tools: ghost/
+    );
+    assert.ok(description.includes(missing.unavailable));
+  });
+
+  it("leaves the same unresolved declaration to prime-sdk", async () => {
+    const [agentWithPrime] = await validateAgentTools(tmp, [
+      agent("prime-agent", ["ghost"], "prime-sdk"),
+    ]);
+    assert.equal(agentWithPrime.unavailable, undefined);
+  });
+
+  it("rejects FINAL and context as reserved REPL names", async () => {
+    for (const name of ["FINAL", "context"]) {
+      const [reserved] = await validateAgentTools(tmp, [agent(`reserved-${name}`, [name])]);
+      assert.equal(
+        reserved.unavailable,
+        `"${name}" is a reserved REPL name — rename the tool and its file.`
+      );
+    }
+  });
+
+  it("rejects a declared name that collides with a TOOLS.md tool", async () => {
+    const mikroDir = join(tmp, ".mikro");
+    mkdirSync(mikroDir, { recursive: true });
+    writeFileSync(
+      join(mikroDir, "mikro.yaml"),
+      "model:\n  provider: google\n  model: gemini-2.5-flash\n",
+      "utf-8"
+    );
+    writeFileSync(
+      join(mikroDir, "TOOLS.md"),
+      "## echo\n```python\ndef echo(**kwargs):\n    return kwargs\n```\n",
+      "utf-8"
+    );
+
+    const colliding = agent("collision", ["echo"]);
+    writeFileSync(join(colliding.dir, "tools", "echo.mjs"), "", "utf-8");
+    const [validated] = await validateAgentTools(tmp, [colliding]);
+    assert.equal(
+      validated.unavailable,
+      '"echo" collides with a TOOLS.md tool — rename one of them.'
+    );
+  });
+
+  it("preserves the first unavailability cause", async () => {
+    const prior = {
+      ...agent("bad-model", ["ghost"]),
+      unavailable: "model unavailable — repair the model.",
+    };
+    const [validated] = await validateAgentTools(tmp, [prior]);
+    assert.equal(validated.unavailable, prior.unavailable);
+  });
+});
+
+describe("MCP agent description truth", () => {
+  const microagent = (
+    name: string,
+    tools: readonly string[],
+    backend?: "mikro" | "prime" | "prime-sdk",
+    unavailable?: string
+  ): Microagent =>
+    ({
+      name,
+      toolName: toToolName(name),
+      dir: `/tmp/${name}`,
+      summary: `${name} summary.`,
+      spec: {
+        dir: `/tmp/${name}`,
+        schemaVersion: 1,
+        toolsApi: 1,
+        shape: "loop",
+        tools,
+        extras: {},
+        ...(backend ? { backend } : {}),
+      },
+      ...(unavailable ? { unavailable } : {}),
+    }) as Microagent;
+
+  it("ends every available and unavailable agent description with backend and tools", () => {
+    const tools = buildToolList([
+      microagent("plain", []),
+      microagent("sdk", ["search", "fetch"], "prime-sdk"),
+      microagent("broken", ["ghost"], undefined, "missing tools: ghost — repair it."),
+    ]);
+    assert.match(tools[1].description ?? "", /Backend: mikro\. Tools: none declared\.$/);
+    assert.match(
+      tools[2].description ?? "",
+      /Backend: prime-sdk\. Tools: search, fetch\.$/
+    );
+    assert.match(tools[3].description ?? "", /Backend: mikro\. Tools: ghost\.$/);
+  });
+
+  it("leaves the generic tool description unchanged", () => {
+    const generic = buildToolList([])[0];
+    assert.equal(
+      generic.description,
+      "Launch a general-purpose mikro agent to handle a self-contained task " +
+        "autonomously (RLM loop: Python REPL plus recursion). Use it to offload " +
+        "work you would otherwise grind through inline — analysis over a large " +
+        "body of files, repeated extraction, wide searches. Give it a complete, " +
+        "standalone prompt: it runs to completion and returns a single final " +
+        "report, and cannot ask follow-up questions mid-run. The result carries " +
+        "the tokens and cost it used plus a session_id; pass that session_id back " +
+        "to this tool to continue the conversation."
     );
   });
 });
