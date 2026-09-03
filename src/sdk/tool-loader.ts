@@ -28,11 +28,11 @@
  * Spec: `.genie/wishes/rlmx-sdk-upgrade/WISH.md` L24, L164-168.
  */
 
-import { stat } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentSpec } from "./agent-spec.js";
-import type { ToolHandler, ToolRegistry } from "./tool-registry.js";
+import type { ToolHandler, ToolRegistry, ToolSchema } from "./tool-registry.js";
 
 /** Extensions the loader will try, in priority order. */
 const PLUGIN_EXTENSIONS = [".mjs", ".js"] as const;
@@ -81,7 +81,7 @@ async function fileExists(path: string): Promise<boolean> {
 	}
 }
 
-async function resolvePluginPath(
+export async function resolvePluginPath(
 	agentDir: string,
 	name: string,
 ): Promise<{ path: string | null; tried: readonly string[] }> {
@@ -92,6 +92,82 @@ async function resolvePluginPath(
 		if (await fileExists(candidate)) return { path: candidate, tried };
 	}
 	return { path: null, tried };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Read and validate the optional schema sidecar beside a resolved plugin. */
+export async function readPluginSchema(
+	toolName: string,
+	pluginPath: string,
+): Promise<ToolSchema | undefined> {
+	const sidecarPath = join(dirname(pluginPath), `${toolName}.schema.json`);
+	let source: string;
+	try {
+		source = await readFile(sidecarPath, "utf8");
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw new InvalidPluginError(
+			toolName,
+			sidecarPath,
+			`schema could not be read: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(source) as unknown;
+	} catch (err) {
+		throw new InvalidPluginError(
+			toolName,
+			sidecarPath,
+			`schema is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+	if (!isPlainObject(parsed)) {
+		throw new InvalidPluginError(
+			toolName,
+			sidecarPath,
+			"schema must be a plain object",
+		);
+	}
+
+	const allowedKeys = new Set(["description", "parameters"]);
+	const unknownKey = Object.keys(parsed).find((key) => !allowedKeys.has(key));
+	if (unknownKey !== undefined) {
+		throw new InvalidPluginError(
+			toolName,
+			sidecarPath,
+			`schema has unknown top-level key "${unknownKey}"`,
+		);
+	}
+	if ("description" in parsed && typeof parsed.description !== "string") {
+		throw new InvalidPluginError(
+			toolName,
+			sidecarPath,
+			"schema description must be a string",
+		);
+	}
+	if ("parameters" in parsed) {
+		if (!isPlainObject(parsed.parameters)) {
+			throw new InvalidPluginError(
+				toolName,
+				sidecarPath,
+				"schema parameters must be a plain object",
+			);
+		}
+		if ("type" in parsed.parameters && parsed.parameters.type !== "object") {
+			throw new InvalidPluginError(
+				toolName,
+				sidecarPath,
+				'schema parameters.type must be "object" when present',
+			);
+		}
+	}
+
+	return parsed as ToolSchema;
 }
 
 function coerceDefaultExport(
@@ -159,7 +235,8 @@ export async function loadPluginTools(
 		// handles both without surprises.
 		const mod = (await import(pathToFileURL(path).href)) as unknown;
 		const handler = coerceDefaultExport(mod, name, path);
-		registry.register(name, handler);
+		const schema = await readPluginSchema(name, path);
+		registry.register(name, handler, schema);
 		loaded.push(name);
 	}
 
