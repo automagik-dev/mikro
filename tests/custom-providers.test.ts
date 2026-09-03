@@ -334,14 +334,18 @@ describe("loadConfig providers block", () => {
       }) as unknown as Parameters<typeof validateAgentModels>[1][number];
 
     const [ok] = await validateAgentModels(dir, [agent("wafer/GLM-5.3-Flash")]);
-    assert.equal(ok.modelProblem, undefined);
+    assert.equal(ok.unavailable, undefined);
 
     const [bad] = await validateAgentModels(dir, [agent("wafer/GLM-9")]);
-    assert.ok(bad.modelProblem);
-    assert.match(bad.modelProblem, /Unknown model "GLM-9" for provider "wafer"/);
-    assert.match(bad.modelProblem, /models: GLM-5\.3-Flash/);
+    assert.ok(bad.unavailable);
+    assert.match(bad.unavailable, /Unknown model "GLM-9" for provider "wafer"/);
+    assert.match(bad.unavailable, /models: GLM-5\.3-Flash/);
+    assert.match(
+      bad.unavailable,
+      /Fix the agent's model: pin or declare the provider in config, then retry\.$/
+    );
 
     const [other] = await validateAgentModels(dir, [{ ...agent("x/y"), spec: { ...agent("x/y").spec, backend: "prime" } } as never]);
-    assert.equal(other.modelProblem, undefined, "non-pi-ai backends are not validated");
+    assert.equal(other.unavailable, undefined, "non-pi-ai backends are not validated");
   });
 });
