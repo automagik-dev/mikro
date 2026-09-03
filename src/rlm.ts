@@ -43,6 +43,7 @@ import { isGoogleProvider } from "./gemini.js";
 import { detectRtk } from "./rtk-detect.js";
 import type { Logger } from "./logger.js";
 import { createEmitter, type EmitterAndStream } from "./sdk/emitter.js";
+import type { ToolResolver } from "./sdk/agent.js";
 import { createRecursionBridge } from "./sdk/recursion-bridge.js";
 import { createMetricsRecorder } from "./sdk/metrics.js";
 import { makeEvent } from "./sdk/events.js";
@@ -113,6 +114,63 @@ export interface RLMOptions {
    * closes the emitter when it finishes.
    */
   emitter?: EmitterAndStream;
+  /** Declared-tool resolver exposed to Python through the REPL bridge. */
+  tools?: ToolResolver;
+}
+
+/**
+ * Add live SDK events and run-scoped cancellation to REPL tool dispatch.
+ *
+ * The REPL supplies its own signal to a ToolResolver. Declared plugins instead
+ * receive the enclosing run's signal so the loop timeout can interrupt them.
+ */
+export function bridgeToolResolver(
+  resolver: ToolResolver,
+  emitter: EmitterAndStream,
+  options: {
+    readonly sessionId: string;
+    readonly selfTag: {
+      readonly correlationId?: string;
+      readonly parentRunId?: string;
+    };
+    readonly signal: AbortSignal;
+  }
+): ToolResolver {
+  return async (tool, args, _replSignal) => {
+    emitter.emit(makeEvent<ToolCallBeforeEvent>("ToolCallBefore", {
+      sessionId: options.sessionId,
+      ...options.selfTag,
+      iteration: 0,
+      tool,
+      args,
+    }));
+    const startMs = Date.now();
+    try {
+      const result = await resolver(tool, args, options.signal);
+      emitter.emit(makeEvent<ToolCallAfterEvent>("ToolCallAfter", {
+        sessionId: options.sessionId,
+        ...options.selfTag,
+        iteration: 0,
+        tool,
+        result,
+        durationMs: Date.now() - startMs,
+        ok: true,
+      }));
+      return result;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      emitter.emit(makeEvent<ToolCallAfterEvent>("ToolCallAfter", {
+        sessionId: options.sessionId,
+        ...options.selfTag,
+        iteration: 0,
+        tool,
+        result: message,
+        durationMs: Date.now() - startMs,
+        ok: false,
+      }));
+      throw error;
+    }
+  };
 }
 
 const DEFAULT_OPTIONS: RLMOptions = {
@@ -539,6 +597,13 @@ export async function rlmLoop(
     // cannot leak a dangling timer (nothing after setTimeout can throw).
     repl = new REPL();
     abortController = new AbortController();
+    if (opts.tools) {
+      repl.onToolRequest(bridgeToolResolver(opts.tools, emitter, {
+        sessionId: selfCorrelationId,
+        selfTag,
+        signal: abortController.signal,
+      }));
+    }
     timeoutHandle = setTimeout(() => {
       abortController.abort();
     }, opts.timeout);

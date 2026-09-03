@@ -10,27 +10,68 @@
  */
 
 import { createEmitter } from "../../sdk/emitter.js";
+import { defaultReplTimeoutMs } from "../../repl.js";
 import { rlmLoop } from "../../rlm.js";
+import { loadPythonPlugins } from "../../sdk/python-plugin.js";
+import { loadPluginTools } from "../../sdk/tool-loader.js";
+import {
+  createToolRegistry,
+  toolRegistryAsResolver,
+  type ToolRegistry,
+  type ToolSchema,
+} from "../../sdk/tool-registry.js";
 import type { Microagent } from "../agents.js";
 import type { BackendRequest, MicroagentResult, RuntimeBackend } from "../backend.js";
 
 /** Test seam: alternate engine loop (the contract test injects a stub). */
 export interface LegacyMikroBackendOptions {
   readonly loop?: typeof rlmLoop;
+  readonly loaders?: Partial<LegacyBackendLoaders>;
 }
+
+interface LegacyBackendLoaders {
+  readonly loadPluginTools: typeof loadPluginTools;
+  readonly loadPythonPlugins: typeof loadPythonPlugins;
+}
+
+/** Keep Python plugin failure inside the enclosing REPL execute deadline. */
+export const PLUGIN_TIMEOUT_MARGIN_MS = 1_000;
 
 export class LegacyMikroBackend implements RuntimeBackend {
   private readonly loop: typeof rlmLoop;
+  private readonly loaders: LegacyBackendLoaders;
 
   constructor(options: LegacyMikroBackendOptions = {}) {
     this.loop = options.loop ?? rlmLoop;
+    this.loaders = {
+      loadPluginTools: options.loaders?.loadPluginTools ?? loadPluginTools,
+      loadPythonPlugins: options.loaders?.loadPythonPlugins ?? loadPythonPlugins,
+    };
   }
 
   async run(
-    _agent: Microagent | undefined,
+    agent: Microagent | undefined,
     request: BackendRequest,
     emit: (message: string) => void
   ): Promise<MicroagentResult> {
+    const registry = createToolRegistry();
+    if (agent && agent.spec.tools.length > 0) {
+      await this.loaders.loadPluginTools(agent.spec, registry);
+      await this.loaders.loadPythonPlugins(agent.spec, registry, {
+        timeoutMs: Math.max(
+          1,
+          defaultReplTimeoutMs() - PLUGIN_TIMEOUT_MARGIN_MS
+        ),
+      });
+    }
+    const declaredTools = buildDeclaredToolDefs(registry);
+    const config = declaredTools.length > 0
+      ? { ...request.config, tools: [...request.config.tools, ...declaredTools] }
+      : request.config;
+    const tools = declaredTools.length > 0
+      ? toolRegistryAsResolver(registry)
+      : undefined;
+
     // Subscribe BEFORE the run so no early event is missed; rlmLoop closes the
     // emitter when it finishes, which ends this loop.
     const emitter = createEmitter();
@@ -62,9 +103,10 @@ export class LegacyMikroBackend implements RuntimeBackend {
 
     // output: "json" keeps rlmLoop off its stream-mode stdout path, which the
     // MCP transport owns — the same contract `src/acp/agent.ts` follows.
-    const result = await this.loop(request.query, request.context, request.config, {
+    const result = await this.loop(request.query, request.context, config, {
       output: "json",
       emitter,
+      ...(tools ? { tools } : {}),
       ...(request.maxIterations !== undefined ? { maxIterations: request.maxIterations } : {}),
       ...(request.maxOutputTokens !== undefined
         ? { maxOutputTokens: request.maxOutputTokens }
@@ -88,6 +130,34 @@ export class LegacyMikroBackend implements RuntimeBackend {
       },
     };
   }
+}
+
+/** Build the Python `**kwargs` entry point for every loaded declared tool. */
+function buildDeclaredToolDefs(registry: ToolRegistry): Array<{ name: string; code: string }> {
+  return registry.list().map((name) => ({
+    name,
+    code: [
+      `def ${name}(**kwargs):`,
+      `    \"\"\"${escapeDocstring(toolDocstring(registry.describe(name)))}\"\"\"`,
+      `    return call_tool(${JSON.stringify(name)}, kwargs)`,
+    ].join("\n"),
+  }));
+}
+
+function toolDocstring(schema: ToolSchema | undefined): string {
+  if (!schema) return "(arguments undocumented — pass keyword arguments)";
+  const parts: string[] = [];
+  if (schema.description?.trim()) parts.push(schema.description.trim());
+  const properties = schema.parameters?.properties;
+  if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+    const names = Object.keys(properties);
+    if (names.length > 0) parts.push(`Parameters: ${names.join(", ")}.`);
+  }
+  return parts.join(" ") || "(arguments undocumented — pass keyword arguments)";
+}
+
+function escapeDocstring(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\"\"\"/g, '\\\"\\\"\\\"');
 }
 
 /**
