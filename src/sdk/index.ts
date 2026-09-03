@@ -96,7 +96,11 @@ export type {
 } from "./agent.js";
 
 // ─── rlmDriver (G2c — real LLM bridge + mikro#78 tool dispatch) ───
-export { formatRlmPrompt, rlmDriver } from "./rlm-driver.js";
+export {
+	formatRlmPrompt,
+	NoExposableToolsError,
+	rlmDriver,
+} from "./rlm-driver.js";
 export type {
 	RlmDriverConfig,
 	RlmDriverToolsConfig,

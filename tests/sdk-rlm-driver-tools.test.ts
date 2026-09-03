@@ -23,6 +23,7 @@ import {
 	type AgentEvent,
 	createToolRegistry,
 	type IterationStep,
+	NoExposableToolsError,
 	rlmDriver,
 	runAgent,
 	type ToolCallOutcome,
@@ -102,38 +103,42 @@ const READ_SCHEMA: ToolSchema = {
 };
 
 describe("rlmDriver tool-dispatch — step shape (hermetic)", () => {
-	it("no schemas in registry → falls back to legacy one-shot mode", async () => {
-		// Registry with handlers but NO schemas — tool-dispatch path
-		// needs at least one schema to engage; fall back is the safe
-		// default so consumers don't accidentally switch modes.
+	it("throws when supplied tools have no schemas", () => {
 		const registry = createToolRegistry();
 		registry.register("unused", async () => "irrelevant");
 
-		const driver = rlmDriver({
-			model: MODEL,
-			tools: { registry },
-			llm: async () => ({
-				text: "hi there",
-				usage: {
-					inputTokens: 0,
-					outputTokens: 0,
-					cacheReadTokens: 0,
-					cacheWriteTokens: 0,
-					totalCost: 0,
-					llmCalls: 1,
-				},
-			}),
-		});
+		assert.throws(
+			() => rlmDriver({ model: MODEL, tools: { registry } }),
+			(error: unknown) => {
+				assert.ok(error instanceof NoExposableToolsError);
+				assert.equal(error.name, "NoExposableToolsError");
+				assert.equal(
+					error.message,
+					"rlmDriver: tools supplied but no exposed tool has a schema (handlers without schema: unused). Add tools/<name>.schema.json next to each plugin, call register(name, handler, schema), or omit `tools` to run one-shot.",
+				);
+				return true;
+			},
+		);
+	});
 
-		const steps: IterationStep[] = [];
-		const iter = driver(
-			{ sessionId: "s", iteration: 1, history: [{ role: "user", content: "hi" }] },
-			new AbortController().signal,
-		) as AsyncIterable<IterationStep>;
-		for await (const step of iter) steps.push(step);
-		assert.equal(steps.length, 2);
-		assert.equal(steps[0]?.kind, "message");
-		assert.equal(steps[1]?.kind, "emit_done");
+	it("throws when expose selects only a schema-less handler", () => {
+		const registry = createToolRegistry();
+		registry.register("search_corpus", async () => [], SEARCH_SCHEMA);
+		registry.register("x", async () => "irrelevant");
+
+		assert.throws(
+			() =>
+				rlmDriver({
+					model: MODEL,
+					tools: { registry, expose: ["x"] },
+				}),
+			(error: unknown) => {
+				assert.ok(error instanceof NoExposableToolsError);
+				assert.match(error.message, /handlers without schema: x/);
+				assert.match(error.message, /register\(name, handler, schema\)/);
+				return true;
+			},
+		);
 	});
 
 	it("single tool call → yields tool_call step with name, args, id", async () => {
