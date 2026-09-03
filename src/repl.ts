@@ -22,6 +22,7 @@ import type {
 } from "./ipc.js";
 import type { ToolsLevel } from "./config.js";
 import type { Logger } from "./logger.js";
+import type { ToolResolver } from "./sdk/agent.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -51,6 +52,28 @@ const GEMINI_BATTERY_FUNCTION_NAMES = [
   "generate_image",
 ] as const;
 
+/** Names supplied by the REPL runtime and battery modules. */
+export const REPL_RESERVED_NAMES: ReadonlySet<string> = new Set([
+  "context",
+  "llm_query",
+  "rlm_query",
+  "llm_query_batched",
+  "rlm_query_batched",
+  "FINAL_VAR",
+  "FINAL",
+  "SHOW_VARS",
+  "call_tool",
+  ...BATTERY_FUNCTION_NAMES,
+  "run_cli",
+  ...GEMINI_BATTERY_FUNCTION_NAMES,
+  "pg_search",
+  "pg_slice",
+  "pg_sources",
+  "pg_time",
+  "pg_count",
+  "pg_query",
+]);
+
 /** Options passed to REPL.start() */
 export interface REPLStartOptions {
   /** Context to inject (string, list, or dict serialized as JSON string). */
@@ -78,7 +101,7 @@ export type LLMRequestHandler = (
   request: LLMRequest
 ) => Promise<string[]>;
 
-function defaultReplTimeoutMs(): number {
+export function defaultReplTimeoutMs(): number {
   const raw = process.env.MIKRO_REPL_TIMEOUT_MS;
   if (!raw) return 30_000;
   const parsed = Number(raw);
@@ -86,14 +109,37 @@ function defaultReplTimeoutMs(): number {
   return parsed;
 }
 
+interface ToolRequestMessage {
+  type: "tool_request";
+  tool: string;
+  args: unknown;
+}
+
+type ReplMessage = PythonToNode | ToolRequestMessage;
+
+type ToolResponseMessage =
+  | { type: "tool_response"; ok: true; result: unknown }
+  | { type: "tool_response"; ok: false; error: string };
+
+function errorString(value: unknown): string {
+  try {
+    if (value instanceof Error) return value.message;
+    return String(value);
+  } catch {
+    return "Unknown tool bridge error";
+  }
+}
+
 export class REPL {
   private process: ChildProcess | null = null;
   private readline: Interface | null = null;
   private ready = false;
-  private pendingResolve: ((msg: PythonToNode) => void) | null = null;
+  private pendingResolve: ((msg: ReplMessage) => void) | null = null;
   private pendingReject: ((err: Error) => void) | null = null;
   private llmHandler: LLMRequestHandler | null = null;
-  private messageBuffer: PythonToNode[] = [];
+  private toolHandler: ToolResolver | null = null;
+  private messageBuffer: ReplMessage[] = [];
+  private readonly toolSignal = new AbortController().signal;
 
   // Crash recovery state
   private _startOptions: REPLStartOptions = {};
@@ -110,6 +156,11 @@ export class REPL {
   /** Set a handler for LLM requests from Python REPL code. */
   onLLMRequest(handler: LLMRequestHandler): void {
     this.llmHandler = handler;
+  }
+
+  /** Set a handler for tool requests from Python REPL code. */
+  onToolRequest(handler: ToolResolver): void {
+    this.toolHandler = handler;
   }
 
   /** Start the Python REPL subprocess. */
@@ -133,9 +184,9 @@ export class REPL {
 
     // Route each JSON line from Python
     this.readline.on("line", (line: string) => {
-      let msg: PythonToNode;
+      let msg: ReplMessage;
       try {
-        msg = JSON.parse(line) as PythonToNode;
+        msg = JSON.parse(line) as ReplMessage;
       } catch {
         // Not JSON — ignore (should not happen with correct server)
         return;
@@ -363,7 +414,7 @@ export class REPL {
     this.process.stdin.write(JSON.stringify(msg) + "\n");
   }
 
-  private _handleMessage(msg: PythonToNode): void {
+  private _handleMessage(msg: ReplMessage): void {
     if (this.pendingResolve) {
       this.pendingResolve(msg);
       this.pendingResolve = null;
@@ -373,7 +424,7 @@ export class REPL {
     }
   }
 
-  private _nextMessage(): Promise<PythonToNode> {
+  private _nextMessage(): Promise<ReplMessage> {
     // Check buffer first
     if (this.messageBuffer.length > 0) {
       return Promise.resolve(this.messageBuffer.shift()!);
@@ -387,8 +438,8 @@ export class REPL {
   private async _waitForMessage(
     expectedType: string,
     timeoutMs = 10_000
-  ): Promise<PythonToNode> {
-    return new Promise<PythonToNode>((resolve, reject) => {
+  ): Promise<ReplMessage> {
+    return new Promise<ReplMessage>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Timeout waiting for "${expectedType}" message`));
       }, timeoutMs);
@@ -464,6 +515,10 @@ export class REPL {
             // Send response back to Python
             this._send({ type: "llm_response", results });
           }
+
+          if (msg.type === "tool_request") {
+            await this._handleToolRequest(msg);
+          }
           // Other message types during execution — ignore
         }
       };
@@ -476,6 +531,54 @@ export class REPL {
         }
       });
     });
+  }
+
+  /** Handle a tool request without allowing bridge failures to reject execute(). */
+  private async _handleToolRequest(request: ToolRequestMessage): Promise<void> {
+    let response: ToolResponseMessage;
+
+    try {
+      if (!this.toolHandler) {
+        throw new Error("No tool handler configured");
+      }
+
+      const result = await this.toolHandler(
+        request.tool,
+        request.args,
+        this.toolSignal
+      );
+      const serialized = JSON.stringify(result);
+      if (serialized === undefined) {
+        throw new TypeError("Tool result is not JSON-serializable");
+      }
+      response = {
+        type: "tool_response",
+        ok: true,
+        result: JSON.parse(serialized) as unknown,
+      };
+    } catch (err: unknown) {
+      response = {
+        type: "tool_response",
+        ok: false,
+        error: errorString(err),
+      };
+    }
+
+    try {
+      this._send(response);
+    } catch (sendErr: unknown) {
+      // A one-off write failure can still become a protocol-level error when
+      // the transport accepts this fallback. No send failure escapes here.
+      try {
+        this._send({
+          type: "tool_response",
+          ok: false,
+          error: `Tool response send failed: ${errorString(sendErr)}`,
+        });
+      } catch {
+        // The execute timeout/crash recovery path owns a dead transport.
+      }
+    }
   }
 
   private async _injectContext(
