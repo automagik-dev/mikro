@@ -19,6 +19,42 @@ _ipc_in = None   # real stdin for receiving JSON from Node.js
 _ipc_lock = threading.Lock()
 
 
+def call_tool(name, kwargs):
+    """Call a Node-owned tool and return its JSON-round-tripped result."""
+    if _ipc_out is None or _ipc_in is None:
+        raise RuntimeError("IPC not initialized")
+
+    msg = {
+        "type": "tool_request",
+        "tool": name,
+        "args": kwargs,
+    }
+
+    with _ipc_lock:
+        try:
+            _ipc_out.write(json.dumps(msg) + "\n")
+            _ipc_out.flush()
+            line = _ipc_in.readline()
+        except Exception as error:
+            raise RuntimeError(f"Tool IPC failed: {error}") from error
+
+        if not line:
+            raise RuntimeError("Tool IPC connection closed")
+
+        try:
+            response = json.loads(line.strip())
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"Invalid tool response JSON: {error}") from error
+
+        if response.get("type") != "tool_response":
+            raise RuntimeError(
+                f"Unexpected tool response type: {response.get('type')}"
+            )
+        if not response.get("ok"):
+            raise RuntimeError(str(response.get("error", "Tool call failed")))
+        return response.get("result")
+
+
 def _send_request(request_type: str, prompts: list, model=None) -> list:
     """Send an LLM request to the parent Node.js process and block for response."""
     if _ipc_out is None or _ipc_in is None:
