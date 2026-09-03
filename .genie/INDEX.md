@@ -19,6 +19,10 @@ Each entry below is one single-wish child at WRS 100/100 with independently veri
 - [Repeated CLI context roots](brainstorms/mikro-repeated-cli-context-roots/DESIGN.md) — schema-visible repeatability, ordered canonical-root dedupe, singleton byte parity, deterministic collision identities for query/cache/batch.
 - [Dev and release promotion](brainstorms/mikro-dev-release-promotion/DESIGN.md) — clean B0/P0 lane, exclusive compare-and-fast-forward `dev`, exact-SHA journeys, one rolling PR, identity-bound merge/release and revert-only rollback.
 
+## Delivered to dev — awaiting promotion
+
+- [Declared tools truth](brainstorms/mikro-declared-tools-truth/DESIGN.md) → [WISH.md](wishes/mikro-declared-tools-truth/WISH.md) — M1+M2 of the brain handoff: default backend loads declared `tools:` through a REPL `tool_request` bridge, sidecar `<tool>.schema.json`, `rlmDriver` throws `NoExposableToolsError` instead of silent one-shot, unresolved/reserved/colliding tools advertised `UNAVAILABLE`. Design review SHIP (three rounds) and plan review SHIP (two rounds) on 2026-09-03; six groups in three waves merged to `dev` at `b3d4a31` via [PR #149](https://github.com/automagik-dev/mikro/pull/149). Acceptance evidence is isolated in [PR #150](https://github.com/automagik-dev/mikro/pull/150), whose merge is a separate Felipe decision. A `juice/GLM-5.3` canary answered and stored `thinkingLevel: max`, but `session_status` rendered `think high`; effective max remains unproven, so the exact default final gate is `UNAVAILABLE` and no reviewer was started. No `dev → main` PR or promotion is authorized.
+
 ## Superseded wish records
 
 These local-only wish paths are historical planning inputs, not links in this reviewed candidate. They are not the executable handoff for the corrected portfolio and were not modified by this correction.
