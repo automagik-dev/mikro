@@ -33,6 +33,15 @@ describe("example: hello-world (G4)", () => {
 		const result = await loadPluginTools(spec, registry);
 		assert.deepEqual([...result.loaded], ["greet"]);
 		assert.equal(result.missing.length, 0);
+		assert.deepEqual(registry.describe("greet"), {
+			description: "Greet a person by name.",
+			parameters: {
+				type: "object",
+				properties: {
+					name: { type: "string", description: "Name to greet." },
+				},
+			},
+		});
 
 		const driver = async function* (req: {
 			history: ReadonlyArray<{ content: string }>;

@@ -40,14 +40,13 @@ loop from their own code.
 
 ## Design principles
 
-**Additive only.** Every SDK slice is a new namespace under `mikro.sdk.*`
-— no existing export shape changed, no CLI behaviour modified.
-Consumers on the SDK path opt in; everything else keeps working.
+**Additive SDK surface.** SDK capabilities live under `mikro.sdk.*` and
+consumers opt in. The default MCP backend also uses the shared declared-tool
+loaders and REPL bridge; the ad-hoc `mikro "query"` path remains compatible.
 
-**Pluggable seams, not invasive patches.** When the SDK needs to
-cooperate with existing mikro pieces (LLM transport, RTK detection), it
-imports them and wraps them. It does not re-plumb `src/rlm.ts`
-internals. This trades some duplication for zero regression risk.
+**Pluggable seams.** When SDK and default-backend behavior meet existing mikro
+pieces (LLM transport, RTK detection, the REPL), they share loaders and resolver
+contracts. The REPL tool bridge is additive to the existing LLM-request path.
 
 **Events as the observability contract.** The 10 wish-spec event types
 (plus session lifecycle) are the sole surface consumers subscribe to.
@@ -76,13 +75,28 @@ use `runAgent()` is a deliberately separate slice.
 | `src/sdk/agent.ts` | `runAgent`, `AgentConfig`, `IterationDriver`, `IterationStep`, `ToolResolver`. |
 | `src/sdk/rlm-driver.ts` | `rlmDriver` + `formatRlmPrompt` + `RlmDriverConfig` — bridges `llmCompleteSimple` into `IterationDriver`. |
 | `src/sdk/agent-spec.ts` | `AgentSpec`, `parseAgentSpec`, `loadAgentSpec`, `resolveAgentPath`. |
-| `src/sdk/tool-registry.ts` | `ToolRegistry`, `createToolRegistry`, `toolRegistryAsResolver`, `UnknownToolError`, `ToolHandler`. |
-| `src/sdk/tool-loader.ts` | `loadPluginTools` (`.mjs` / `.js`) + `MissingPluginError` + `InvalidPluginError`. |
-| `src/sdk/python-plugin.ts` | `loadPythonPlugins`, `makePythonPluginHandler`, `PythonPluginError`, `PythonPluginTimeoutError`. |
+| `src/sdk/tool-registry.ts` | `ToolRegistry`, `ToolSchema`, `createToolRegistry`, `toolRegistryAsResolver`, `UnknownToolError`, `ToolHandler`. |
+| `src/sdk/tool-loader.ts` | `loadPluginTools` (`.mjs` / `.js`), sidecar schema loading, `resolvePluginPath`, `MissingPluginError`, `InvalidPluginError`. |
+| `src/sdk/python-plugin.ts` | `loadPythonPlugins`, sidecar schema loading, `resolvePythonScript`, `makePythonPluginHandler`, `PythonPluginError`, `PythonPluginTimeoutError`. |
 | `src/sdk/rtk-plugin.ts` | `registerRtkTool`. |
 | `src/sdk/metrics.ts` | `IterationMetrics`, `createMetricsRecorder`. |
 
 Public entry: `import { sdk } from "mikro"`.
+
+## `rlmDriver()` tool contract
+
+With `tools` omitted, `rlmDriver()` uses its legacy one-shot path. Supplying
+`tools: { registry, expose? }` opts into multi-turn native function calling,
+where every function offered to the model must have a `ToolSchema`. File-backed
+plugins get that schema from neighboring `tools/<name>.schema.json` files
+loaded by `loadPluginTools` or `loadPythonPlugins`.
+
+Construction synchronously throws the exported `NoExposableToolsError` when
+zero tools remaining after `expose` have schemas. The error names schema-less
+handlers and points to the migrations: add a sidecar, call
+`registry.register(name, handler, schema)`, or omit `tools` when one-shot
+execution is intentional. There is no schema-less fallback once `tools` is
+supplied.
 
 ## When to use the SDK vs the CLI
 

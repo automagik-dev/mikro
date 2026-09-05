@@ -9,6 +9,7 @@ IPC protocol:
   Node -> Python (stdin):
     {"type": "execute", "code": "..."}
     {"type": "llm_response", "results": ["..."]}  (during execution)
+    {"type": "tool_response", "ok": true, "result": ...}  (during execution)
     {"type": "inject", "name": "...", "value": "...", "value_type": "str|list|dict"}
     {"type": "reset"}
     {"type": "shutdown"}
@@ -16,6 +17,7 @@ IPC protocol:
   Python -> Node (stdout):
     {"type": "execute_result", "stdout": "...", "stderr": "...", "variables": [...], ...}
     {"type": "llm_request", "request_type": "...", "prompts": [...], "model": "..."}
+    {"type": "tool_request", "tool": "...", "args": {...}}
     {"type": "ready"}
 """
 
@@ -35,7 +37,7 @@ MAX_STDOUT_CHARS = 20_000
 # Reserved names that cannot be overwritten by user code
 RESERVED_NAMES = frozenset({
     "context", "llm_query", "rlm_query", "llm_query_batched",
-    "rlm_query_batched", "FINAL_VAR", "FINAL", "SHOW_VARS",
+    "rlm_query_batched", "FINAL_VAR", "FINAL", "SHOW_VARS", "call_tool",
 })
 
 # Blocked builtins
@@ -91,6 +93,7 @@ class REPLServer:
         self._globals["llm_query_batched"] = llm_bridge.llm_query_batched
         self._globals["rlm_query"] = llm_bridge.rlm_query
         self._globals["rlm_query_batched"] = llm_bridge.rlm_query_batched
+        self._globals["call_tool"] = llm_bridge.call_tool
 
     def _final_var(self, variable_name):
         """Signal completion by returning the value of a named variable."""
@@ -148,6 +151,7 @@ class REPLServer:
         self._globals["llm_query_batched"] = llm_bridge.llm_query_batched
         self._globals["rlm_query"] = llm_bridge.rlm_query
         self._globals["rlm_query_batched"] = llm_bridge.rlm_query_batched
+        self._globals["call_tool"] = llm_bridge.call_tool
 
         # Restore context if it was overwritten
         if "context" in self._locals and "context_0" in self._locals:
@@ -287,8 +291,8 @@ class REPLServer:
             elif cmd_type == "shutdown":
                 break
 
-            # llm_response is handled inline by llm_bridge during execution
-            # so we don't process it here in the main loop
+            # llm_response and tool_response are handled inline by llm_bridge
+            # during execution, so we don't process them here in the main loop
 
 
 if __name__ == "__main__":

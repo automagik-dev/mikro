@@ -204,7 +204,7 @@ your own schema without forking the parser.
 | `model` | ambient config | `"<provider>/<model>"` — `station/…`, `khal/…`, or any pi/ai provider. A bare model id keeps the configured provider. |
 | `description` | — | One line the MCP client shows the host model. Falls back to the first meaningful line of the system prompt, then a generic string — an agent with neither is effectively invisible. |
 | `system` | — | Path to the system prompt, relative to the agent directory. |
-| `tools` | `[]` | Plugin tool names to load. Empty strings drop; duplicates collapse. |
+| `tools` | `[]` | Plugin names resolved from `tools/<name>.{mjs,js,py}`. Optional `tools/<name>.schema.json` supplies model-facing metadata; default `mikro mcp` bridges each plugin into the REPL. Missing, reserved, or `.mikro/TOOLS.md`-colliding names make that agent unavailable. |
 | `budget.max_cost` | — | USD ceiling per run. |
 | `budget.max_iterations` | — | Iteration ceiling. Threaded into `runAgent({ maxIterations })`. |
 | `budget.max_depth` | — | Recursion depth ceiling, for `shape: recurse`. |
@@ -900,10 +900,14 @@ providers:
 Keys are env-only — the config names the variable, never holds the value.
 `mikro doctor` lists every declared provider, which key variable is set, and
 whether the configured `model:` resolves. `mikro mcp` validates every
-microagent's pin at discovery time: a tool whose provider or model is not
-resolvable is advertised as **UNAVAILABLE** with the reason, and calling it
-returns that reason instead of starting a run. Declaring the provider heals it
-on the next `tools/list` — no restart.
+microagent's pin at discovery time. A tool whose provider or model is not
+resolvable is advertised as **UNAVAILABLE** with the reason, as is a default
+`mikro` agent with missing tools, a reserved REPL tool name, or a tool that
+collides with `.mikro/TOOLS.md`. Calling an unavailable tool returns the same
+cause and repair instead of starting a run. Declaring the provider or repairing
+the tool heals it on the next `tools/list` — no restart. Every microagent
+description, available or unavailable, ends with `Backend: <name>. Tools: …`
+(or `Tools: none declared.`); `mikro` is the default backend.
 
 ### TOOLS.md Format
 

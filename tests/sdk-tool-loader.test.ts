@@ -10,6 +10,7 @@ import {
 	loadPluginTools,
 	MissingPluginError,
 } from "../src/sdk/index.js";
+import { resolvePluginPath } from "../src/sdk/tool-loader.js";
 
 async function writePlugin(
 	dir: string,
@@ -22,6 +23,20 @@ async function writePlugin(
 	const file = join(toolsDir, `${name}${ext}`);
 	await writeFile(file, body, "utf8");
 	return file;
+}
+
+async function writeSchema(
+	dir: string,
+	name: string,
+	contents: unknown,
+): Promise<string> {
+	const path = join(dir, "tools", `${name}.schema.json`);
+	await writeFile(
+		path,
+		typeof contents === "string" ? contents : JSON.stringify(contents),
+		"utf8",
+	);
+	return path;
 }
 
 function specFor(dir: string, tools: string[]): AgentSpec {
@@ -64,6 +79,87 @@ describe("loadPluginTools — TS plugin loader (G3a, .mjs/.js only)", () => {
 			signal: new AbortController().signal,
 		});
 		assert.equal(out, "hello sté");
+		assert.equal(registry.describe("greet"), undefined);
+	});
+
+	it("attaches a validated sidecar schema to the registry", async () => {
+		const agentDir = join(root, "schema");
+		await writePlugin(agentDir, "echo", `export default async (args) => args;\n`);
+		const schema = {
+			description: "Echo the supplied text",
+			parameters: {
+				type: "object",
+				properties: { text: { type: "string" } },
+				required: ["text"],
+			},
+		};
+		await writeSchema(agentDir, "echo", schema);
+
+		const registry = createToolRegistry();
+		await loadPluginTools(specFor(agentDir, ["echo"]), registry);
+		assert.deepEqual(registry.describe("echo"), schema);
+	});
+
+	it("accepts empty schemas and nested parameter keys without a type", async () => {
+		const agentDir = join(root, "valid-schema-shapes");
+		await writePlugin(agentDir, "empty", `export default async () => null;\n`);
+		await writePlugin(agentDir, "nested", `export default async () => null;\n`);
+		await writeSchema(agentDir, "empty", {});
+		const nested = { parameters: { properties: {}, required: [] } };
+		await writeSchema(agentDir, "nested", nested);
+
+		const registry = createToolRegistry();
+		await loadPluginTools(specFor(agentDir, ["empty", "nested"]), registry);
+		assert.deepEqual(registry.describe("empty"), {});
+		assert.deepEqual(registry.describe("nested"), nested);
+	});
+
+	it("rejects malformed sidecar schemas with the path and reason", async () => {
+		const cases: readonly [string, unknown, RegExp][] = [
+			["invalid-json", "{", /not valid JSON/],
+			["non-object", [], /plain object/],
+			["unknown-key", { extra: true }, /unknown top-level key/],
+			["description", { description: 1 }, /description must be a string/],
+			["parameters", { parameters: [] }, /parameters must be a plain object/],
+			["parameter-type", { parameters: { type: "string" } }, /parameters\.type must be "object"/],
+		];
+
+		for (const [name, schema, reason] of cases) {
+			const agentDir = join(root, `invalid-schema-${name}`);
+			await writePlugin(agentDir, name, `export default async () => null;\n`);
+			const sidecarPath = await writeSchema(agentDir, name, schema);
+			await assert.rejects(
+				loadPluginTools(specFor(agentDir, [name]), createToolRegistry()),
+				(err: unknown) => {
+					assert.ok(err instanceof InvalidPluginError);
+					assert.ok(err.message.includes(sidecarPath));
+					assert.match(err.message, reason);
+					return true;
+				},
+			);
+		}
+	});
+
+	it("exports resolution limited to .mjs and .js", async () => {
+		const agentDir = join(root, "resolver");
+		await mkdir(join(agentDir, "tools"), { recursive: true });
+		await writeFile(join(agentDir, "tools", "python-only.py"), "pass\n", "utf8");
+		assert.deepEqual(await resolvePluginPath(agentDir, "python-only"), {
+			path: null,
+			tried: [
+				join(agentDir, "tools", "python-only.mjs"),
+				join(agentDir, "tools", "python-only.js"),
+			],
+		});
+
+		const jsPath = await writePlugin(agentDir, "javascript", "export default () => null;\n", ".js");
+		assert.deepEqual(await resolvePluginPath(agentDir, "javascript"), {
+			path: jsPath,
+			tried: [
+				join(agentDir, "tools", "javascript.mjs"),
+				jsPath,
+			],
+		});
 	});
 
 	it("skips tools already present in the registry (pre-registered wins)", async () => {

@@ -1,9 +1,10 @@
 # Authoring tool plugins
 
-An mikro agent is a folder with `agent.yaml`, optional `SYSTEM.md` /
+A mikro agent is a folder with `agent.yaml`, optional `SYSTEM.md` /
 `VALIDATE.md`, and a `tools/` subdirectory of per-tool plugin files.
-The SDK loads those files at runtime and exposes each as a named
-handler `runAgent()` can dispatch. Three flavours are supported.
+The SDK loaders and the default `mikro mcp` backend load those files at
+runtime. SDK consumers can dispatch them through `runAgent()`; the default
+backend exposes them inside the Python REPL. Three flavours are supported.
 
 ## TS/MJS tool plugin
 
@@ -12,12 +13,48 @@ File: `<agent-dir>/tools/<name>.mjs` (preferred) or `<name>.js`.
 ```js
 // tools/greet.mjs
 export default async function greet(args, ctx) {
-	// args  — the payload from the IterationStep `tool_call`
+	// args  — an SDK tool_call payload or default-backend keyword args object
 	// ctx   — { tool, sessionId, iteration, signal }
 	if (ctx.signal.aborted) throw new Error("aborted");
 	return { hello: args.name };
 }
 ```
+
+## Sidecar schema
+
+Put optional model-facing metadata beside any JavaScript or Python plugin as
+`tools/<name>.schema.json`. Both plugin loaders attach the sidecar to the
+registry. Its shape is exactly:
+
+```ts
+export interface ToolSchema {
+	readonly description?: string;
+	readonly parameters?: Record<string, unknown>;
+}
+```
+
+A complete `tools/echo.schema.json`:
+
+```json
+{
+  "description": "Return the supplied text unchanged.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "text": { "type": "string", "description": "Text to return." }
+    },
+    "required": ["text"],
+    "additionalProperties": false
+  }
+}
+```
+
+The top level must be a plain object containing only `description` and
+`parameters`. `description`, when present, must be a string; `parameters` must
+be a plain object whose `type`, when present, is `"object"`. Nested JSON Schema
+keys pass through unchanged, and `{}` is valid. An absent sidecar leaves the
+handler schema-less. An unreadable, invalid JSON, or malformed sidecar throws
+`InvalidPluginError` naming the sidecar and the reason.
 
 Rules:
 
@@ -98,6 +135,78 @@ Error taxonomy:
 Every call spawns a fresh subprocess — no pooling, no state leakage.
 The ~50–100 ms interpreter startup is acceptable for sub-second
 LLM-bound tool cadence.
+
+## Calling bridged tools from the REPL
+
+On the default `mikro` backend, each declared plugin becomes a Python stub of
+the form `def <name>(**kwargs)`. Call it with keyword arguments, for example
+`greet(name="Stéfani")`; `kwargs` is sent to the Node handler as one JSON
+object and the JSON-round-tripped result is returned to Python. The sidecar
+description and property names form the stub docstring; without a sidecar it
+says `(arguments undocumented — pass keyword arguments)`.
+
+A missing handler, handler failure, or non-JSON-serializable result raises
+`RuntimeError` in Python without rejecting the enclosing REPL execution, and
+the REPL stays alive. The bridge is at-least-once per code block: if crash
+recovery replays a failed block, a side-effecting handler can run again. The
+run's abort signal reaches JavaScript handlers as `ctx.signal`; `.mjs`/`.js`
+handlers own their deadline and should abort work cooperatively.
+
+## Reserved names
+
+Declared tools on the default backend cannot use Python REPL globals or names
+defined by the built-in battery files. This includes `FINAL`, `context`, and
+`call_tool`. Discovery advertises an agent with a reserved declaration as
+**UNAVAILABLE**; rename the tool and its file. A name that collides with a
+function from `.mikro/TOOLS.md` is also unavailable. This discovery check does
+not apply to `prime` or `prime-sdk`.
+
+## Timeouts on the default backend
+
+`MIKRO_REPL_TIMEOUT_MS` controls the enclosing REPL execution timeout (30,000
+ms by default). The backend gives each Python plugin a timeout of
+`Math.max(1, defaultReplTimeoutMs() - 1_000)`, so a slow plugin becomes a
+Python `RuntimeError` before the REPL is killed. By comparison, direct SDK use
+of `loadPythonPlugins` defaults `timeoutMs` to 30,000 ms. JavaScript handlers
+have no separate per-tool timer; honor `ctx.signal` and impose a deadline in
+the handler when its operation needs one.
+
+## How tools reach the model on each backend
+
+- **`mikro` (the default):** declared plugins become Python `**kwargs` stubs
+  in the REPL, not native function declarations. Keyword arguments preserve
+  the declared JSON object without an ambiguous positional mapping.
+- **SDK `rlmDriver`:** sidecar schemas supply native function declarations.
+  At least one tool remaining after `expose` must have a schema or construction
+  throws `NoExposableToolsError`; omit `tools` only when one-shot behavior is
+  intentional.
+- **`prime-sdk`:** the shared loaders attach sidecars to Prime custom tools;
+  its existing permissive object fallback remains when a sidecar is absent.
+  The `prime` subprocess backend's behavior is unchanged.
+
+Gemini code-execution paths outside mikro's REPL do not see bridged tools.
+Also, `registerRtkTool()` and PATH detection can pre-register RTK for SDK
+consumers, but they do not satisfy default-backend discovery: declaring `rtk`
+without `tools/rtk.{mjs,js,py}` is `missing` and therefore **UNAVAILABLE**.
+
+JavaScript plugins use dynamic ESM `import()`, so repeated loads of the same
+resolved URL in one Node process reuse the module cache. Restart the process
+after editing module-level plugin state. Plugins execute trusted code with the
+host process's authority; audit their source and dependencies, and restrict the
+Python `env` option where appropriate.
+
+## Live `mikro mcp` bridge check
+
+This live, non-CI check reproduces the original declared-tool path:
+
+1. Start `mikro mcp --dir ~/workspace/repos/brain --verbose`, or add
+   `--log /tmp/mikro-mcp.jsonl` for structured events.
+2. From an MCP client, request `tools/list` and confirm `mikro_ask-maestro` is
+   available with a `Backend: mikro. Tools: …` suffix.
+3. Send an MCP `tools/call` request for `mikro_ask-maestro` with its normal
+   input; `tools/call` is an MCP method, not a shell subcommand.
+4. Confirm stderr or the JSONL log contains at least one declared-tool
+   `ToolCallBefore`, nested inside the surrounding `tool: "repl"` event pair.
 
 ## RTK as a first-class tool
 
